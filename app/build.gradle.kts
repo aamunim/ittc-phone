@@ -110,8 +110,7 @@ android {
         )
     }
 
-    // (the code keeps Fossify's package; only the installed app id is ITTC Phone's)
-    namespace = "org.fossify.phone"
+    namespace = project.property("APP_ID").toString()
 
     lint {
         checkReleaseBuilds = false

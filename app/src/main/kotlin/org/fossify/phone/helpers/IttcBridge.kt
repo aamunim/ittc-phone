@@ -27,7 +27,9 @@ object IttcBridge {
     private const val LOOKUP = "content://com.abamunim.leads.leadlookup/number/"
     private const val ACTION_CALL_ENDED = "com.abamunim.leads.ITTC_PHONE_CALL_ENDED"
 
+    // (the call screen's lookups never wait behind a call-log search)
     private val io = Executors.newSingleThreadExecutor()
+    private val ended = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
     data class Lead(
@@ -109,7 +111,7 @@ object IttcBridge {
         val number = clean(details.handle?.schemeSpecificPart) ?: return
         val startedAt = details.creationTimeMillis.takeIf { it > 0 } ?: (System.currentTimeMillis() - 60_000)
         val reason = endReason(details.disconnectCause)
-        io.execute {
+        ended.execute {
             try {
                 if (!trackerReady(app)) return@execute
                 // only lead calls: a personal call is never handed over
@@ -128,7 +130,7 @@ object IttcBridge {
         }
     }
 
-    /** The call log _ID of this call: the newest row for the number since it began (waits up to ~12 s) */
+    /** The call log _ID of this call: the row for the number nearest to when it began (waits up to ~10 s) */
     @SuppressLint("MissingPermission")
     private fun findRow(context: Context, number: String, startedAt: Long): String? {
         val wanted = number.filter { it.isDigit() }.takeLast(10)
@@ -137,15 +139,24 @@ object IttcBridge {
             try {
                 context.contentResolver.query(
                     CallLog.Calls.CONTENT_URI,
-                    arrayOf(CallLog.Calls._ID, CallLog.Calls.NUMBER),
-                    "${CallLog.Calls.DATE} >= ?",
-                    arrayOf((startedAt - 10_000).toString()),
-                    "${CallLog.Calls.DATE} DESC",
+                    arrayOf(CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.DATE),
+                    "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.DATE} <= ?",
+                    arrayOf((startedAt - 10_000).toString(), (startedAt + 10_000).toString()),
+                    null,
                 )?.use { c ->
+                    // (a redial of the same number moments later is another row: take the nearest)
+                    var best: String? = null
+                    var bestGap = Long.MAX_VALUE
                     while (c.moveToNext()) {
                         val n = c.getString(1)?.filter { it.isDigit() }?.takeLast(10) ?: continue
-                        if (n == wanted) return c.getLong(0).toString()
+                        if (n != wanted) continue
+                        val gap = kotlin.math.abs(c.getLong(2) - startedAt)
+                        if (gap < bestGap) {
+                            bestGap = gap
+                            best = c.getLong(0).toString()
+                        }
                     }
+                    if (best != null) return best
                 }
             } catch (_: SecurityException) {
                 return null // no call log access: the Tracker's own sync will find it

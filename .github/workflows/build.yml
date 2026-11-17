@@ -1,7 +1,7 @@
 # 🎓 ITTC Phone: build the APK, signed with the ITTC Admission Tracker's key
-#  - every push / pull request: build (a signed APK is kept as a workflow artifact)
-#  - a tag "v1.2.3": the same, and a GitHub Release with the APK
-#    (the Tracker's "Get ITTC Phone" button opens /releases/latest)
+#  - every push / pull request: build (the signed APK is kept as a workflow artifact)
+#  - a tag "v1.2.3" (must match VERSION_NAME in gradle.properties): the same, then a
+#    GitHub Release with the APK — the Tracker's "Get ITTC Phone" button opens /releases/latest
 name: Build
 
 on:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -28,7 +28,17 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # The key never enters the repository: it is written to a temp file for this run only
+      - name: A release tag matches the app's version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)"
+          if [ "$want" != "$have" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME but VERSION_NAME=$have in gradle.properties (raise VERSION_NAME and VERSION_CODE first)"
+            exit 1
+          fi
+
+      # The key never enters the repository: a temp file for this run only
       - name: Signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.ITTC_KEYSTORE_BASE64 }}
@@ -36,6 +46,9 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/ittc.jks"
             echo "SIGNING_STORE_FILE=$RUNNER_TEMP/ittc.jks" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "::error::No signing key: a release must be signed (secret ITTC_KEYSTORE_BASE64)."
+            exit 1
           else
             echo "::warning::No signing key (secrets not available): the APK will be unsigned."
           fi
@@ -53,18 +66,35 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/ittc.jks"
 
+      - name: Who signed it
+        if: env.SIGNING_STORE_FILE != ''
+        run: |
+          apk="$(ls app/build/outputs/apk/foss/release/*.apk | head -1)"
+          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$apk" | grep -E "Signer #1 certificate (SHA-256|SHA-1) digest" || exit 1
+
       - uses: actions/upload-artifact@v4
         with:
           name: ittc-phone-apk
           path: app/build/outputs/apk/foss/release/*.apk
           if-no-files-found: error
 
-      - name: Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ittc-phone-apk
+          path: apk
+      - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/foss/release/*.apk "ITTC-Phone-${GITHUB_REF_NAME}.apk"
+          cp apk/*.apk "ITTC-Phone-${GITHUB_REF_NAME}.apk"
           gh release create "$GITHUB_REF_NAME" "ITTC-Phone-${GITHUB_REF_NAME}.apk" \
+            --repo "$GITHUB_REPOSITORY" \
             --title "ITTC Phone ${GITHUB_REF_NAME}" \
             --notes "Install on Android, then open it and make it the phone app. Source: this repository (GPL-3.0), based on Fossify Phone."
