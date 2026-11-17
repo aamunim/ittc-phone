@@ -2,6 +2,7 @@ package org.fossify.phone.helpers
 
 import android.content.Context
 import android.net.Uri
+import android.provider.ContactsContract
 import android.telecom.Call
 import org.fossify.commons.extensions.formatPhoneNumber
 import org.fossify.commons.extensions.getMyContactsCursor
@@ -37,6 +38,23 @@ fun getCallContact(context: Context, call: Call?, callback: (CallContact) -> Uni
         val uri = Uri.decode(handle)
         if (uri.startsWith("tel:")) {
             val number = uri.substringAfter("tel:")
+            val shownNumber = if (context.config.formatPhoneNumbers) number.formatPhoneNumber() else number
+
+            // 🎓 ITTC: the name at once. Android's own number lookup answers in milliseconds;
+            // loading every contact first (below) took 5-10 s on a phone with many contacts.
+            val quick = quickLookup(context, number)
+            if (quick != null) {
+                callContact.number = shownNumber
+                callContact.name = quick.name
+                callContact.photoUri = quick.photoUri
+                callContact.numberLabel = quick.label
+                callback(callContact)
+                return@ensureBackgroundThread
+            }
+            // (not a phone contact: show the number now; the full search below still finds a
+            // contact kept only in Fossify's private list)
+            callback(CallContact(shownNumber, "", shownNumber, ""))
+
             ContactsHelper(context).getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
                 val privateContacts = MyContactsContentProvider.getContacts(context, privateCursor)
                 if (privateContacts.isNotEmpty()) {
@@ -76,5 +94,39 @@ fun getCallContact(context: Context, call: Call?, callback: (CallContact) -> Uni
                 callback(callContact)
             }
         }
+    }
+}
+
+private class QuickContact(val name: String, val photoUri: String, val label: String)
+
+/** The phone contact with this number, by Android's own indexed lookup (null: none / not allowed) */
+private fun quickLookup(context: Context, number: String): QuickContact? {
+    if (number.isBlank()) return null
+    return try {
+        val lookup = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
+        context.contentResolver.query(
+            lookup,
+            arrayOf(
+                ContactsContract.PhoneLookup.DISPLAY_NAME,
+                ContactsContract.PhoneLookup.PHOTO_URI,
+                ContactsContract.PhoneLookup.TYPE,
+                ContactsContract.PhoneLookup.LABEL,
+            ),
+            null,
+            null,
+            null,
+        )?.use { c ->
+            if (!c.moveToFirst()) return null
+            val name = c.getString(0)?.takeIf { it.isNotBlank() } ?: return null
+            val type = if (c.isNull(2)) -1 else c.getInt(2)
+            val label = if (type < 0) "" else try {
+                context.getPhoneNumberTypeText(type, c.getString(3).orEmpty())
+            } catch (_: Throwable) {
+                ""
+            }
+            QuickContact(name, c.getString(1).orEmpty(), label)
+        }
+    } catch (_: Throwable) {
+        null // (no contacts permission, …: the full search below)
     }
 }
