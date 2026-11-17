@@ -27,12 +27,6 @@
         android:name="android.permission.USE_FINGERPRINT"
         tools:node="remove" />
 
-    <!-- 🎓 ITTC: talk to the ITTC Admission Tracker app (only apps signed with the same key).
-         Both apps declare this permission, so the order they are installed in does not matter. -->
-    <permission
-        android:name="com.abamunim.leads.permission.ITTC_PHONE"
-        android:protectionLevel="signature" />
-    <uses-permission android:name="com.abamunim.leads.permission.ITTC_PHONE" />
 
     <queries>
         <!-- 🎓 ITTC Admission Tracker: the lead lookup and the call-ended message -->
