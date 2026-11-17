@@ -53,6 +53,7 @@ class IttcAfterCallActivity : SimpleActivity() {
             finish()
             return
         }
+        IttcBridge.afterCallShown(number)
         val name = intent.getStringExtra(NAME).orEmpty()
         val talked = intent.getIntExtra(TALKED_SEC, 0)
         val outgoing = intent.getBooleanExtra(OUTGOING, false)
