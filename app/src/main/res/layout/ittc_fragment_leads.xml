@@ -1,33 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 🎓 ITTC: the "Leads" tab — the signed-in user's own open leads (from the Tracker) -->
+<!-- 🎓 ITTC: the "Leads" tab — open leads from the Tracker (a super admin: everyone's) -->
 <org.fossify.phone.fragments.IttcLeadsFragment xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/ittc_leads_fragment"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <HorizontalScrollView
-        android:id="@+id/ittc_leads_chips_scroll"
+    <LinearLayout
+        android:id="@+id/ittc_leads_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:scrollbars="none">
+        android:orientation="vertical">
 
-        <LinearLayout
-            android:id="@+id/ittc_leads_chips"
-            android:layout_width="wrap_content"
+        <!-- whose leads (super admin) + today / overdue / new / hot / all -->
+        <HorizontalScrollView
+            android:id="@+id/ittc_leads_chips_scroll"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingStart="@dimen/medium_margin"
-            android:paddingTop="@dimen/small_margin"
-            android:paddingEnd="@dimen/medium_margin"
-            android:paddingBottom="@dimen/small_margin" />
-    </HorizontalScrollView>
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/ittc_leads_chips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/medium_margin"
+                android:paddingTop="@dimen/small_margin"
+                android:paddingEnd="@dimen/medium_margin"
+                android:paddingBottom="@dimen/tiny_margin" />
+        </HorizontalScrollView>
+
+        <!-- pipeline stages -->
+        <HorizontalScrollView
+            android:id="@+id/ittc_leads_stages_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/ittc_leads_stages"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/medium_margin"
+                android:paddingTop="@dimen/tiny_margin"
+                android:paddingEnd="@dimen/medium_margin"
+                android:paddingBottom="@dimen/tiny_margin" />
+        </HorizontalScrollView>
+
+        <!-- "⟳ Updated 2 min ago" (tap: update now) / "the Tracker is closed" -->
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/ittc_leads_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:alpha="0.7"
+            android:background="?attr/selectableItemBackground"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingTop="@dimen/tiny_margin"
+            android:paddingEnd="@dimen/activity_margin"
+            android:paddingBottom="@dimen/tiny_margin"
+            android:textSize="@dimen/small_text_size"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <org.fossify.commons.views.MyTextView
         android:id="@+id/ittc_leads_placeholder"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/ittc_leads_chips_scroll"
+        android:layout_below="@+id/ittc_leads_header"
         android:alpha="0.8"
         android:gravity="center"
         android:padding="@dimen/activity_margin"
@@ -38,7 +79,7 @@
         android:id="@+id/ittc_leads_list"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@+id/ittc_leads_chips_scroll"
+        android:layout_below="@+id/ittc_leads_header"
         android:clipToPadding="false"
         android:paddingBottom="@dimen/recyclerview_fab_padding"
         android:scrollbars="none"

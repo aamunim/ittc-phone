@@ -279,6 +279,10 @@ object IttcBridge {
         val lastContacted: Long?,
         val attempts: Int,
         val lastNote: String?,
+        // (Tracker 2.10.6+; null with an older one)
+        val stageId: String? = null,
+        val courseId: String? = null,
+        val assignedTo: String? = null,
     ) {
         val callNumber: String? get() = phone ?: altPhone ?: whatsapp
     }
@@ -316,6 +320,9 @@ object IttcBridge {
                             lastContacted = parseTime(col("last_contacted")),
                             attempts = col("call_attempts")?.toIntOrNull() ?: 0,
                             lastNote = col("last_note"),
+                            stageId = col("stage_id"),
+                            courseId = col("course_id"),
+                            assignedTo = col("assigned_to"),
                         )
                     }
                     out
@@ -333,16 +340,155 @@ object IttcBridge {
             null
         }
 
-    /** Ask the Tracker for a fresh list (it fetches one when it is running) */
-    fun askRefresh(context: Context) {
+    /**
+     * Ask the Tracker for a fresh list (it fetches one when it is running).
+     * done(true): asked; false: the Tracker is not running; null: no Tracker (on the main thread)
+     */
+    fun askRefresh(context: Context, done: ((Boolean?) -> Unit)? = null) {
         val app = context.applicationContext
         recents.execute {
-            try {
-                if (trackerReady(app)) withTracker(app) { it.call("refresh_leads", null, null) }
+            val answer = try {
+                if (trackerReady(app)) withTracker(app) { it.call("refresh_leads", null, null) }?.getString("result") else null
             } catch (_: Throwable) {
+                null
             }
+            done?.let { d -> main.post { d(answer?.let { it == "asked" }) } }
         }
     }
+
+    // -------------------------------------------------------------------
+    // 🧭 Who is signed in, the open pipeline stages and the people (Tracker 2.10.6+)
+    // -------------------------------------------------------------------
+    data class Stage(
+        val id: String,
+        val name: String,
+        val color: Int?,
+        val noteRequired: Boolean,
+        val askDate: Boolean,
+        val dateLabel: String?,
+        val followUpDays: Int?,
+        /** null: every course */
+        val courseIds: Set<String>?,
+    ) {
+        fun forCourse(courseId: String?): Boolean = courseIds == null || (courseId != null && courseId in courseIds)
+    }
+
+    data class Person(val id: String, val name: String, val role: String)
+
+    data class PhoneMeta(
+        val meId: String?,
+        val isSuper: Boolean,
+        val stages: List<Stage>,
+        val people: List<Person>,
+        /** when the Tracker fetched the list (server time) */
+        val at: Long?,
+    )
+
+    @Volatile
+    var metaCache: PhoneMeta? = null
+        private set
+
+    /** null: an older Tracker (no stages) or none yet; call off the main thread */
+    fun phoneMeta(context: Context): PhoneMeta? {
+        val app = context.applicationContext
+        if (!trackerReady(app)) return null
+        return try {
+            withTracker(app) { client ->
+                client.query(Uri.parse("$PROVIDER/phone_meta"), null, null, null, null)?.use { c ->
+                    if (!c.moveToFirst()) return@use null
+                    val i = c.getColumnIndex("json")
+                    if (i < 0 || c.isNull(i)) null else parseMeta(c.getString(i))
+                }
+            }
+        } catch (_: Throwable) {
+            null
+        }?.also { metaCache = it }
+    }
+
+    private fun parseMeta(json: String): PhoneMeta? {
+        val o = try {
+            org.json.JSONObject(json)
+        } catch (_: Throwable) {
+            return null
+        }
+        fun org.json.JSONObject.str(k: String): String? = if (isNull(k)) null else optString(k).takeIf { it.isNotBlank() }
+        val me = o.optJSONObject("me")
+        val stages = ArrayList<Stage>()
+        o.optJSONArray("stages")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val s = arr.optJSONObject(i) ?: continue
+                val id = s.str("id") ?: continue
+                stages += Stage(
+                    id = id,
+                    name = s.str("name") ?: continue,
+                    color = s.str("color")?.let {
+                        try {
+                            android.graphics.Color.parseColor(it)
+                        } catch (_: Throwable) {
+                            null
+                        }
+                    },
+                    noteRequired = s.optBoolean("note_required"),
+                    askDate = s.optBoolean("ask_date"),
+                    dateLabel = s.str("date_label"),
+                    followUpDays = if (s.isNull("follow_up_days")) null else s.optInt("follow_up_days"),
+                    courseIds = s.optJSONArray("course_ids")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() },
+                )
+            }
+        }
+        val people = ArrayList<Person>()
+        o.optJSONArray("people")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val p = arr.optJSONObject(i) ?: continue
+                people += Person(p.str("id") ?: continue, p.str("name") ?: "", p.str("role") ?: "")
+            }
+        }
+        return PhoneMeta(
+            meId = me?.str("id"),
+            isSuper = me?.optBoolean("super") == true,
+            stages = stages,
+            people = people,
+            at = parseTime(o.str("at")),
+        )
+    }
+
+    /**
+     * ⚡ Called (on the main thread) when the Tracker saves a new list; null when there is no
+     * Tracker. Unregister with [unwatchLeads].
+     */
+    fun watchLeads(context: Context, callback: () -> Unit): android.database.ContentObserver? {
+        val app = context.applicationContext
+        if (!trackerReady(app)) return null
+        val observer = object : android.database.ContentObserver(main) {
+            override fun onChange(selfChange: Boolean) {
+                callback()
+            }
+        }
+        return try {
+            app.contentResolver.registerContentObserver(Uri.parse("$PROVIDER/my_leads"), false, observer)
+            observer
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    fun unwatchLeads(context: Context, observer: android.database.ContentObserver?) {
+        observer ?: return
+        try {
+            context.applicationContext.contentResolver.unregisterContentObserver(observer)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Opens the Tracker (its own launcher screen) */
+    fun openTracker(context: Context): Boolean =
+        try {
+            val intent = context.packageManager.getLaunchIntentForPackage(TRACKER) ?: return false
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: Throwable) {
+            false
+        }
 
     /**
      * 📝 The after-call result (Tracker 2.10.5+): queued in the Tracker, which sends it.
@@ -356,6 +502,7 @@ object IttcBridge {
         note: String?,
         nextAt: Long?,
         startedAt: Long? = null,
+        stage: Stage? = null,
     ): Boolean {
         val app = context.applicationContext
         if (!trackerReady(app)) return false
@@ -367,6 +514,13 @@ object IttcBridge {
             nextAt?.let { putString("next_at", it.toString()) }
             // (the call log row not found yet: the Tracker finds it itself by number and time)
             startedAt?.let { putString("started_at", it.toString()) }
+            // (a new pipeline stage, Tracker 2.10.6+: it sends the note / the date with it when the
+            // stage wants them)
+            stage?.let {
+                putString("stage_id", it.id)
+                if (it.noteRequired) putString("stage_note", "1")
+                if (it.askDate) putString("stage_due", "1")
+            }
         }
         return try {
             val result = withTracker(app) { it.call("save_outcome", rowIdFor(number), extras) }

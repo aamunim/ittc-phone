@@ -5,20 +5,21 @@
     <string name="ittc_lead_badge" translatable="false">🎓 Lead</string>
     <!-- after a lead call -->
     <string name="ittc_after_call_badge" translatable="false">🎓 Lead · call ended</string>
-    <string name="ittc_add_note" translatable="false">📝 More in the Tracker</string>
     <string name="ittc_what_happened" translatable="false">What happened?</string>
     <string name="ittc_note_hint" translatable="false">Note (optional)</string>
     <string name="ittc_next_call" translatable="false">Next call</string>
     <string name="ittc_save" translatable="false">✅ Save</string>
     <string name="ittc_saved" translatable="false">✅ Saved — the Tracker sends it</string>
     <string name="ittc_old_tracker" translatable="false">Update ITTC Admission Tracker (2.10.5) to save here — opening it instead</string>
+    <string name="ittc_stage" translatable="false">Pipeline stage</string>
+    <string name="ittc_stage_needs_note" translatable="false">✍️ “%s” needs a note</string>
+    <string name="ittc_stage_needs_date" translatable="false">📅 “%1$s” needs the %2$s — pick it under Next call</string>
+    <string name="ittc_stage_auto_next" translatable="false">Next call is set by the stage: in %d day(s), 10 AM</string>
+    <string name="ittc_stage_old_tracker" translatable="false">Update ITTC Admission Tracker (2.10.6) to change the stage here</string>
     <string name="ittc_pick_outcome" translatable="false">Choose what happened, or write a note</string>
-    <string name="ittc_call_again" translatable="false">📞 Call again</string>
-    <string name="ittc_open_lead" translatable="false">👤 Open the lead</string>
     <string name="ittc_close" translatable="false">Close</string>
     <string name="ittc_whatsapp" translatable="false">💬 WhatsApp</string>
     <string name="ittc_sms" translatable="false">✉️ SMS</string>
-    <string name="ittc_no_app" translatable="false">No app on this phone for that</string>
     <string name="ittc_talked" translatable="false">📞 Talked %s</string>
     <string name="ittc_no_answer" translatable="false">📵 No answer</string>
     <string name="ittc_busy" translatable="false">📵 Busy</string>
@@ -35,6 +36,16 @@
     <string name="ittc_leads_none" translatable="false">No leads here.\nYour open leads come from ITTC Admission Tracker.</string>
     <string name="ittc_leads_no_tracker" translatable="false">Install / update ITTC Admission Tracker (2.10.5 or newer) and sign in: your leads show here.</string>
     <string name="ittc_leads_loading" translatable="false">Loading your leads…</string>
+    <string name="ittc_scope_my" translatable="false">👤 My</string>
+    <string name="ittc_scope_all" translatable="false">👥 All</string>
+    <string name="ittc_scope_team_leads" translatable="false">🧑‍💼 Team Leads</string>
+    <string name="ittc_scope_callers" translatable="false">📞 Callers</string>
+    <string name="ittc_scope_all_team_leads" translatable="false">All Team Leads</string>
+    <string name="ittc_scope_all_callers" translatable="false">All Callers</string>
+    <string name="ittc_stage_all" translatable="false">All stages %d</string>
+    <string name="ittc_updated" translatable="false">⟳ Updated %s</string>
+    <string name="ittc_updating" translatable="false">⟳ Updating…</string>
+    <string name="ittc_tracker_closed" translatable="false">⚠ ITTC Admission Tracker is closed — tap to open it for the latest list</string>
     <string name="ittc_lead_call" translatable="false">📞 Call</string>
     <string name="ittc_lead_call_alt" translatable="false">📞 Call the other number</string>
     <string name="ittc_lead_open" translatable="false">👤 Open in the Tracker</string>

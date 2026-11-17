@@ -83,6 +83,27 @@ the next call) at once when it is running, else on its next sync.
 
 Asks this app for a fresh list (`asked` when it is running, else `later`).
 
+### Live list, stages and super admins (2.10.6+)
+
+- `my_leads` also has `stage_id, course_id, assigned_to`. A **super admin** gets every open lead
+  (≤ 2000, their own first) from `my_phone_data()`; everyone else only their own (≤ 500).
+- Each new list is announced with `notifyChange(content://com.abamunim.leads.leadlookup/my_leads)`:
+  ITTC Phone registers a `ContentObserver` on that URI and re-reads it. The app fetches a new list
+  ~2 s after the server pings it (Supabase Realtime INSERTs on `phone_lead_pings`, added by triggers
+  when a lead's owner, stage, next call… changes; a super admin's "any lead" ping waits up to 20 s)
+  while it runs, and when asked (`refresh_leads`).
+
+      query content://com.abamunim.leads.leadlookup/phone_meta
+
+  One row, one column `json`: `{ me: {id, super}, stages: [{id, key, name, color, note_required,
+  ask_date, date_label, follow_up_days, course_ids}], people: [{id, name, role}], at }` — the open
+  pipeline stages in order (`course_ids` null = every course), the Team Leads and Callers (super
+  admins only), and when the list was fetched. None before the first fetch / with an older app.
+
+- `save_outcome` takes `stage_id` (+ `stage_note` "1": the stage wants the note; `stage_due` "1":
+  it wants a date, which is `next_at`). This app moves the lead with `move_lead_stage` before the
+  next call is scheduled; a stage the server refuses becomes a note on the lead.
+
 ## Opening a lead (ITTC Phone → this app)
 
     Intent(ACTION_VIEW, "leadmanagement://leads/<lead_id>?callNote=<call log _ID>").setPackage(…)

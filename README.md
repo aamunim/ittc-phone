@@ -13,10 +13,8 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
 - 📞 **Lead calls reach the Tracker the moment they end** — ITTC Phone tells the Tracker which
   row of the phone's call log the call is; the Tracker reads that row itself. Only lead calls
   are handed over; personal calls are never sent anywhere.
-- 📝 **After a lead call** — a screen with the lead, how the call went (talked 2m 34s / no answer /
-  missed) and "Add a note" (opens the Tracker's note popup for that very call), "Call again",
-  "Open the lead", "WhatsApp", "SMS". Calls started from the Tracker skip it: the Tracker shows
-  its own popup.
+- 📝 **After a lead call** — a screen with the lead and how the call went (talked 2m 34s / no answer /
+  missed). Calls started from the Tracker skip it: the Tracker shows its own popup.
 - 🕘 **Recents** — lead numbers show the lead's name and "🎓 Lead · course · stage".
 - 🔢 **Dial pad** — a full number that is a lead's shows who it is above the keys (tap: the lead).
 - ⚡ **Quick open** — Recents shows the list from last time at once while the call log is read
@@ -29,6 +27,13 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
 - 📝 **Result after a call** (Tracker 2.10.5+) — what happened, a note and the next call, saved
   through the Tracker (it sends it); an older Tracker gets its own note popup instead.
 - 🔢 **Dial pad name search** — your leads whose name (by the keys) or number matches.
+- ⚡ **Live Leads tab** (Tracker 2.10.6+) — a lead assigned, moved or rescheduled shows in seconds
+  while the Tracker runs; "⟳ Updated 2 min ago" (tap: update now), or a warning when the Tracker
+  is closed. A row of **pipeline stage** chips.
+- 👥 **Super admins** see everyone's open leads (≤ 2000) and pick whose in one chip: All / My /
+  Team Leads / Callers (all of them, or one person).
+- 🧭 **Stage after a call** (Tracker 2.10.6+) — change the pipeline stage with the result; a stage
+  that needs a note or a date asks for it.
 - App name "ITTC Phone". The app id stays `org.fossify.phone` because Fossify's shared library
   checks for it (calls, the phone-app role, app icons). So ITTC Phone and the real Fossify Phone
   cannot be installed together; uninstall Fossify Phone first if it is there.
