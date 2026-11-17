@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.telecom.TelecomManager
 import android.widget.Toast
@@ -50,8 +52,13 @@ class DialerActivity : SimpleActivity() {
                         putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, false)
                         telecomManager.placeCall(callNumber, this)
                     }
+                    // 🎓 ITTC: stay (invisible) a moment, so ITTC Phone is still in front when the call
+                    // screen opens: from the background Android shows only a notification for it
+                    // (a call started from the Admission Tracker's Call button comes in here)
+                    Handler(Looper.getMainLooper()).postDelayed({ finish() }, 2500)
+                } else {
+                    finish()
                 }
-                finish()
             }
         } catch (e: Exception) {
             showErrorToast(e)
