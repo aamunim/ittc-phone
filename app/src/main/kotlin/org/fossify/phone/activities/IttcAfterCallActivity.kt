@@ -232,13 +232,15 @@ class IttcAfterCallActivity : SimpleActivity() {
         val chosen = outcome
         val next = nextAt
         ensureBackgroundThread {
-            // (the call's row in the call log, so the result lands on that very call: up to ~3.5 s)
+            // (the call's row in the call log, so the result lands on that very call; if it is not
+            // found yet, the Tracker finds it later by the number and the call's start time)
             var tries = 0
-            while (chosen != null && IttcBridge.rowIdFor(number) == null && tries < 7) {
+            while (chosen != null && IttcBridge.rowIdFor(number) == null && tries < 3) {
                 Thread.sleep(500)
                 tries++
             }
-            val ok = IttcBridge.saveOutcome(this, leadId, number, chosen, note, next)
+            val started = intent.getLongExtra(STARTED_AT, 0L).takeIf { it > 0 }
+            val ok = IttcBridge.saveOutcome(this, leadId, number, chosen, note, next, started)
             runOnUiThread {
                 saving = false
                 binding.ittcAcSave.isEnabled = true
@@ -350,8 +352,17 @@ class IttcAfterCallActivity : SimpleActivity() {
         private const val OUTGOING = "ittc_outgoing"
         private const val TALKED_SEC = "ittc_talked_sec"
         private const val REASON = "ittc_reason"
+        private const val STARTED_AT = "ittc_started_at"
 
-        fun open(context: Context, lead: IttcBridge.Lead, number: String, outgoing: Boolean, talkedSec: Int, reason: String?) {
+        fun open(
+            context: Context,
+            lead: IttcBridge.Lead,
+            number: String,
+            outgoing: Boolean,
+            talkedSec: Int,
+            reason: String?,
+            startedAt: Long,
+        ) {
             try {
                 context.startActivity(
                     Intent(context, IttcAfterCallActivity::class.java)
@@ -365,7 +376,8 @@ class IttcAfterCallActivity : SimpleActivity() {
                         .putExtra(NUMBER, number)
                         .putExtra(OUTGOING, outgoing)
                         .putExtra(TALKED_SEC, talkedSec)
-                        .putExtra(REASON, reason),
+                        .putExtra(REASON, reason)
+                        .putExtra(STARTED_AT, startedAt),
                 )
             } catch (_: Throwable) {
                 // (not allowed right now: the Tracker's sync still has the call)

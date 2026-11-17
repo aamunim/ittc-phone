@@ -125,8 +125,15 @@ class RecentsFragment(
 
     override fun onSearchClosed() {
         searchQuery = null
-        showOrHidePlaceholder(allRecentCalls.isEmpty())
-        recentsAdapter?.updateItems(allRecentCalls)
+        // (🎓 "Leads only" still applies)
+        val all = allRecentCalls
+        ensureBackgroundThread {
+            val shown = ittcFilter(all)
+            activity?.runOnUiThread {
+                showOrHidePlaceholder(shown.isEmpty())
+                recentsAdapter?.updateItems(shown)
+            }
+        }
     }
 
     override fun onSearchQueryChanged(text: String) {

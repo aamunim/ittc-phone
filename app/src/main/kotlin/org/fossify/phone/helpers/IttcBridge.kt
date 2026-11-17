@@ -355,6 +355,7 @@ object IttcBridge {
         outcome: String?,
         note: String?,
         nextAt: Long?,
+        startedAt: Long? = null,
     ): Boolean {
         val app = context.applicationContext
         if (!trackerReady(app)) return false
@@ -364,6 +365,8 @@ object IttcBridge {
             outcome?.let { putString("outcome", it) }
             note?.takeIf { it.isNotBlank() }?.let { putString("note", it) }
             nextAt?.let { putString("next_at", it.toString()) }
+            // (the call log row not found yet: the Tracker finds it itself by number and time)
+            startedAt?.let { putString("started_at", it.toString()) }
         }
         return try {
             val result = withTracker(app) { it.call("save_outcome", rowIdFor(number), extras) }
@@ -461,7 +464,7 @@ object IttcBridge {
                 val show = canShow && !(outgoing && lead.appCall)
                 if (show) {
                     main.post {
-                        IttcAfterCallActivity.open(app, lead, number, outgoing, talkedSec, reason)
+                        IttcAfterCallActivity.open(app, lead, number, outgoing, talkedSec, reason, startedAt)
                     }
                 }
                 val id = findRow(app, number, startedAt) ?: return@execute

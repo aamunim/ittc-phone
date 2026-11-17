@@ -79,7 +79,7 @@ class DialpadActivity : SimpleActivity() {
 
     // 🎓 ITTC: each contact's name as dial-pad digits, worked out once (not on every key press)
     @Volatile
-    private var t9Names: Map<Int, String> = emptyMap()
+    private var t9Names: Map<Contact, String> = emptyMap()
     private var filterJob: Job? = null
     private var speedDialValues = ArrayList<SpeedDial>()
     private var privateCursor: Cursor? = null
@@ -300,7 +300,8 @@ class DialpadActivity : SimpleActivity() {
             allContacts.sort()
         }
         // 🎓 ITTC: names as dial-pad digits, once
-        t9Names = allContacts.associate { it.id to t9Name(it) }
+        // (by the object itself: a private contact can share an id with a phone contact)
+        t9Names = java.util.IdentityHashMap<Contact, String>().apply { allContacts.forEach { put(it, t9Name(it)) } }
 
         runOnUiThread {
             if (!checkDialIntent() && binding.dialpadInput.value.isEmpty()) {
@@ -337,7 +338,7 @@ class DialpadActivity : SimpleActivity() {
             val filtered = withContext(Dispatchers.Default) {
                 contacts.filter { contact ->
                     ensureActive()
-                    val convertedName = names[contact.id] ?: t9Name(contact)
+                    val convertedName = names[contact] ?: t9Name(contact)
                     contact.doesContainPhoneNumber(text) || (convertedName.contains(text, true))
                 }.sortedWith(compareBy {
                     !it.doesContainPhoneNumber(text)
@@ -404,7 +405,7 @@ class DialpadActivity : SimpleActivity() {
         hits.forEach { l ->
             val number = l.callNumber ?: return@forEach
             box.addView(TextView(this).apply {
-                text = listOfNotNull("🎓 ${l.name}", l.course, number).joinToString(" · ")
+                this.text = listOfNotNull("🎓 ${l.name}", l.course, number).joinToString(" · ")
                 setTextColor(primary)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
                 maxLines = 1
