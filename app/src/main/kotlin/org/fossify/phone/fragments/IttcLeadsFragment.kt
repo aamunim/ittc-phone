@@ -22,6 +22,7 @@ import org.fossify.phone.databinding.IttcFragmentLeadsBinding
 import org.fossify.phone.databinding.IttcItemLeadBinding
 import org.fossify.phone.extensions.startCallIntent
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcCrash
 import java.util.Calendar
 import java.util.Locale
 
@@ -146,8 +147,18 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private fun load() {
         val ctx = context ?: return
         ensureBackgroundThread {
-            val leads = IttcBridge.myLeads(ctx)
-            val m = IttcBridge.phoneMeta(ctx)
+            val leads = try {
+                IttcBridge.myLeads(ctx)
+            } catch (e: Throwable) {
+                IttcCrash.record(ctx, e, "Leads tab: reading the list")
+                null
+            }
+            val m = try {
+                IttcBridge.phoneMeta(ctx)
+            } catch (e: Throwable) {
+                IttcCrash.record(ctx, e, "Leads tab: reading the stages")
+                null
+            }
             post {
                 // (the Tracker installed / signed in after this tab opened: watch it now)
                 if (observer == null && isAttachedToWindow) observer = IttcBridge.watchLeads(context) { reload() }
@@ -263,8 +274,20 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         render()
     }
 
+    /** Draw the tab; an error is kept (to report) and shown instead of stopping the app */
     private fun render() {
         if (!::binding.isInitialized) return
+        try {
+            renderNow()
+        } catch (e: Throwable) {
+            IttcCrash.record(context, e, "Leads tab")
+            binding.ittcLeadsPlaceholder.text = "⚠️ The Leads tab could not be shown (${e.javaClass.simpleName}: ${e.message})"
+            binding.ittcLeadsPlaceholder.beVisibleIf(true)
+            binding.ittcLeadsList.beVisibleIf(false)
+        }
+    }
+
+    private fun renderNow() {
         val today = startOfToday()
         val scoped = all.filter { inScope(it) }
         // (a stage that is gone: all stages)
