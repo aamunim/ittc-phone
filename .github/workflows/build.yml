@@ -8,6 +8,9 @@ on:
   push:
     branches: ["**"]
     tags: ["v*"]
+  # a release published on GitHub's Releases page (its tag is made there): build and attach the APK
+  release:
+    types: [published]
   pull_request:
   workflow_dispatch:
 
@@ -104,7 +107,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp apk/*.apk "ITTC-Phone-${GITHUB_REF_NAME}.apk"
-          gh release create "$GITHUB_REF_NAME" "ITTC-Phone-${GITHUB_REF_NAME}.apk" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "ITTC Phone ${GITHUB_REF_NAME}" \
-            --notes "Install on Android, then open it and make it the phone app. Source: this repository (GPL-3.0), based on Fossify Phone."
+          # made by hand on GitHub's Releases page already: just add the APK to it
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "ITTC-Phone-${GITHUB_REF_NAME}.apk" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "ITTC-Phone-${GITHUB_REF_NAME}.apk" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "ITTC Phone ${GITHUB_REF_NAME}" \
+              --notes "Install on Android, then open it and make it the phone app. Source: this repository (GPL-3.0), based on Fossify Phone."
+          fi
