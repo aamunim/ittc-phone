@@ -2,30 +2,40 @@ package org.fossify.phone.helpers
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.provider.CallLog
 import android.telecom.Call
 import android.telecom.DisconnectCause
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 /**
  * 🎓 ITTC Phone ↔ ITTC Admission Tracker (package com.abamunim.leads).
  *
- * The Tracker is a separate, private app. The two only talk through Android:
- *  - "is this number a lead?"  content://com.abamunim.leads.leadlookup/number/<number>
- *  - "a call ended"            a broadcast to the Tracker with the call log's _ID for the call
- * Both are closed to every other app by a signature permission (same signing key).
- * The full contract is in docs/ITTC.md. Nothing here ever leaves the phone.
+ * The Tracker is a separate, private app. The two only talk through its provider:
+ *  - "is this number a lead?"  query content://com.abamunim.leads.leadlookup/number/<number>
+ *  - "a call ended"            call(…, "call_ended", <the call log's _ID for the call>, …)
+ * Each side checks the other's signing certificate against a fixed list (the Tracker comes from
+ * Google Play, re-signed with Google's key). The full contract is in docs/ITTC.md.
+ * Nothing here ever leaves the phone.
  */
 object IttcBridge {
     private const val TRACKER = "com.abamunim.leads"
-    private const val PERMISSION = "com.abamunim.leads.permission.ITTC_PHONE"
-    private const val LOOKUP = "content://com.abamunim.leads.leadlookup/number/"
-    private const val ACTION_CALL_ENDED = "com.abamunim.leads.ITTC_PHONE_CALL_ENDED"
+    private const val AUTHORITY = "com.abamunim.leads.leadlookup"
+    private const val PROVIDER = "content://$AUTHORITY"
+    private const val LOOKUP = "$PROVIDER/number/"
+
+    /** SHA-256 of the Tracker's signing certificates: Google Play's app signing key, and the upload key (APK builds) */
+    private val TRACKER_CERTS = setOf(
+        "d07ea3e9d65a0df3027e771b1b14e79833fc1c87cadae7810202e395e28e4e54",
+        "2955a704b8bab01f1fb8ed467a07ce3906cc46f783c33ba098b30e74f4710d83",
+    )
 
     // (the call screen's lookups never wait behind a call-log search)
     private val io = Executors.newSingleThreadExecutor()
@@ -47,13 +57,28 @@ object IttcBridge {
         }
     }
 
-    /** The Tracker is installed with our key (it can answer and listen) */
+    /**
+     * The real Tracker is installed and owns the provider (its certificate is on the list:
+     * nothing is ever sent to another app)
+     */
+    @Suppress("DEPRECATION")
     private fun trackerReady(context: Context): Boolean =
         try {
-            context.packageManager.checkSignatures(context.packageName, TRACKER) == PackageManager.SIGNATURE_MATCH
+            val pm = context.packageManager
+            val certs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val s = pm.getPackageInfo(TRACKER, PackageManager.GET_SIGNING_CERTIFICATES).signingInfo
+                if (s == null) emptyArray() else if (s.hasMultipleSigners()) s.apkContentsSigners else s.signingCertificateHistory
+            } else {
+                pm.getPackageInfo(TRACKER, PackageManager.GET_SIGNATURES).signatures
+            } ?: emptyArray()
+            pm.resolveContentProvider(AUTHORITY, 0)?.packageName == TRACKER &&
+                certs.any { sha256(it.toByteArray()) in TRACKER_CERTS }
         } catch (_: Throwable) {
             false
         }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     private fun clean(number: String?): String? =
         number?.filter { it.isDigit() || it == '+' }?.takeIf { it.count(Char::isDigit) >= 6 }
@@ -76,9 +101,34 @@ object IttcBridge {
         }
     }
 
-    private fun query(context: Context, number: String): Lead? {
+    /**
+     * The Tracker's provider as an "unstable" client: if the Tracker dies mid-request we get an
+     * exception (caught) instead of Android killing the phone app with it.
+     */
+    private fun <T> withTracker(context: Context, block: (android.content.ContentProviderClient) -> T?): T? {
+        val client = context.contentResolver.acquireUnstableContentProviderClient(AUTHORITY) ?: return null
+        return try {
+            block(client)
+        } finally {
+            client.close()
+        }
+    }
+
+    private fun query(context: Context, number: String): Lead? = withTracker(context) { client ->
         val uri = Uri.parse(LOOKUP + Uri.encode(number))
-        context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+        // (ask the Tracker to give up after 3 s, so a slow one holds up the next calls less)
+        val cancel = CancellationSignal()
+        val timeout = Runnable { cancel.cancel() }
+        main.postDelayed(timeout, 3_000)
+        try {
+            readLead(client.query(uri, null, null, null, null, cancel))
+        } finally {
+            main.removeCallbacks(timeout)
+        }
+    }
+
+    private fun readLead(cursor: android.database.Cursor?): Lead? {
+        cursor?.use { c ->
             if (!c.moveToFirst()) return null
             fun col(name: String): String? {
                 val i = c.getColumnIndex(name)
@@ -125,13 +175,11 @@ object IttcBridge {
                 // only lead calls: a personal call is never handed over
                 if (query(app, number) == null) return@execute
                 val id = findRow(app, number, startedAt) ?: return@execute
-                val intent = Intent(ACTION_CALL_ENDED)
-                    .setPackage(TRACKER)
-                    .addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
-                    .putExtra("call_log_id", id)
-                    .putExtra("number", number)
-                if (reason != null) intent.putExtra("end_reason", reason)
-                app.sendBroadcast(intent, PERMISSION)
+                val extras = Bundle().apply {
+                    putString("number", number)
+                    if (reason != null) putString("end_reason", reason)
+                }
+                withTracker(app) { it.call("call_ended", id, extras) }
             } catch (_: Throwable) {
                 // never break the phone because of the Tracker; its own sync is the backup
             }

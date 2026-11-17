@@ -1,64 +1,60 @@
 # 📞 ITTC Phone ↔ ITTC Admission Tracker
 
 ITTC Phone is a separate app (made from Fossify Phone, GPL-3.0, source at
-github.com/aamunim/ittc-phone). Its app id stays `org.fossify.phone` (Fossify's shared library
-needs it); it is told apart from the real Fossify Phone by the signing key. This app stays private; the two only talk through
-the Android intents below. Both apps must be **signed with the same key**.
+github.com/aamunim/ittc-phone). Its app id stays `org.fossify.phone` (Fossify's shared
+library needs it). This app stays private; the two only talk through the provider below.
 
-## Permission (declared by both apps, `protectionLevel="signature"`)
+## Who may talk to whom: certificate lists
 
-    com.abamunim.leads.permission.ITTC_PHONE
+No shared permission. This app comes from Google Play, re-signed with Google's key (Play App
+Signing), which ITTC Phone can never carry; two apps declaring one permission with different
+keys cannot even be installed together. Instead each side checks the other's signing
+certificate (SHA-256) against a fixed list, on every request:
 
-## 0. Things ITTC Phone must have
+| app | certificates it is accepted with |
+|---|---|
+| ITTC Phone (`org.fossify.phone`) | upload key `2955a704…0d83` (GitHub Actions signs with it) |
+| Tracker (`com.abamunim.leads`) | Google Play app signing key `d07ea3e9…4e54`, upload key `2955a704…0d83` (APK builds) |
 
-- **Signed with exactly the key the installed main app carries.** The main app is built by
-  EAS (`credentialsSource: remote`): export that keystore with `eas credentials` and sign
-  ITTC Phone with it. If the installed main app ever carries a different key (e.g. Play App
-  Signing), the bridge cannot work, and the second app to be installed fails with
-  INSTALL_FAILED_DUPLICATE_PERMISSION — both apps declare the permission.
-- Android 11+ package visibility: `<queries><package android:name="com.abamunim.leads" /></queries>`
-  (visibility is not mutual: without it the lookup and the broadcast silently fail).
-- `<uses-permission android:name="com.abamunim.leads.permission.ITTC_PHONE" />` and the same
-  `<permission … android:protectionLevel="signature" />` declaration.
+The lists live in `IttcPhone.kt` (here) and `IttcBridge.kt` (ITTC Phone). A new signing key
+means adding its SHA-256 on both sides.
+
+## Android 11+ package visibility
+
+Each app lists the other in `<queries>` (this one: `org.fossify.phone`; ITTC Phone:
+`com.abamunim.leads`).
 
 ## 1. Is this number a lead? (ITTC Phone → this app)
 
-    content://com.abamunim.leads.leadlookup/number/<number>
+    query content://com.abamunim.leads.leadlookup/number/<Uri.encode(number)>
 
 One row or none, columns:
 `lead_id, name, rating, stage, course, last_note, student_ref, fee_due, next_call, owner`.
-One number at a time; the list itself is never handed out.
+One number at a time; the list itself is never handed out. Query off the main thread.
 
 ## 2. A call ended (ITTC Phone → this app)
 
-Broadcast with `setPackage("com.abamunim.leads")` (plus `FLAG_INCLUDE_STOPPED_PACKAGES`),
-action `com.abamunim.leads.ITTC_PHONE_CALL_ENDED`, sent with
-`sendBroadcast(intent, "com.abamunim.leads.permission.ITTC_PHONE")`.
+    contentResolver.call(Uri.parse("content://com.abamunim.leads.leadlookup"),
+                         "call_ended", <call log _ID>, Bundle{ number, end_reason })
 
-| extra | type | |
-|---|---|---|
-| `call_log_id` | String | **required**: the system call log's `_ID` for this call — read it *after* the system wrote the row (poll the call log for a few seconds after DISCONNECTED) |
-| `number` | String | the call's number (only used to check the row is that call) |
-| `end_reason` | String | optional: `hung_up`, `they_hung_up`, `busy`, `missed`, `declined`, `cancelled`, `error`, `restricted`, `answered_elsewhere`, `pulled` (letters, digits, `_`) |
+- `arg`: the system call log's `_ID` for the call, read *after* the system wrote the row.
+- `number`: only used to check that the row is that call.
+- `end_reason` (optional): `hung_up`, `they_hung_up`, `busy`, `missed`, `declined`, `cancelled`,
+  `error`, `restricted`, `answered_elsewhere`, `pulled` (letters, digits, `_`).
 
-The main app reads everything else (number, direction, time, length, SIM) from that
-call-log row itself, so the call is queued exactly as the call-log sync would queue it
-(same id): the sync, kept running as a backup, never counts it twice and the "add a note"
-notification comes once. Wrong / missing id: ignored, the backup sync picks the call up.
-Only lead numbers are kept; all others are dropped by the server.
-
-## Provider use
-
-Query off the main thread (it may start the main app's process), with the number
-`Uri.encode`d (`+880…`).
+Returns a Bundle with `result`: `added`, `known` (already queued), `later` (row not found: the
+backup sync picks it up), `sync_off`, or `error`. The main app reads everything else (number,
+direction, time, length, SIM) from that call-log row itself and queues it exactly as the
+call-log sync would (same id): the sync, kept running as a backup, never counts it twice and the
+"add a note" notification comes once. Only lead calls are handed over by ITTC Phone.
 
 ## Launch extra
 
-The main app opens ITTC Phone (with the boolean extra `ask_default` = true) when the user
-taps "Make it the phone app"; ITTC Phone asks for the phone (dialer) role by itself whenever it
-opens and is not the phone app yet.
+The main app opens ITTC Phone (with the boolean extra `ask_default` = true) when the user taps
+"Make it the phone app"; ITTC Phone asks for the phone (dialer) role by itself whenever it opens
+and is not the phone app yet.
 
 ## 3. Without ITTC Phone
 
-Not installed, or not the default phone app: nothing changes, calls sync from the
-call log as before.
+Not installed, or not the default phone app: nothing changes, calls sync from the call log as
+before.
