@@ -347,9 +347,12 @@ class RecentsFragment(
     private fun groupCallsByDate(recentCalls: List<RecentCall>): MutableList<CallLogItem> {
         val callLog = mutableListOf<CallLogItem>()
         var lastDayCode = ""
+        // (one date row per day, even if the list is ever out of order: two rows of one day
+        // would have the same id)
+        val seenDays = HashSet<String>()
         for (call in recentCalls) {
             val currentDayCode = call.dayCode
-            if (currentDayCode != lastDayCode) {
+            if (currentDayCode != lastDayCode && seenDays.add(currentDayCode)) {
                 callLog += CallLogItem.Date(timestamp = call.startTS, dayCode = currentDayCode)
                 lastDayCode = currentDayCode
             }
