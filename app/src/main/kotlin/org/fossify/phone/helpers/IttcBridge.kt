@@ -262,6 +262,117 @@ object IttcBridge {
         return out
     }
 
+    // -------------------------------------------------------------------
+    // 🎓 "Leads" tab: the signed-in user's own open leads (Tracker 2.10.5+)
+    // -------------------------------------------------------------------
+    data class PhoneLead(
+        val leadId: String,
+        val name: String,
+        val phone: String?,
+        val altPhone: String?,
+        val whatsapp: String?,
+        val stage: String?,
+        val course: String?,
+        val batch: String?,
+        val rating: String?,
+        val nextCall: Long?,
+        val lastContacted: Long?,
+        val attempts: Int,
+        val lastNote: String?,
+    ) {
+        val callNumber: String? get() = phone ?: altPhone ?: whatsapp
+    }
+
+    /** The last list read (for the dial pad's name search and an instant tab) */
+    @Volatile
+    var myLeadsCache: List<PhoneLead> = emptyList()
+        private set
+
+    /** null: no Tracker / an older one (the tab then says to update it); call off the main thread */
+    fun myLeads(context: Context): List<PhoneLead>? {
+        val app = context.applicationContext
+        if (!trackerReady(app)) return null
+        return try {
+            withTracker(app) { client ->
+                client.query(Uri.parse("$PROVIDER/my_leads"), null, null, null, null)?.use { c ->
+                    fun col(name: String): String? {
+                        val i = c.getColumnIndex(name)
+                        return if (i < 0 || c.isNull(i)) null else c.getString(i)?.takeIf { it.isNotBlank() && it != "null" }
+                    }
+                    val out = ArrayList<PhoneLead>(c.count)
+                    while (c.moveToNext()) {
+                        val id = col("lead_id") ?: continue
+                        out += PhoneLead(
+                            leadId = id,
+                            name = col("name") ?: "",
+                            phone = col("phone"),
+                            altPhone = col("alt_phone"),
+                            whatsapp = col("whatsapp_number"),
+                            stage = col("stage"),
+                            course = col("course"),
+                            batch = col("batch"),
+                            rating = col("rating"),
+                            nextCall = parseTime(col("next_call")),
+                            lastContacted = parseTime(col("last_contacted")),
+                            attempts = col("call_attempts")?.toIntOrNull() ?: 0,
+                            lastNote = col("last_note"),
+                        )
+                    }
+                    out
+                }
+            }
+        } catch (_: Throwable) {
+            null
+        }?.also { myLeadsCache = it }
+    }
+
+    private fun parseTime(s: String?): Long? =
+        try {
+            s?.let { java.time.OffsetDateTime.parse(it.replace(' ', 'T')).toInstant().toEpochMilli() }
+        } catch (_: Throwable) {
+            null
+        }
+
+    /** Ask the Tracker for a fresh list (it fetches one when it is running) */
+    fun askRefresh(context: Context) {
+        val app = context.applicationContext
+        recents.execute {
+            try {
+                if (trackerReady(app)) withTracker(app) { it.call("refresh_leads", null, null) }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    /**
+     * 📝 The after-call result (Tracker 2.10.5+): queued in the Tracker, which sends it.
+     * false: an older Tracker or none (call off the main thread).
+     */
+    fun saveOutcome(
+        context: Context,
+        leadId: String,
+        number: String?,
+        outcome: String?,
+        note: String?,
+        nextAt: Long?,
+    ): Boolean {
+        val app = context.applicationContext
+        if (!trackerReady(app)) return false
+        val extras = Bundle().apply {
+            putString("lead_id", leadId)
+            number?.let { putString("number", it) }
+            outcome?.let { putString("outcome", it) }
+            note?.takeIf { it.isNotBlank() }?.let { putString("note", it) }
+            nextAt?.let { putString("next_at", it.toString()) }
+        }
+        return try {
+            val result = withTracker(app) { it.call("save_outcome", rowIdFor(number), extras) }
+            result?.getString("result") == "queued"
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     /** Forget what Recents knew (a call just ended: its lead may have changed) */
     fun forgetRecents() = known.clear()
 

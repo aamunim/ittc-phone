@@ -5,7 +5,14 @@
     <string name="ittc_lead_badge" translatable="false">🎓 Lead</string>
     <!-- after a lead call -->
     <string name="ittc_after_call_badge" translatable="false">🎓 Lead · call ended</string>
-    <string name="ittc_add_note" translatable="false">📝 Add a note</string>
+    <string name="ittc_add_note" translatable="false">📝 More in the Tracker</string>
+    <string name="ittc_what_happened" translatable="false">What happened?</string>
+    <string name="ittc_note_hint" translatable="false">Note (optional)</string>
+    <string name="ittc_next_call" translatable="false">Next call</string>
+    <string name="ittc_save" translatable="false">✅ Save</string>
+    <string name="ittc_saved" translatable="false">✅ Saved — the Tracker sends it</string>
+    <string name="ittc_old_tracker" translatable="false">Update ITTC Admission Tracker (2.10.5) to save here — opening it instead</string>
+    <string name="ittc_pick_outcome" translatable="false">Choose what happened, or write a note</string>
     <string name="ittc_call_again" translatable="false">📞 Call again</string>
     <string name="ittc_open_lead" translatable="false">👤 Open the lead</string>
     <string name="ittc_close" translatable="false">Close</string>
@@ -18,6 +25,19 @@
     <string name="ittc_missed" translatable="false">📥 Missed call</string>
     <string name="ittc_declined" translatable="false">🚫 Declined</string>
     <string name="ittc_tracker_missing" translatable="false">Open ITTC Admission Tracker to add the note</string>
+    <!-- Leads tab -->
+    <string name="ittc_leads_tab" translatable="false">Leads</string>
+    <string name="ittc_chip_today" translatable="false">Today %d</string>
+    <string name="ittc_chip_overdue" translatable="false">Overdue %d</string>
+    <string name="ittc_chip_new" translatable="false">New %d</string>
+    <string name="ittc_chip_hot" translatable="false">🔥 Hot %d</string>
+    <string name="ittc_chip_all" translatable="false">All %d</string>
+    <string name="ittc_leads_none" translatable="false">No leads here.\nYour open leads come from ITTC Admission Tracker.</string>
+    <string name="ittc_leads_no_tracker" translatable="false">Install / update ITTC Admission Tracker (2.10.5 or newer) and sign in: your leads show here.</string>
+    <string name="ittc_leads_loading" translatable="false">Loading your leads…</string>
+    <string name="ittc_lead_call" translatable="false">📞 Call</string>
+    <string name="ittc_lead_call_alt" translatable="false">📞 Call the other number</string>
+    <string name="ittc_lead_open" translatable="false">👤 Open in the Tracker</string>
     <!-- Recents / dial pad -->
     <string name="ittc_leads_only" translatable="false">🎓 Leads only</string>
     <string name="ittc_leads_only_on" translatable="false">🎓 Leads only ✓</string>

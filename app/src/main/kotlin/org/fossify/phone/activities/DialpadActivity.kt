@@ -14,6 +14,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.net.toUri
 import androidx.core.view.isVisible
@@ -207,6 +208,8 @@ class DialpadActivity : SimpleActivity() {
             dialpadCallButton.setOnClickListener { initCall(dialpadInput.value) }
             dialpadCallButton.setOnLongClickListener { initCallWithSimSelector() }
             dialpadInput.onTextChangeListener { dialpadValueChanged(it) }
+            // 🎓 ITTC: your leads, for matching by name (read once, in the background)
+            org.fossify.commons.helpers.ensureBackgroundThread { IttcBridge.myLeads(this@DialpadActivity) }
             dialpadInput.requestFocus()
             dialpadInput.disableKeyboard()
         }
@@ -384,8 +387,41 @@ class DialpadActivity : SimpleActivity() {
         binding.dialpadList.beVisibleIf(filtered.isNotEmpty())
     }
 
+    // 🎓 ITTC: your own leads (the "Leads" tab's) whose name (by the keys) or number matches
+    private fun ittcShowMatches(text: String) {
+        val box = binding.ittcDialpadMatches
+        box.removeAllViews()
+        val digits = text.filter { it.isDigit() }
+        if (digits.length < 2) return
+        val leads = IttcBridge.myLeadsCache
+        if (leads.isEmpty()) return
+        val hits = leads.filter { l ->
+            ittcT9(l.name).contains(digits) ||
+                (digits.length >= 4 && listOfNotNull(l.phone, l.altPhone).any { it.filter(Char::isDigit).contains(digits) })
+        }.take(3)
+        val primary = getProperPrimaryColor()
+        val pad = (resources.displayMetrics.density * 8).toInt()
+        hits.forEach { l ->
+            val number = l.callNumber ?: return@forEach
+            box.addView(TextView(this).apply {
+                text = listOfNotNull("🎓 ${l.name}", l.course, number).joinToString(" · ")
+                setTextColor(primary)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(pad * 2, pad, pad * 2, pad)
+                setBackgroundResource(android.R.drawable.list_selector_background)
+                setOnClickListener { initCall(number) }
+            })
+        }
+    }
+
+    private fun ittcT9(name: String): String =
+        KeypadHelper.convertKeypadLettersToDigits(name.normalizeString()).filterNot { it.isWhitespace() }
+
     // 🎓 ITTC: a full number that is a lead's → who it is, above the dial pad (tap: the lead)
     private fun ittcShowLead(text: String) {
+        ittcShowMatches(text)
         val view = binding.ittcDialpadLead
         val digits = text.count { it.isDigit() }
         if (digits < 10) {

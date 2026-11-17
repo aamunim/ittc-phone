@@ -61,6 +61,28 @@ direction, time, length, SIM) from that call-log row itself and queues it exactl
 call-log sync would (same id): the sync, kept running as a backup, never counts it twice and the
 "add a note" notification comes once. Only lead calls are handed over by ITTC Phone.
 
+## 4. The "Leads" tab and after-call results (2.10.5+)
+
+    query content://com.abamunim.leads.leadlookup/my_leads
+
+The signed-in user's own open leads (assigned to them, not Admitted / Not Now / Cancelled, ≤ 500),
+from `my_phone_leads()`: columns `lead_id, name, phone, alt_phone, whatsapp_number, stage, course,
+batch, rating, next_call, last_contacted` (ISO times or null) `, call_attempts, last_note`. Kept in
+this app's private storage, refreshed every 5 minutes while it runs and right after a lead changes;
+cleared on logout.
+
+    contentResolver.call(…, "save_outcome", <call log _ID or null>, Bundle{ lead_id, number,
+                         outcome, note, next_at })
+
+`outcome`: `connected`, `no_answer`, `busy`, `switched_off`, `wrong_number`, `call_back` (optional);
+`note` (optional); `next_at` = the next call, epoch ms (optional). Returns `queued`; this app sends
+it (`save_phone_call` on the call itself when the call-log row is known, `schedule_follow_up` for
+the next call) at once when it is running, else on its next sync.
+
+    contentResolver.call(…, "refresh_leads", null, null)
+
+Asks this app for a fresh list (`asked` when it is running, else `later`).
+
 ## Opening a lead (ITTC Phone → this app)
 
     Intent(ACTION_VIEW, "leadmanagement://leads/<lead_id>?callNote=<call log _ID>").setPackage(…)

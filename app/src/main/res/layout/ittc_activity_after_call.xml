@@ -76,19 +76,76 @@
             android:textSize="@dimen/normal_text_size"
             android:visibility="gone" />
 
+        <!-- 📝 the result, a note and the next call — saved here (Tracker 2.10.5+) -->
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/ittc_ac_outcome_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/activity_margin"
+            android:text="@string/ittc_what_happened"
+            android:textSize="@dimen/normal_text_size"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/ittc_ac_outcomes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <org.fossify.commons.views.MyEditText
+            android:id="@+id/ittc_ac_note_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/medium_margin"
+            android:hint="@string/ittc_note_hint"
+            android:inputType="textCapSentences|textMultiLine"
+            android:maxLines="4"
+            android:textSize="@dimen/bigger_text_size" />
+
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/ittc_ac_next_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/medium_margin"
+            android:text="@string/ittc_next_call"
+            android:textSize="@dimen/normal_text_size"
+            android:textStyle="bold" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/ittc_ac_next"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="@dimen/small_margin"
+                android:paddingBottom="@dimen/small_margin" />
+        </HorizontalScrollView>
+
         <Space
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:minHeight="24dp" />
+            android:minHeight="16dp" />
+
+        <Button
+            android:id="@+id/ittc_ac_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="56dp"
+            android:text="@string/ittc_save"
+            android:textSize="@dimen/bigger_text_size" />
 
         <Button
             android:id="@+id/ittc_ac_add_note"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="56dp"
-            android:text="@string/ittc_add_note"
-            android:textSize="@dimen/bigger_text_size" />
+            android:layout_marginTop="@dimen/medium_margin"
+            android:minHeight="52dp"
+            android:text="@string/ittc_add_note" />
 
         <Button
             android:id="@+id/ittc_ac_call_again"

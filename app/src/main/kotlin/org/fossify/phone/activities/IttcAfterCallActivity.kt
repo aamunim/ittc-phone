@@ -3,6 +3,14 @@ package org.fossify.phone.activities
 import android.content.Context
 import android.content.Intent
 import android.annotation.SuppressLint
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.text.format.DateUtils
+import android.util.TypedValue
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.TextView
+import org.fossify.commons.extensions.applyColorFilter
 import android.content.res.ColorStateList
 import android.provider.CallLog
 import java.util.Calendar
@@ -86,8 +94,9 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcNote.text = note?.let { "“${it.take(300)}”" }
             ittcAcNote.beGoneIf(note.isNullOrBlank())
 
-            ittcAcAddNote.backgroundTintList = ColorStateList.valueOf(primary)
-            ittcAcAddNote.setTextColor(primary.getContrastColor())
+            ittcAcSave.backgroundTintList = ColorStateList.valueOf(primary)
+            ittcAcSave.setTextColor(primary.getContrastColor())
+            ittcAcSave.setOnClickListener { save(leadId, number) }
             ittcAcAddNote.setOnClickListener { addNote(leadId, number) }
             ittcAcCallAgain.setOnClickListener {
                 startCallIntent(number)
@@ -98,7 +107,150 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcOpenLead.setOnClickListener { openLead(leadId, null) }
             ittcAcClose.setOnClickListener { finish() }
         }
+        // (a likely answer chosen already: talked → Connected, no answer → No answer, busy → Busy)
+        outcome = when {
+            talked > 0 -> "connected"
+            reason == "busy" -> "busy"
+            outgoing -> "no_answer"
+            else -> null
+        }
+        nextAt = null
+        nextKey = "none"
+        renderChoices()
         showToday()
+    }
+
+    // ------------------------------------------------------------------
+    // 📝 The result, a note and the next call (saved through the Tracker)
+    // ------------------------------------------------------------------
+    private var outcome: String? = null
+    private var nextAt: Long? = null
+    private var nextKey = "none"
+    private var saving = false
+
+    private val outcomes = listOf(
+        "connected" to "✅ Connected",
+        "no_answer" to "📵 No answer",
+        "busy" to "⏳ Busy",
+        "switched_off" to "📴 Off",
+        "wrong_number" to "❌ Wrong no.",
+        "call_back" to "🔁 Call back",
+    )
+
+    private fun chip(label: String, on: Boolean, onClick: () -> Unit): TextView = TextView(this).apply {
+        text = label
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        val pad = (resources.displayMetrics.density * 10).toInt()
+        setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
+        gravity = Gravity.CENTER
+        setBackgroundResource(R.drawable.ittc_chip_background)
+        val primary = getProperPrimaryColor()
+        val text = getProperTextColor()
+        background.mutate().applyColorFilter(if (on) primary else (text and 0x00FFFFFF) or 0x22000000)
+        setTextColor(if (on) primary.getContrastColor() else text)
+        setOnClickListener { onClick() }
+    }
+
+    private fun renderChoices() {
+        val m = (resources.displayMetrics.density * 6).toInt()
+        binding.ittcAcOutcomes.removeAllViews()
+        outcomes.chunked(3).forEach { row ->
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            row.forEach { (value, label) ->
+                line.addView(
+                    chip(label, outcome == value) {
+                        outcome = if (outcome == value) null else value
+                        renderChoices()
+                    },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(m, m, m, 0) },
+                )
+            }
+            binding.ittcAcOutcomes.addView(line)
+        }
+
+        binding.ittcAcNext.removeAllViews()
+        val now = System.currentTimeMillis()
+        val tomorrow10 = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+        }.timeInMillis
+        val options = listOf(
+            Triple("none", "No", null),
+            Triple("1h", "In 1 hour", now + 60 * 60 * 1000L),
+            Triple("tomorrow", "Tomorrow 10 AM", tomorrow10),
+            Triple("2d", "In 2 days", tomorrow10 + 24 * 60 * 60 * 1000L),
+        )
+        options.forEach { (key, label, at) ->
+            binding.ittcAcNext.addView(
+                chip(label, nextKey == key) {
+                    nextKey = key
+                    nextAt = at
+                    renderChoices()
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, 0, 0) },
+            )
+        }
+        val pickedLabel = if (nextKey == "pick" && nextAt != null) {
+            "📅 " + DateUtils.formatDateTime(this, nextAt!!, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_TIME)
+        } else {
+            "📅 Pick…"
+        }
+        binding.ittcAcNext.addView(
+            chip(pickedLabel, nextKey == "pick") { pickDate() },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, m, 0) },
+        )
+    }
+
+    private fun pickDate() {
+        val c = Calendar.getInstance().apply { nextAt?.let { timeInMillis = it } }
+        DatePickerDialog(this, { _, y, mo, d ->
+            TimePickerDialog(this, { _, h, mi ->
+                val at = Calendar.getInstance().apply { set(y, mo, d, h, mi, 0) }.timeInMillis
+                if (at > System.currentTimeMillis()) {
+                    nextKey = "pick"
+                    nextAt = at
+                    renderChoices()
+                }
+            }, 10, 0, false).show()
+        }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).apply {
+            datePicker.minDate = System.currentTimeMillis() - 1000
+        }.show()
+    }
+
+    /** Save through the Tracker (it sends it); an older Tracker: its own note popup instead */
+    private fun save(leadId: String, number: String) {
+        if (saving) return
+        val note = binding.ittcAcNoteInput.text?.toString()?.trim().orEmpty()
+        if (outcome == null && note.isEmpty() && nextAt == null) {
+            toast(R.string.ittc_pick_outcome)
+            return
+        }
+        saving = true
+        binding.ittcAcSave.isEnabled = false
+        val chosen = outcome
+        val next = nextAt
+        ensureBackgroundThread {
+            // (the call's row in the call log, so the result lands on that very call: up to ~3.5 s)
+            var tries = 0
+            while (chosen != null && IttcBridge.rowIdFor(number) == null && tries < 7) {
+                Thread.sleep(500)
+                tries++
+            }
+            val ok = IttcBridge.saveOutcome(this, leadId, number, chosen, note, next)
+            runOnUiThread {
+                saving = false
+                binding.ittcAcSave.isEnabled = true
+                if (ok) {
+                    toast(R.string.ittc_saved)
+                    finish()
+                } else {
+                    toast(R.string.ittc_old_tracker)
+                    addNote(leadId, number)
+                }
+            }
+        }
     }
 
     /** "📊 Today: 23 calls · 1h 40m talking" (answered calls, from the phone's call log) */

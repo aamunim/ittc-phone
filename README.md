@@ -24,6 +24,11 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
 - 🎓 **Leads only** filter in Recents; the lead line is coloured by stage; a lead not in the phone's
   contacts keeps the number as the title with "🎓 name · course · stage" small below.
 - 📊 Today's calls and talk time on the after-call screen; a smoother dial pad.
+- 🎓 **Leads tab** (Tracker 2.10.5+) — your own open leads (≤ 500): today / overdue / new / hot /
+  all, 📞 at once, WhatsApp / SMS / the lead in the Tracker; toolbar search by name or number.
+- 📝 **Result after a call** (Tracker 2.10.5+) — what happened, a note and the next call, saved
+  through the Tracker (it sends it); an older Tracker gets its own note popup instead.
+- 🔢 **Dial pad name search** — your leads whose name (by the keys) or number matches.
 - App name "ITTC Phone". The app id stays `org.fossify.phone` because Fossify's shared library
   checks for it (calls, the phone-app role, app icons). So ITTC Phone and the real Fossify Phone
   cannot be installed together; uninstall Fossify Phone first if it is there.
@@ -42,6 +47,10 @@ contract is in [docs/ITTC.md](docs/ITTC.md).
   the hooks for the above and the lead line on the call screen.
 - `adapters/RecentCallsAdapter.kt`, `res/layout/item_recent_call.xml`: the lead line in Recents.
 - `activities/DialpadActivity.kt`, `res/layout/activity_dialpad.xml`: the lead above the dial pad.
+- `fragments/IttcLeadsFragment.kt`, `res/layout/ittc_fragment_leads.xml`, `ittc_item_lead.xml`,
+  `adapters/ViewPagerAdapter.kt`, `activities/MainActivity.kt`: the Leads tab.
+- `fragments/RecentsFragment.kt`, `helpers/IttcRecentsCache.kt`, `helpers/CallContactHelper.kt`:
+  quick Recents and caller names.
 - `AndroidManifest.xml`, `gradle.properties`, `app/build.gradle.kts`, `res/values/ittc_strings.xml`:
   name, version, package visibility of the Tracker.
 - `.github/workflows/build.yml`: builds the signed APK; Fossify's own workflows removed.
