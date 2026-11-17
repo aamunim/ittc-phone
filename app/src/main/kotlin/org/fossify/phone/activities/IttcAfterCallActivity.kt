@@ -148,6 +148,18 @@ class IttcAfterCallActivity : SimpleActivity() {
     }
 
     private fun renderStages() {
+        try {
+            renderStagesNow()
+        } catch (e: Throwable) {
+            // (never lose the result screen over the stage chips)
+            org.fossify.phone.helpers.IttcCrash.record(this, e, "After-call stages")
+            stages = emptyList()
+            binding.ittcAcStageLabel.beGoneIf(true)
+            binding.ittcAcStages.beGoneIf(true)
+        }
+    }
+
+    private fun renderStagesNow() {
         val show = stages.isNotEmpty()
         binding.ittcAcStageLabel.beGoneIf(!show)
         binding.ittcAcStages.beGoneIf(!show)

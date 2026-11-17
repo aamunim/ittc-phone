@@ -19,6 +19,12 @@ import org.fossify.phone.models.Events
 import org.greenrobot.eventbus.EventBus
 
 class CallService : InCallService() {
+    override fun onCreate() {
+        // 🎓 ITTC: keep the reason if the app ever stops during a call (shown at the next start)
+        org.fossify.phone.helpers.IttcCrash.install(this)
+        super.onCreate()
+    }
+
     private val callNotificationManager by lazy { CallNotificationManager(this) }
 
     private val callListener = object : Call.Callback() {

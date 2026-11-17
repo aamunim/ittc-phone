@@ -60,9 +60,12 @@ class MainActivity : SimpleActivity() {
     var cachedContacts = ArrayList<Contact>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        org.fossify.phone.helpers.IttcCrash.install(this)
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
         appLaunched(BuildConfig.APPLICATION_ID)
+        // 🎓 ITTC: the reason the app stopped last time, once (to report it)
+        if (savedInstanceState == null) org.fossify.phone.helpers.IttcCrash.showIfAny(this)
         setupOptionsMenu()
         refreshMenuItems()
         setupEdgeToEdge(padBottomImeAndSystem = listOf(binding.mainTabsHolder))
