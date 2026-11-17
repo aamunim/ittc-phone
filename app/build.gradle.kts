@@ -32,7 +32,7 @@ android {
         targetSdk = project.libs.versions.app.build.targetSDK.get().toInt()
         versionName = project.property("VERSION_NAME").toString()
         versionCode = project.property("VERSION_CODE").toString().toInt()
-        setProperty("archivesBaseName", "phone-$versionCode")
+        setProperty("archivesBaseName", "ittc-phone-$versionName")
     }
 
     signingConfigs {

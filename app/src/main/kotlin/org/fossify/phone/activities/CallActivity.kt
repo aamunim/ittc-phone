@@ -589,6 +589,23 @@ class CallActivity : SimpleActivity() {
                 callerNumber.beGone()
             }
 
+            // 🎓 ITTC: a lead's number → the lead on the call screen
+            ittcLeadInfo.beGone()
+            val shown = callContact
+            IttcBridge.lookup(this@CallActivity, number) { lead ->
+                if (lead == null || shown != callContact || isFinishing || isDestroyed) return@lookup
+                if (name.isEmpty() || name == number) {
+                    callerNameLabel.text = lead.name.ifEmpty { number }
+                    // (the number moves to its own line, as for a contact)
+                    if (number.isNotEmpty() && lead.name.isNotEmpty()) {
+                        callerNumber.text = number
+                        callerNumber.beVisible()
+                    }
+                }
+                ittcLeadInfo.text = lead.summary(getString(R.string.ittc_lead_badge))
+                ittcLeadInfo.beVisible()
+            }
+
             callerAvatar.apply {
                 if (avatarUri.isNullOrEmpty()) {
                     val bgColor = getProperPrimaryColor()
