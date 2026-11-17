@@ -18,8 +18,12 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.checkAppSideloading
@@ -71,6 +75,11 @@ class DialpadActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityDialpadBinding::inflate)
 
     private var allContacts = ArrayList<Contact>()
+
+    // 🎓 ITTC: each contact's name as dial-pad digits, worked out once (not on every key press)
+    @Volatile
+    private var t9Names: Map<Int, String> = emptyMap()
+    private var filterJob: Job? = null
     private var speedDialValues = ArrayList<SpeedDial>()
     private var privateCursor: Cursor? = null
     private var toneGeneratorHelper: ToneGeneratorHelper? = null
@@ -287,6 +296,8 @@ class DialpadActivity : SimpleActivity() {
             allContacts.addAll(privateContacts)
             allContacts.sort()
         }
+        // 🎓 ITTC: names as dial-pad digits, once
+        t9Names = allContacts.associate { it.id to t9Name(it) }
 
         runOnUiThread {
             if (!checkDialIntent() && binding.dialpadInput.value.isEmpty()) {
@@ -315,25 +326,43 @@ class DialpadActivity : SimpleActivity() {
 
         (binding.dialpadList.adapter as? ContactsAdapter)?.finishActMode()
 
-        val filtered = allContacts.filter { contact ->
-            var convertedName = KeypadHelper.convertKeypadLettersToDigits(
-                contact.name.normalizeString()
-            ).filterNot { it.isWhitespace() }
-
-            if (hasRussianLocale) {
-                var currConvertedName = ""
-                convertedName.lowercase(Locale.getDefault()).forEach { char ->
-                    val convertedChar = russianCharsMap.getOrElse(char) { char }
-                    currConvertedName += convertedChar
-                }
-                convertedName = currConvertedName
+        // 🎓 ITTC: matched off the main thread, and only the last key press counts (typing stays smooth)
+        filterJob?.cancel()
+        filterJob = lifecycleScope.launch {
+            val contacts = allContacts
+            val names = t9Names
+            val filtered = withContext(Dispatchers.Default) {
+                contacts.filter { contact ->
+                    ensureActive()
+                    val convertedName = names[contact.id] ?: t9Name(contact)
+                    contact.doesContainPhoneNumber(text) || (convertedName.contains(text, true))
+                }.sortedWith(compareBy {
+                    !it.doesContainPhoneNumber(text)
+                }).toMutableList() as ArrayList<Contact>
             }
+            if (binding.dialpadInput.value == text) showFiltered(filtered, text)
+        }
+        ittcShowLead(text)
+    }
 
-            contact.doesContainPhoneNumber(text) || (convertedName.contains(text, true))
-        }.sortedWith(compareBy {
-            !it.doesContainPhoneNumber(text)
-        }).toMutableList() as ArrayList<Contact>
+    /** A contact's name as dial-pad digits ("Rahim" → "72446") */
+    private fun t9Name(contact: Contact): String {
+        var convertedName = KeypadHelper.convertKeypadLettersToDigits(
+            contact.name.normalizeString()
+        ).filterNot { it.isWhitespace() }
 
+        if (hasRussianLocale) {
+            var currConvertedName = ""
+            convertedName.lowercase(Locale.getDefault()).forEach { char ->
+                val convertedChar = russianCharsMap.getOrElse(char) { char }
+                currConvertedName += convertedChar
+            }
+            convertedName = currConvertedName
+        }
+        return convertedName
+    }
+
+    private fun showFiltered(filtered: ArrayList<Contact>, text: String) {
         binding.letterFastscroller.setupWithContacts(binding.dialpadList, filtered)
 
         ContactsAdapter(
@@ -353,7 +382,6 @@ class DialpadActivity : SimpleActivity() {
 
         binding.dialpadPlaceholder.beVisibleIf(filtered.isEmpty())
         binding.dialpadList.beVisibleIf(filtered.isNotEmpty())
-        ittcShowLead(text)
     }
 
     // 🎓 ITTC: a full number that is a lead's → who it is, above the dial pad (tap: the lead)

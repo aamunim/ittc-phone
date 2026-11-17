@@ -2,7 +2,12 @@ package org.fossify.phone.activities
 
 import android.content.Context
 import android.content.Intent
+import android.annotation.SuppressLint
 import android.content.res.ColorStateList
+import android.provider.CallLog
+import java.util.Calendar
+import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.helpers.ensureBackgroundThread
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -92,6 +97,44 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcSms.setOnClickListener { openOutside(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number"))) }
             ittcAcOpenLead.setOnClickListener { openLead(leadId, null) }
             ittcAcClose.setOnClickListener { finish() }
+        }
+        showToday()
+    }
+
+    /** "📊 Today: 23 calls · 1h 40m talking" (answered calls, from the phone's call log) */
+    @SuppressLint("MissingPermission")
+    private fun showToday() {
+        ensureBackgroundThread {
+            val start = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            var count = 0
+            var seconds = 0L
+            try {
+                contentResolver.query(
+                    CallLog.Calls.CONTENT_URI,
+                    arrayOf(CallLog.Calls.DURATION),
+                    "${CallLog.Calls.DATE} >= ? AND ${CallLog.Calls.DURATION} > 0",
+                    arrayOf(start.toString()),
+                    null,
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        count++
+                        seconds += c.getLong(0)
+                    }
+                }
+            } catch (_: Throwable) {
+                return@ensureBackgroundThread
+            }
+            if (count == 0) return@ensureBackgroundThread
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                binding.ittcAcToday.text = getString(R.string.ittc_today_stats, count, duration(seconds.toInt()))
+                binding.ittcAcToday.beVisible()
+            }
         }
     }
 

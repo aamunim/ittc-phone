@@ -19,5 +19,8 @@
     <string name="ittc_declined" translatable="false">🚫 Declined</string>
     <string name="ittc_tracker_missing" translatable="false">Open ITTC Admission Tracker to add the note</string>
     <!-- Recents / dial pad -->
+    <string name="ittc_leads_only" translatable="false">🎓 Leads only</string>
+    <string name="ittc_leads_only_on" translatable="false">🎓 Leads only ✓</string>
+    <string name="ittc_today_stats" translatable="false">📊 Today: %1$d calls · %2$s talking</string>
     <string name="ittc_dialpad_lead" translatable="false">🎓 %s · tap to open</string>
 </resources>

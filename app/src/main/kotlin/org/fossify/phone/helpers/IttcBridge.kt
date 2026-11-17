@@ -90,6 +90,17 @@ object IttcBridge {
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
+    /**
+     * The colour of a lead's stage line: Admitted blue, Not Now / cancelled grey, a working
+     * stage the app's colour
+     */
+    fun stageColor(stage: String?, working: Int, closed: Int): Int = when {
+        stage == null -> working
+        stage.contains("Admitted", true) && !stage.contains("cancel", true) -> 0xFF1E88E5.toInt()
+        stage.contains("Not Now", true) || stage.contains("cancel", true) -> closed
+        else -> working
+    }
+
     private fun clean(number: String?): String? =
         number?.filter { it.isDigit() || it == '+' }?.takeIf { it.count(Char::isDigit) >= 6 }
 
@@ -215,6 +226,40 @@ object IttcBridge {
             batch.forEach { known[it] = Known(found[it], now) }
             main.post { onNew() }
         }
+    }
+
+    /**
+     * Which of these numbers are leads (call off the main thread: it may ask the Tracker).
+     * Keys are the numbers as given. Fills the Recents cache too.
+     */
+    fun leadsFor(context: Context, numbers: Collection<String>): Map<String, Lead> {
+        val app = context.applicationContext
+        val now = System.currentTimeMillis()
+        val byClean = numbers.mapNotNull { n -> clean(n)?.let { it to n } }
+        val missing = byClean.map { it.first }.distinct()
+            .filter { known[it]?.let { k -> now - k.at >= RECENTS_TTL_MS } ?: true }
+        if (missing.isNotEmpty() && trackerReady(app)) {
+            missing.chunked(300).forEach { batch ->
+                val found = HashMap<String, Lead>()
+                try {
+                    withTracker(app) { client ->
+                        client.query(Uri.parse(NUMBERS), null, null, batch.toTypedArray(), null)?.use { c ->
+                            while (c.moveToNext()) {
+                                val i = c.getColumnIndex("number")
+                                val n = if (i < 0) null else c.getString(i)
+                                val lead = readRow(c) ?: continue
+                                if (n != null) found[n] = lead
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+                batch.forEach { known[it] = Known(found[it], now) }
+            }
+        }
+        val out = HashMap<String, Lead>()
+        byClean.forEach { (c, original) -> known[c]?.lead?.let { out[original] = it } }
+        return out
     }
 
     /** Forget what Recents knew (a call just ended: its lead may have changed) */

@@ -606,15 +606,10 @@ class CallActivity : SimpleActivity() {
             val shown = callContact
             IttcBridge.lookup(this@CallActivity, number) { lead ->
                 if (lead == null || shown != callContact || isFinishing || isDestroyed) return@lookup
-                if (name.isEmpty() || name == number) {
-                    callerNameLabel.text = lead.name.ifEmpty { number }
-                    // (the number moves to its own line, as for a contact)
-                    if (number.isNotEmpty() && lead.name.isNotEmpty()) {
-                        callerNumber.text = number
-                        callerNumber.beVisible()
-                    }
-                }
-                ittcLeadInfo.text = lead.summary(getString(R.string.ittc_lead_badge))
+                // (not in the phone's contacts: the number stays the title, the lead's name small below)
+                val unsaved = name.isEmpty() || name == number
+                val badge = if (unsaved && lead.name.isNotEmpty()) "🎓 ${lead.name}" else getString(R.string.ittc_lead_badge)
+                ittcLeadInfo.text = lead.summary(badge)
                 ittcLeadInfo.beVisible()
                 ittcLeadShown = true
             }

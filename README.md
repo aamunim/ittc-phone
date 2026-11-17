@@ -19,6 +19,11 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
   its own popup.
 - 🕘 **Recents** — lead numbers show the lead's name and "🎓 Lead · course · stage".
 - 🔢 **Dial pad** — a full number that is a lead's shows who it is above the keys (tap: the lead).
+- ⚡ **Quick open** — Recents shows the list from last time at once while the call log is read
+  again; the caller's name comes from Android's own number lookup (no waiting for every contact).
+- 🎓 **Leads only** filter in Recents; the lead line is coloured by stage; a lead not in the phone's
+  contacts keeps the number as the title with "🎓 name · course · stage" small below.
+- 📊 Today's calls and talk time on the after-call screen; a smoother dial pad.
 - App name "ITTC Phone". The app id stays `org.fossify.phone` because Fossify's shared library
   checks for it (calls, the phone-app role, app icons). So ITTC Phone and the real Fossify Phone
   cannot be installed together; uninstall Fossify Phone first if it is there.
