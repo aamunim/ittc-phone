@@ -32,11 +32,11 @@ One row or none, columns:
 `lead_id, name, rating, stage, course, last_note, student_ref, fee_due, next_call, owner, app_call`.
 One number at a time; the list itself is never handed out. Query off the main thread.
 
-`app_call` (2.10.2+) is `"1"` when this app's Call button started a call to that number: then
+`app_call` (2.10.3+) is `"1"` when this app's Call button started a call to that number: then
 ITTC Phone shows no after-call screen (this app shows its own popup when the call ends). Asked
 after the call, add `?started=<ms>` (when the call began) to the URI.
 
-### Many numbers at once (Recents, 2.10.2+)
+### Many numbers at once (Recents, 2.10.3+)
 
     query content://com.abamunim.leads.leadlookup/numbers, selectionArgs = the numbers (≤ 300)
 
@@ -52,7 +52,7 @@ A row for each number that is a lead: column `number` (exactly as sent) and the 
 - `number`: only used to check that the row is that call.
 - `end_reason` (optional): `hung_up`, `they_hung_up`, `busy`, `missed`, `declined`, `cancelled`,
   `error`, `restricted`, `answered_elsewhere`, `pulled` (letters, digits, `_`).
-- `shows_note` (optional, 2.10.2+): `"1"` when ITTC Phone shows its after-call screen (with
+- `shows_note` (optional, 2.10.3+): `"1"` when ITTC Phone shows its after-call screen (with
   "Add a note"); this app then sends no "add a note" notification for the call.
 
 Returns a Bundle with `result`: `added`, `known` (already queued), `later` (row not found: the
