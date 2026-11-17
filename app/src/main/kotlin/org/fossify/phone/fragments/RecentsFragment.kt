@@ -27,6 +27,8 @@ import org.fossify.phone.extensions.startAddContactIntent
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.RecentsHelper
+import org.fossify.phone.helpers.IttcRecentsCache
+import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.interfaces.RefreshItemsListener
 import org.fossify.phone.models.CallLogItem
 import org.fossify.phone.models.RecentCall
@@ -42,6 +44,13 @@ class RecentsFragment(
     private var searchQuery: String? = null
     private var recentsHelper = RecentsHelper(context)
 
+    // 🎓 ITTC: the last list shown at once on opening; "Leads only"
+    private var cacheShown = false
+    private val ittcPrefs by lazy { context.getSharedPreferences("ittc", Context.MODE_PRIVATE) }
+    private var leadsOnly: Boolean
+        get() = ittcPrefs.getBoolean("recents_leads_only", false)
+        set(value) = ittcPrefs.edit().putBoolean("recents_leads_only", value).apply()
+
     override fun onFinishInflate() {
         super.onFinishInflate()
         binding = FragmentRecentsBinding.bind(this)
@@ -49,6 +58,19 @@ class RecentsFragment(
     }
 
     override fun setupFragment() {
+        binding.ittcRecentsLeadsOnly.apply {
+            setText(if (leadsOnly) R.string.ittc_leads_only_on else R.string.ittc_leads_only)
+            setOnClickListener {
+                leadsOnly = !leadsOnly
+                setText(if (leadsOnly) R.string.ittc_leads_only_on else R.string.ittc_leads_only)
+                val all = allRecentCalls
+                ensureBackgroundThread {
+                    val shown = ittcFilter(all)
+                    activity?.runOnUiThread { if (searchQuery.isNullOrEmpty()) gotRecents(shown) }
+                }
+            }
+        }
+
         val placeholderResId = if (context.hasPermission(PERMISSION_READ_CALL_LOG)) {
             R.string.no_previous_calls
         } else {
@@ -65,6 +87,7 @@ class RecentsFragment(
     }
 
     override fun setupColors(textColor: Int, primaryColor: Int, properPrimaryColor: Int) {
+        binding.ittcRecentsLeadsOnly.setTextColor(properPrimaryColor)
         binding.recentsPlaceholder.setTextColor(textColor)
         binding.recentsPlaceholder2.setTextColor(properPrimaryColor)
 
@@ -79,6 +102,20 @@ class RecentsFragment(
             allRecentCalls = emptyList()
         }
 
+        // 🎓 ITTC: the list from last time, at once (the real one replaces it in a moment)
+        if (!cacheShown && allRecentCalls.isEmpty() && context.hasPermission(PERMISSION_READ_CALL_LOG)) {
+            cacheShown = true
+            ensureBackgroundThread {
+                val cached = IttcRecentsCache.load(context)
+                if (cached.isNotEmpty()) {
+                    val shown = ittcFilter(groupCallsByDate(cached))
+                    activity?.runOnUiThread {
+                        if (allRecentCalls.isEmpty() && searchQuery.isNullOrEmpty()) gotRecents(shown)
+                    }
+                }
+            }
+        }
+
         refreshCallLog(loadAll = false) {
             binding.recentsList.runAfterAnimations {
                 refreshCallLog(loadAll = true)
@@ -88,8 +125,15 @@ class RecentsFragment(
 
     override fun onSearchClosed() {
         searchQuery = null
-        showOrHidePlaceholder(allRecentCalls.isEmpty())
-        recentsAdapter?.updateItems(allRecentCalls)
+        // (🎓 "Leads only" still applies)
+        val all = allRecentCalls
+        ensureBackgroundThread {
+            val shown = ittcFilter(all)
+            activity?.runOnUiThread {
+                showOrHidePlaceholder(shown.isEmpty())
+                recentsAdapter?.updateItems(shown)
+            }
+        }
     }
 
     override fun onSearchQueryChanged(text: String) {
@@ -189,8 +233,11 @@ class RecentsFragment(
     private fun refreshCallLog(loadAll: Boolean = false, callback: (() -> Unit)? = null) {
         getRecentCalls(loadAll) {
             allRecentCalls = it
+            // 🎓 ITTC: kept for the next opening
+            if (!loadAll) IttcRecentsCache.save(context, it.filterIsInstance<RecentCall>())
             if (searchQuery.isNullOrEmpty()) {
-                activity?.runOnUiThread { gotRecents(it) }
+                val shown = ittcFilter(it)
+                activity?.runOnUiThread { gotRecents(shown) }
             } else {
                 updateSearchResult()
             }
@@ -222,7 +269,13 @@ class RecentsFragment(
             return
         }
 
-        ContactsHelper(context).getContacts(showOnlyContactsWithNumbers = true) { contacts ->
+        // 🎓 ITTC: the contacts the app already loaded, not a second full load
+        val loaded = (activity as? MainActivity)?.cachedContacts?.takeIf { it.isNotEmpty() }?.let { ArrayList(it) }
+        val withContacts: ((ArrayList<Contact>) -> Unit) -> Unit = { use ->
+            if (loaded != null) ensureBackgroundThread { use(loaded) }
+            else ContactsHelper(context).getContacts(showOnlyContactsWithNumbers = true) { use(it) }
+        }
+        withContacts { contacts ->
             ensureBackgroundThread {
                 val privateContacts = getPrivateContacts()
                 val updatedCalls = updateNamesIfEmpty(
@@ -281,6 +334,14 @@ class RecentsFragment(
                 ?.toMutableList()
                 ?.ifEmpty { null }
         )
+    }
+
+    /** 🎓 ITTC: "Leads only" on: just the calls with a lead's number (off the main thread) */
+    private fun ittcFilter(items: List<CallLogItem>): List<CallLogItem> {
+        if (!leadsOnly) return items
+        val calls = items.filterIsInstance<RecentCall>()
+        val leads = IttcBridge.leadsFor(context, calls.map { it.phoneNumber })
+        return groupCallsByDate(calls.filter { it.phoneNumber in leads })
     }
 
     private fun groupCallsByDate(recentCalls: List<RecentCall>): MutableList<CallLogItem> {

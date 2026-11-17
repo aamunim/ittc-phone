@@ -38,6 +38,7 @@ import org.fossify.phone.extensions.handleFullScreenNotificationsPermission
 import org.fossify.phone.extensions.launchCreateNewContactIntent
 import org.fossify.phone.fragments.ContactsFragment
 import org.fossify.phone.fragments.FavoritesFragment
+import org.fossify.phone.fragments.IttcLeadsFragment
 import org.fossify.phone.fragments.MyViewPagerFragment
 import org.fossify.phone.fragments.RecentsFragment
 import org.fossify.phone.helpers.OPEN_DIAL_PAD_AT_LAUNCH
@@ -197,8 +198,9 @@ class MainActivity : SimpleActivity() {
         val currentFragment = getCurrentFragment()
         binding.mainMenu.requireToolbar().menu.apply {
             findItem(R.id.clear_call_history).isVisible = currentFragment == getRecentsFragment()
-            findItem(R.id.sort).isVisible = currentFragment != getRecentsFragment()
-            findItem(R.id.filter).isVisible = currentFragment != getRecentsFragment()
+            val contactsTab = currentFragment != getRecentsFragment() && currentFragment != getLeadsFragment()
+            findItem(R.id.sort).isVisible = contactsTab
+            findItem(R.id.filter).isVisible = contactsTab
             findItem(R.id.create_new_contact).isVisible = currentFragment == getContactsFragment()
             findItem(R.id.change_view_type).isVisible = currentFragment == getFavoritesFragment()
             findItem(R.id.column_count).isVisible = currentFragment == getFavoritesFragment() && config.viewType == VIEW_TYPE_GRID
@@ -346,6 +348,7 @@ class MainActivity : SimpleActivity() {
             icons.add(R.drawable.ic_clock_filled_vector)
         }
 
+        icons.add(R.drawable.ittc_ic_leads)
         return icons
     }
 
@@ -365,11 +368,12 @@ class MainActivity : SimpleActivity() {
             icons.add(R.drawable.ic_clock_vector)
         }
 
+        icons.add(R.drawable.ittc_ic_leads)
         return icons
     }
 
     private fun initFragments() {
-        binding.viewPager.offscreenPageLimit = 2
+        binding.viewPager.offscreenPageLimit = 3
         binding.viewPager.addOnPageChangeListener(object : ViewPager.OnPageChangeListener {
             override fun onPageScrollStateChanged(state: Int) {}
 
@@ -391,7 +395,8 @@ class MainActivity : SimpleActivity() {
 
                 // open the Recents tab if we got here by clicking a missed call notification
                 if (intent.action == Intent.ACTION_VIEW && config.showTabs and TAB_CALL_HISTORY > 0) {
-                    wantedTab = binding.mainTabsHolder.tabCount - 1
+                    // (the Leads tab is the last one: Recents is just before it)
+                    wantedTab = binding.mainTabsHolder.tabCount - 2
                 }
 
                 binding.mainTabsHolder.getTabAt(wantedTab)?.select()
@@ -427,6 +432,16 @@ class MainActivity : SimpleActivity() {
             }
         }
 
+        // 🎓 ITTC: the "Leads" tab, always last
+        binding.mainTabsHolder.newTab().setCustomView(R.layout.bottom_tablayout_item).apply {
+            customView?.findViewById<ImageView>(R.id.tab_item_icon)?.setImageDrawable(
+                resources.getColoredDrawableWithColor(R.drawable.ittc_ic_leads, getProperTextColor())
+            )
+            customView?.findViewById<TextView>(R.id.tab_item_label)?.text = getString(R.string.ittc_leads_tab)
+            AutofitHelper.create(customView?.findViewById(R.id.tab_item_label))
+            binding.mainTabsHolder.addTab(this)
+        }
+
         binding.mainTabsHolder.onTabSelectionChanged(
             tabUnselectedAction = {
                 updateBottomTabItemColors(it.customView, false, getDeselectedTabDrawableIds()[it.position])
@@ -436,14 +451,18 @@ class MainActivity : SimpleActivity() {
                 binding.viewPager.currentItem = it.position
                 updateBottomTabItemColors(it.customView, true, getSelectedTabDrawableIds()[it.position])
 
-                val lastPosition = binding.mainTabsHolder.tabCount - 1
-                if (it.position == lastPosition && config.showTabs and TAB_CALL_HISTORY > 0) {
+                // (Recents is just before the Leads tab)
+                val recentsPosition = binding.mainTabsHolder.tabCount - 2
+                if (it.position == recentsPosition && config.showTabs and TAB_CALL_HISTORY > 0) {
                     clearMissedCalls()
+                }
+                if (it.position == binding.mainTabsHolder.tabCount - 1) {
+                    getLeadsFragment()?.refreshItems()
                 }
             }
         )
 
-        binding.mainTabsHolder.beGoneIf(binding.mainTabsHolder.tabCount == 1)
+        binding.mainTabsHolder.beGoneIf(binding.mainTabsHolder.tabCount <= 1)
         storedShowTabs = config.showTabs
         storedStartNameWithSurname = config.startNameWithSurname
     }
@@ -497,6 +516,7 @@ class MainActivity : SimpleActivity() {
         getContactsFragment()?.refreshItems()
         getFavoritesFragment()?.refreshItems()
         getRecentsFragment()?.refreshItems()
+        getLeadsFragment()?.refreshItems()
     }
 
     private fun getAllFragments(): ArrayList<MyViewPagerFragment<*>?> {
@@ -515,6 +535,7 @@ class MainActivity : SimpleActivity() {
             fragments.add(getRecentsFragment())
         }
 
+        fragments.add(getLeadsFragment())
         return fragments
     }
 
@@ -525,6 +546,8 @@ class MainActivity : SimpleActivity() {
     private fun getFavoritesFragment(): FavoritesFragment? = findViewById(R.id.favorites_fragment)
 
     private fun getRecentsFragment(): RecentsFragment? = findViewById(R.id.recents_fragment)
+
+    private fun getLeadsFragment(): IttcLeadsFragment? = findViewById(R.id.ittc_leads_fragment)
 
     private fun getDefaultTab(): Int {
         val showTabsMask = config.showTabs

@@ -14,12 +14,17 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.checkAppSideloading
@@ -71,6 +76,11 @@ class DialpadActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityDialpadBinding::inflate)
 
     private var allContacts = ArrayList<Contact>()
+
+    // 🎓 ITTC: each contact's name as dial-pad digits, worked out once (not on every key press)
+    @Volatile
+    private var t9Names: Map<Contact, String> = emptyMap()
+    private var filterJob: Job? = null
     private var speedDialValues = ArrayList<SpeedDial>()
     private var privateCursor: Cursor? = null
     private var toneGeneratorHelper: ToneGeneratorHelper? = null
@@ -198,6 +208,8 @@ class DialpadActivity : SimpleActivity() {
             dialpadCallButton.setOnClickListener { initCall(dialpadInput.value) }
             dialpadCallButton.setOnLongClickListener { initCallWithSimSelector() }
             dialpadInput.onTextChangeListener { dialpadValueChanged(it) }
+            // 🎓 ITTC: your leads, for matching by name (read once, in the background)
+            org.fossify.commons.helpers.ensureBackgroundThread { IttcBridge.myLeads(this@DialpadActivity) }
             dialpadInput.requestFocus()
             dialpadInput.disableKeyboard()
         }
@@ -287,6 +299,9 @@ class DialpadActivity : SimpleActivity() {
             allContacts.addAll(privateContacts)
             allContacts.sort()
         }
+        // 🎓 ITTC: names as dial-pad digits, once
+        // (by the object itself: a private contact can share an id with a phone contact)
+        t9Names = java.util.IdentityHashMap<Contact, String>().apply { allContacts.forEach { put(it, t9Name(it)) } }
 
         runOnUiThread {
             if (!checkDialIntent() && binding.dialpadInput.value.isEmpty()) {
@@ -315,25 +330,43 @@ class DialpadActivity : SimpleActivity() {
 
         (binding.dialpadList.adapter as? ContactsAdapter)?.finishActMode()
 
-        val filtered = allContacts.filter { contact ->
-            var convertedName = KeypadHelper.convertKeypadLettersToDigits(
-                contact.name.normalizeString()
-            ).filterNot { it.isWhitespace() }
-
-            if (hasRussianLocale) {
-                var currConvertedName = ""
-                convertedName.lowercase(Locale.getDefault()).forEach { char ->
-                    val convertedChar = russianCharsMap.getOrElse(char) { char }
-                    currConvertedName += convertedChar
-                }
-                convertedName = currConvertedName
+        // 🎓 ITTC: matched off the main thread, and only the last key press counts (typing stays smooth)
+        filterJob?.cancel()
+        filterJob = lifecycleScope.launch {
+            val contacts = allContacts
+            val names = t9Names
+            val filtered = withContext(Dispatchers.Default) {
+                contacts.filter { contact ->
+                    ensureActive()
+                    val convertedName = names[contact] ?: t9Name(contact)
+                    contact.doesContainPhoneNumber(text) || (convertedName.contains(text, true))
+                }.sortedWith(compareBy {
+                    !it.doesContainPhoneNumber(text)
+                }).toMutableList() as ArrayList<Contact>
             }
+            if (binding.dialpadInput.value == text) showFiltered(filtered, text)
+        }
+        ittcShowLead(text)
+    }
 
-            contact.doesContainPhoneNumber(text) || (convertedName.contains(text, true))
-        }.sortedWith(compareBy {
-            !it.doesContainPhoneNumber(text)
-        }).toMutableList() as ArrayList<Contact>
+    /** A contact's name as dial-pad digits ("Rahim" → "72446") */
+    private fun t9Name(contact: Contact): String {
+        var convertedName = KeypadHelper.convertKeypadLettersToDigits(
+            contact.name.normalizeString()
+        ).filterNot { it.isWhitespace() }
 
+        if (hasRussianLocale) {
+            var currConvertedName = ""
+            convertedName.lowercase(Locale.getDefault()).forEach { char ->
+                val convertedChar = russianCharsMap.getOrElse(char) { char }
+                currConvertedName += convertedChar
+            }
+            convertedName = currConvertedName
+        }
+        return convertedName
+    }
+
+    private fun showFiltered(filtered: ArrayList<Contact>, text: String) {
         binding.letterFastscroller.setupWithContacts(binding.dialpadList, filtered)
 
         ContactsAdapter(
@@ -353,11 +386,43 @@ class DialpadActivity : SimpleActivity() {
 
         binding.dialpadPlaceholder.beVisibleIf(filtered.isEmpty())
         binding.dialpadList.beVisibleIf(filtered.isNotEmpty())
-        ittcShowLead(text)
     }
+
+    // 🎓 ITTC: your own leads (the "Leads" tab's) whose name (by the keys) or number matches
+    private fun ittcShowMatches(text: String) {
+        val box = binding.ittcDialpadMatches
+        box.removeAllViews()
+        val digits = text.filter { it.isDigit() }
+        if (digits.length < 2) return
+        val leads = IttcBridge.myLeadsCache
+        if (leads.isEmpty()) return
+        val hits = leads.filter { l ->
+            ittcT9(l.name).contains(digits) ||
+                (digits.length >= 4 && listOfNotNull(l.phone, l.altPhone).any { it.filter(Char::isDigit).contains(digits) })
+        }.take(3)
+        val primary = getProperPrimaryColor()
+        val pad = (resources.displayMetrics.density * 8).toInt()
+        hits.forEach { l ->
+            val number = l.callNumber ?: return@forEach
+            box.addView(TextView(this).apply {
+                this.text = listOfNotNull("🎓 ${l.name}", l.course, number).joinToString(" · ")
+                setTextColor(primary)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(pad * 2, pad, pad * 2, pad)
+                setBackgroundResource(android.R.drawable.list_selector_background)
+                setOnClickListener { initCall(number) }
+            })
+        }
+    }
+
+    private fun ittcT9(name: String): String =
+        KeypadHelper.convertKeypadLettersToDigits(name.normalizeString()).filterNot { it.isWhitespace() }
 
     // 🎓 ITTC: a full number that is a lead's → who it is, above the dial pad (tap: the lead)
     private fun ittcShowLead(text: String) {
+        ittcShowMatches(text)
         val view = binding.ittcDialpadLead
         val digits = text.count { it.isDigit() }
         if (digits < 10) {

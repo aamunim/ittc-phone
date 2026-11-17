@@ -517,20 +517,15 @@ class RecentCallsAdapter(
                 val lead = if (call.isUnknownNumber) null else IttcBridge.recentLead(activity, call.phoneNumber) {
                     ittcRefresh()
                 }
-                if (lead != null && matchingContact == null && name == call.phoneNumber && lead.name.isNotEmpty()) {
-                    nameToShow = SpannableString(
-                        if (call.groupedCalls != null) "${lead.name} (${call.groupedCalls.size})" else lead.name
-                    )
-                }
+                // (not in the phone's contacts: the number stays the title, the lead's name goes
+                // small on the line below: "🎓 Rahim · CSE · Interested")
+                val unsaved = matchingContact == null && name == call.phoneNumber
                 itemRecentsIttc.apply {
                     beVisibleIf(lead != null && refreshItemsListener != null)
                     if (lead != null) {
-                        text = listOfNotNull(
-                            activity.getString(R.string.ittc_lead_badge),
-                            lead.course,
-                            lead.stage,
-                        ).joinToString(" · ")
-                        setTextColor(properPrimaryColor)
+                        val who = if (unsaved && lead.name.isNotEmpty()) "🎓 ${lead.name}" else activity.getString(R.string.ittc_lead_badge)
+                        text = listOfNotNull(who, lead.course, lead.stage).joinToString(" · ")
+                        setTextColor(IttcBridge.stageColor(lead.stage, properPrimaryColor, secondaryTextColor))
                         setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
                     }
                 }
