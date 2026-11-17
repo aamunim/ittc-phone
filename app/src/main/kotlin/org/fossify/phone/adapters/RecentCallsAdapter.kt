@@ -52,6 +52,7 @@ import org.fossify.phone.R
 import org.fossify.phone.activities.MainActivity
 import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.databinding.ItemRecentCallBinding
+import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.databinding.ItemRecentsDateBinding
 import org.fossify.phone.dialogs.ShowGroupedCallsDialog
 import org.fossify.phone.extensions.areMultipleSIMsAvailable
@@ -462,6 +463,11 @@ class RecentCallsAdapter(
         selectedKeys.remove(callId)
     }
 
+    // 🎓 ITTC: the leads for the rows came in (once per batch)
+    private fun ittcRefresh() {
+        if (!activity.isFinishing && !activity.isDestroyed) notifyItemRangeChanged(0, itemCount)
+    }
+
     private inner class RecentCallViewHolder(val binding: ItemRecentCallBinding) : ViewHolder(binding.root) {
         fun bind(call: RecentCall) = bindView(
             item = call,
@@ -505,6 +511,28 @@ class RecentCallsAdapter(
 
                 if (textToHighlight.isNotEmpty() && nameToShow.contains(textToHighlight, true)) {
                     nameToShow = SpannableString(nameToShow.toString().highlightTextPart(textToHighlight, properPrimaryColor))
+                }
+
+                // 🎓 ITTC: a lead's number → the lead's name (when no contact has it) and course · stage
+                val lead = if (call.isUnknownNumber) null else IttcBridge.recentLead(activity, call.phoneNumber) {
+                    ittcRefresh()
+                }
+                if (lead != null && matchingContact == null && name == call.phoneNumber && lead.name.isNotEmpty()) {
+                    nameToShow = SpannableString(
+                        if (call.groupedCalls != null) "${lead.name} (${call.groupedCalls.size})" else lead.name
+                    )
+                }
+                itemRecentsIttc.apply {
+                    beVisibleIf(lead != null && refreshItemsListener != null)
+                    if (lead != null) {
+                        text = listOfNotNull(
+                            activity.getString(R.string.ittc_lead_badge),
+                            lead.course,
+                            lead.stage,
+                        ).joinToString(" · ")
+                        setTextColor(properPrimaryColor)
+                        setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
+                    }
                 }
 
                 itemRecentsName.apply {

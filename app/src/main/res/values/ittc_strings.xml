@@ -3,4 +3,18 @@
 <resources>
     <string name="ittc_app_name" translatable="false">ITTC Phone</string>
     <string name="ittc_lead_badge" translatable="false">🎓 Lead</string>
+    <!-- after a lead call -->
+    <string name="ittc_after_call_badge" translatable="false">🎓 Lead · call ended</string>
+    <string name="ittc_add_note" translatable="false">📝 Add a note</string>
+    <string name="ittc_call_again" translatable="false">📞 Call again</string>
+    <string name="ittc_open_lead" translatable="false">👤 Open the lead</string>
+    <string name="ittc_close" translatable="false">Close</string>
+    <string name="ittc_talked" translatable="false">📞 Talked %s</string>
+    <string name="ittc_no_answer" translatable="false">📵 No answer</string>
+    <string name="ittc_busy" translatable="false">📵 Busy</string>
+    <string name="ittc_missed" translatable="false">📥 Missed call</string>
+    <string name="ittc_declined" translatable="false">🚫 Declined</string>
+    <string name="ittc_tracker_missing" translatable="false">Open ITTC Admission Tracker to add the note</string>
+    <!-- Recents / dial pad -->
+    <string name="ittc_dialpad_lead" translatable="false">🎓 %s · tap to open</string>
 </resources>

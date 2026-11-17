@@ -66,6 +66,10 @@ class CallActivity : SimpleActivity() {
 
     private var audioRouteChooserDialog: DynamicBottomSheetChooserDialog? = null
 
+    // 🎓 ITTC: the number is a lead (the screen stays a moment after the call, so the after-call
+    // screen can open over it)
+    private var ittcLeadShown = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
@@ -95,7 +99,14 @@ class CallActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 🎓 ITTC: while the call screen is up, a lead call may end with the after-call screen
+        IttcBridge.screensOpen++
         updateState()
+    }
+
+    override fun onPause() {
+        IttcBridge.screensOpen = (IttcBridge.screensOpen - 1).coerceAtLeast(0)
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -604,6 +615,7 @@ class CallActivity : SimpleActivity() {
                 }
                 ittcLeadInfo.text = lead.summary(getString(R.string.ittc_lead_badge))
                 ittcLeadInfo.beVisible()
+                ittcLeadShown = true
             }
 
             callerAvatar.apply {
@@ -796,6 +808,12 @@ class CallActivity : SimpleActivity() {
                 @SuppressLint("SetTextI18n")
                 binding.callStatusLabel.text = "${callDuration.getFormattedDuration()} (${getString(R.string.call_ended)})"
                 Handler(mainLooper).postDelayed(3000) {
+                    safeFinishAndRemoveTask()
+                }
+            } else if (ittcLeadShown) {
+                disableAllActionButtons()
+                binding.callStatusLabel.text = getString(R.string.call_ended)
+                Handler(mainLooper).postDelayed(1500) {
                     safeFinishAndRemoveTask()
                 }
             } else {
