@@ -15,7 +15,8 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
   are handed over; personal calls are never sent anywhere.
 - 📝 **After a lead call** — a screen with the lead, how the call went (talked 2m 34s / no answer /
   missed) and "Add a note" (opens the Tracker's note popup for that very call), "Call again",
-  "Open the lead". Calls started from the Tracker skip it: the Tracker shows its own popup.
+  "Open the lead", "WhatsApp", "SMS". Calls started from the Tracker skip it: the Tracker shows
+  its own popup.
 - 🕘 **Recents** — lead numbers show the lead's name and "🎓 Lead · course · stage".
 - 🔢 **Dial pad** — a full number that is a lead's shows who it is above the keys (tap: the lead).
 - App name "ITTC Phone". The app id stays `org.fossify.phone` because Fossify's shared library

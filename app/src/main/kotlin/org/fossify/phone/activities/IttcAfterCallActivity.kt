@@ -3,6 +3,7 @@ package org.fossify.phone.activities
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -87,8 +88,25 @@ class IttcAfterCallActivity : SimpleActivity() {
                 startCallIntent(number)
                 finish()
             }
+            ittcAcWhatsapp.setOnClickListener { openOutside(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/${waDigits(number)}"))) }
+            ittcAcSms.setOnClickListener { openOutside(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number"))) }
             ittcAcOpenLead.setOnClickListener { openLead(leadId, null) }
             ittcAcClose.setOnClickListener { finish() }
+        }
+    }
+
+    /** 01711… → 8801711… (WhatsApp wants the country code, no +) */
+    private fun waDigits(number: String): String {
+        val d = number.filter { it.isDigit() }
+        return if (d.startsWith("0") && d.length == 11) "88$d" else d
+    }
+
+    private fun openOutside(intent: Intent) {
+        try {
+            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            finish()
+        } catch (_: Throwable) {
+            toast(R.string.ittc_no_app)
         }
     }
 
