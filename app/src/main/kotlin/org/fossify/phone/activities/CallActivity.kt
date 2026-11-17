@@ -602,6 +602,7 @@ class CallActivity : SimpleActivity() {
 
             // 🎓 ITTC: a lead's number → the lead on the call screen
             ittcLeadInfo.beGone()
+            ittcLeadShown = false
             val shown = callContact
             IttcBridge.lookup(this@CallActivity, number) { lead ->
                 if (lead == null || shown != callContact || isFinishing || isDestroyed) return@lookup

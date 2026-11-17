@@ -1,6 +1,7 @@
 package org.fossify.phone.helpers
 
 import android.annotation.SuppressLint
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -251,15 +252,15 @@ object IttcBridge {
 
     fun rowIdFor(number: String?): String? = clean(number)?.let { rowIds[it] }
 
-    fun onCallEnded(context: Context, call: Call) {
+    fun onCallEnded(context: Context, call: Call, lastCall: Boolean) {
         // (never in the way of the phone: anything going wrong here is dropped)
         try {
-            handOver(context, call)
+            handOver(context, call, lastCall)
         } catch (_: Throwable) {
         }
     }
 
-    private fun handOver(context: Context, call: Call) {
+    private fun handOver(context: Context, call: Call, lastCall: Boolean) {
         val app = context.applicationContext
         val details = try {
             call.details
@@ -276,8 +277,14 @@ object IttcBridge {
             false
         }
         val reason = endReason(details.disconnectCause)
-        // (an after-call screen can only open while one of ours is on screen: the call screen)
-        val canShow = screensOpen > 0
+        // (an after-call screen only: when no other call is left, while our call screen is up (it
+        // cannot open from the background), and not on a locked phone (it would stay unseen))
+        val locked = try {
+            app.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+        } catch (_: Throwable) {
+            true
+        }
+        val canShow = lastCall && screensOpen > 0 && !locked
         rowIds.remove(number)
         forgetRecents()
         ended.execute {
@@ -285,7 +292,8 @@ object IttcBridge {
                 if (!trackerReady(app)) return@execute
                 // only lead calls: a personal call is never handed over
                 val lead = query(app, number, startedAt) ?: return@execute
-                val show = canShow && !lead.appCall
+                // (a call the Tracker's Call button placed: the Tracker shows its own popup)
+                val show = canShow && !(outgoing && lead.appCall)
                 if (show) {
                     main.post {
                         IttcAfterCallActivity.open(app, lead, number, outgoing, talkedSec, reason)
