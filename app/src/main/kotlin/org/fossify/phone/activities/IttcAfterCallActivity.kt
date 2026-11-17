@@ -16,7 +16,6 @@ import android.provider.CallLog
 import java.util.Calendar
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.helpers.ensureBackgroundThread
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -29,13 +28,12 @@ import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.phone.R
 import org.fossify.phone.databinding.IttcActivityAfterCallBinding
-import org.fossify.phone.extensions.startCallIntent
 import org.fossify.phone.helpers.IttcBridge
 
 /**
  * 🎓 ITTC: right after a lead call that was not started from the Tracker (an incoming call, or one
- * dialed here): who it was, how the call went, and "Add a note" (the Tracker's own note popup for
- * this very call), "Call again", "Open the lead".
+ * dialed here): who it was, how the call went, and in one go what happened, the pipeline stage,
+ * a note and the next call — saved through the Tracker (an older Tracker: its own note popup).
  * Calls started from the Tracker skip this: the Tracker shows its popup when the call ends.
  */
 class IttcAfterCallActivity : SimpleActivity() {
@@ -46,6 +44,14 @@ class IttcAfterCallActivity : SimpleActivity() {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
         setupEdgeToEdge(padTopSystem = listOf(binding.ittcAcHolder), padBottomSystem = listOf(binding.ittcAcHolder))
+        // (a stage that needs a note: its hint goes once one is written)
+        binding.ittcAcNoteInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: android.text.Editable?) {
+                if (stageChoice?.noteRequired == true) renderStages()
+            }
+        })
         show(intent)
     }
 
@@ -97,14 +103,6 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcSave.backgroundTintList = ColorStateList.valueOf(primary)
             ittcAcSave.setTextColor(primary.getContrastColor())
             ittcAcSave.setOnClickListener { save(leadId, number) }
-            ittcAcAddNote.setOnClickListener { addNote(leadId, number) }
-            ittcAcCallAgain.setOnClickListener {
-                startCallIntent(number)
-                finish()
-            }
-            ittcAcWhatsapp.setOnClickListener { openOutside(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/${waDigits(number)}"))) }
-            ittcAcSms.setOnClickListener { openOutside(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number"))) }
-            ittcAcOpenLead.setOnClickListener { openLead(leadId, null) }
             ittcAcClose.setOnClickListener { finish() }
         }
         // (a likely answer chosen already: talked → Connected, no answer → No answer, busy → Busy)
@@ -116,8 +114,74 @@ class IttcAfterCallActivity : SimpleActivity() {
         }
         nextAt = null
         nextKey = "none"
+        stages = emptyList()
+        currentStageId = null
+        stageChoice = null
         renderChoices()
+        renderStages()
         showToday()
+        loadStages(leadId, intent.getStringExtra(STAGE))
+    }
+
+    // ------------------------------------------------------------------
+    // 🧭 The pipeline stage (Tracker 2.10.6+): open stages of the lead's course
+    // ------------------------------------------------------------------
+    private var stages: List<IttcBridge.Stage> = emptyList()
+    private var currentStageId: String? = null
+    private var stageChoice: IttcBridge.Stage? = null
+
+    private fun loadStages(leadId: String, stageName: String?) {
+        ensureBackgroundThread {
+            val meta = IttcBridge.metaCache ?: IttcBridge.phoneMeta(this)
+            val lead = IttcBridge.myLeadsCache.firstOrNull { it.leadId == leadId }
+                ?: IttcBridge.myLeads(this)?.firstOrNull { it.leadId == leadId }
+            val list = meta?.stages.orEmpty().filter { it.forCourse(lead?.courseId) }
+            val current = lead?.stageId ?: list.firstOrNull { it.name.equals(stageName, true) }?.id
+            runOnUiThread {
+                if (isFinishing || isDestroyed || intent.getStringExtra(LEAD_ID) != leadId) return@runOnUiThread
+                stages = list
+                currentStageId = current
+                renderStages()
+            }
+        }
+    }
+
+    private fun renderStages() {
+        val show = stages.isNotEmpty()
+        binding.ittcAcStageLabel.beGoneIf(!show)
+        binding.ittcAcStages.beGoneIf(!show)
+        binding.ittcAcStages.removeAllViews()
+        val m = (resources.displayMetrics.density * 6).toInt()
+        val selectedId = stageChoice?.id ?: currentStageId
+        stages.chunked(3).forEach { row ->
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            row.forEach { st ->
+                val isCurrent = st.id == currentStageId
+                line.addView(
+                    chip(if (isCurrent) "• ${st.name}" else st.name, st.id == selectedId, st.color) {
+                        // (the current stage again: no change)
+                        stageChoice = if (isCurrent || stageChoice?.id == st.id) null else st
+                        renderStages()
+                    },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(m, m, m, 0) },
+                )
+            }
+            // (a short last row keeps the same chip width)
+            repeat(3 - row.size) {
+                line.addView(android.view.View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(m, m, m, 0) })
+            }
+            binding.ittcAcStages.addView(line)
+        }
+        val st = stageChoice
+        val hint = when {
+            st == null -> null
+            st.askDate && nextAt == null -> getString(R.string.ittc_stage_needs_date, st.name, (st.dateLabel ?: "date & time").lowercase())
+            st.noteRequired && binding.ittcAcNoteInput.text.isNullOrBlank() -> getString(R.string.ittc_stage_needs_note, st.name)
+            !st.askDate && nextAt == null && st.followUpDays != null -> getString(R.string.ittc_stage_auto_next, st.followUpDays)
+            else -> null
+        }
+        binding.ittcAcStageHint.text = hint
+        binding.ittcAcStageHint.beGoneIf(hint == null)
     }
 
     // ------------------------------------------------------------------
@@ -137,17 +201,18 @@ class IttcAfterCallActivity : SimpleActivity() {
         "call_back" to "🔁 Call back",
     )
 
-    private fun chip(label: String, on: Boolean, onClick: () -> Unit): TextView = TextView(this).apply {
+    private fun chip(label: String, on: Boolean, color: Int? = null, onClick: () -> Unit): TextView = TextView(this).apply {
         text = label
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         val pad = (resources.displayMetrics.density * 10).toInt()
         setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
         gravity = Gravity.CENTER
         setBackgroundResource(R.drawable.ittc_chip_background)
-        val primary = getProperPrimaryColor()
+        val primary = color ?: getProperPrimaryColor()
         val text = getProperTextColor()
         background.mutate().applyColorFilter(if (on) primary else (text and 0x00FFFFFF) or 0x22000000)
         setTextColor(if (on) primary.getContrastColor() else text)
+        maxLines = 2
         setOnClickListener { onClick() }
     }
 
@@ -188,6 +253,7 @@ class IttcAfterCallActivity : SimpleActivity() {
                     nextKey = key
                     nextAt = at
                     renderChoices()
+                    renderStages()
                 },
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, 0, 0) },
             )
@@ -212,6 +278,7 @@ class IttcAfterCallActivity : SimpleActivity() {
                     nextKey = "pick"
                     nextAt = at
                     renderChoices()
+                    renderStages()
                 }
             }, 10, 0, false).show()
         }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).apply {
@@ -223,8 +290,20 @@ class IttcAfterCallActivity : SimpleActivity() {
     private fun save(leadId: String, number: String) {
         if (saving) return
         val note = binding.ittcAcNoteInput.text?.toString()?.trim().orEmpty()
-        if (outcome == null && note.isEmpty() && nextAt == null) {
+        val stage = stageChoice
+        if (outcome == null && note.isEmpty() && nextAt == null && stage == null) {
             toast(R.string.ittc_pick_outcome)
+            return
+        }
+        // (the stage's own rules, as in the Tracker)
+        if (stage != null && stage.askDate && nextAt == null) {
+            toast(getString(R.string.ittc_stage_needs_date, stage.name, (stage.dateLabel ?: "date & time").lowercase()))
+            pickDate()
+            return
+        }
+        if (stage != null && stage.noteRequired && note.isEmpty()) {
+            toast(getString(R.string.ittc_stage_needs_note, stage.name))
+            binding.ittcAcNoteInput.requestFocus()
             return
         }
         saving = true
@@ -240,7 +319,7 @@ class IttcAfterCallActivity : SimpleActivity() {
                 tries++
             }
             val started = intent.getLongExtra(STARTED_AT, 0L).takeIf { it > 0 }
-            val ok = IttcBridge.saveOutcome(this, leadId, number, chosen, note, next, started)
+            val ok = IttcBridge.saveOutcome(this, leadId, number, chosen, note, next, started, stage)
             runOnUiThread {
                 saving = false
                 binding.ittcAcSave.isEnabled = true
@@ -292,21 +371,6 @@ class IttcAfterCallActivity : SimpleActivity() {
         }
     }
 
-    /** 01711… → 8801711… (WhatsApp wants the country code, no +) */
-    private fun waDigits(number: String): String {
-        val d = number.filter { it.isDigit() }
-        return if (d.startsWith("0") && d.length == 11) "88$d" else d
-    }
-
-    private fun openOutside(intent: Intent) {
-        try {
-            startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            finish()
-        } catch (_: Throwable) {
-            toast(R.string.ittc_no_app)
-        }
-    }
-
     private fun result(talked: Int, outgoing: Boolean, reason: String?): String = when {
         talked > 0 -> getString(R.string.ittc_talked, duration(talked))
         reason == "busy" -> getString(R.string.ittc_busy)
@@ -325,11 +389,9 @@ class IttcAfterCallActivity : SimpleActivity() {
     private fun addNote(leadId: String, number: String, tries: Int = 0) {
         val rowId = IttcBridge.rowIdFor(number)
         if (rowId == null && tries < 4) {
-            binding.ittcAcAddNote.isEnabled = false
             main.postDelayed({ addNote(leadId, number, tries + 1) }, 700)
             return
         }
-        binding.ittcAcAddNote.isEnabled = true
         openLead(leadId, rowId)
     }
 
