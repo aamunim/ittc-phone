@@ -32,7 +32,7 @@ android {
         targetSdk = project.libs.versions.app.build.targetSDK.get().toInt()
         versionName = project.property("VERSION_NAME").toString()
         versionCode = project.property("VERSION_CODE").toString().toInt()
-        setProperty("archivesBaseName", "phone-$versionCode")
+        setProperty("archivesBaseName", "ittc-phone-$versionName")
     }
 
     signingConfigs {
@@ -110,7 +110,8 @@ android {
         )
     }
 
-    namespace = project.property("APP_ID").toString()
+    // (the code keeps Fossify's package; only the installed app id is ITTC Phone's)
+    namespace = "org.fossify.phone"
 
     lint {
         checkReleaseBuilds = false

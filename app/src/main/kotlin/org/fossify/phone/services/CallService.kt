@@ -13,6 +13,7 @@ import org.fossify.phone.extensions.keyguardManager
 import org.fossify.phone.extensions.powerManager
 import org.fossify.phone.helpers.CallManager
 import org.fossify.phone.helpers.CallNotificationManager
+import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.NoCall
 import org.fossify.phone.models.Events
 import org.greenrobot.eventbus.EventBus
@@ -67,6 +68,8 @@ class CallService : InCallService() {
 
     override fun onCallRemoved(call: Call) {
         super.onCallRemoved(call)
+        // 🎓 ITTC: tell the Admission Tracker a lead call ended (in the background)
+        IttcBridge.onCallEnded(this, call)
         call.unregisterCallback(callListener)
         val wasPrimaryCall = call == CallManager.getPrimaryCall()
         CallManager.onCallRemoved(call)

@@ -98,12 +98,33 @@
         android:layout_marginTop="@dimen/normal_margin"
         android:gravity="center_horizontal"
         android:textSize="@dimen/call_status_text_size"
-        app:layout_constraintBottom_toTopOf="@id/call_status_label"
+        app:layout_constraintBottom_toTopOf="@id/ittc_lead_info"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/caller_name_label"
         android:textDirection="firstStrongLtr"
         tools:text="+1 (123) 456-7890" />
+
+    <!-- 🎓 ITTC: the lead (course · stage · last note), when the number is a lead -->
+    <org.fossify.commons.views.MyTextView
+        android:id="@+id/ittc_lead_info"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/normal_margin"
+        android:alpha="0.9"
+        android:ellipsize="end"
+        android:gravity="center_horizontal"
+        android:maxLines="3"
+        android:paddingStart="@dimen/medium_margin"
+        android:paddingEnd="@dimen/medium_margin"
+        android:textSize="@dimen/call_status_text_size"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/call_status_label"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/caller_number"
+        tools:text="🎓 Lead · B.Ed · Interested"
+        tools:visibility="visible" />
 
     <org.fossify.commons.views.MyTextView
         android:id="@+id/call_status_label"
@@ -115,7 +136,7 @@
         app:layout_constraintBottom_toTopOf="@id/hold_status_label"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/caller_number"
+        app:layout_constraintTop_toBottomOf="@id/ittc_lead_info"
         tools:text="Is Calling" />
 
     <TextView

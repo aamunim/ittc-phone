@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC Phone: strings of its own (not translated; the rest are Fossify Phone's) -->
+<resources>
+    <string name="ittc_app_name" translatable="false">ITTC Phone</string>
+    <string name="ittc_lead_badge" translatable="false">🎓 Lead</string>
+</resources>

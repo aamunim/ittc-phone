@@ -1,34 +1,38 @@
-# Fossify Phone
-<img alt="Logo" src="graphics/icon.webp" width="120" />
+# ITTC Phone
 
-<a href='https://play.google.com/store/apps/details?id=org.fossify.phone'><img alt='Get it on Google Play' src='https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png' height=80/></a> <a href="https://f-droid.org/packages/org.fossify.phone/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on-en.svg" alt="Get it on F-Droid" height=80/></a> <a href="https://apt.izzysoft.de/fdroid/index/apk/org.fossify.phone"><img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png" alt="Get it on IzzyOnDroid" height=80/></a>
+The phone app (dialer) of the ITTC Admission Tracker.
 
-Empower your calls, and safeguard your data. Fossify Phone redefines the mobile app experience with unmatched privacy and efficiency. Free from ads and intrusive permissions, it's designed for seamless and secure everyday communication.
+ITTC Phone is a modified version of **[Fossify Phone](https://github.com/FossifyOrg/Phone)**
+(version 1.11.1), released under the **GNU General Public License v3.0** like the original —
+see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify contributors.
 
-📱 **YOUR PRIVACY, OUR PRIORITY:**  
-Welcome to the Fossify Phone App, where your digital privacy is paramount. Switch to a mobile experience that respects your data, ensuring your personal information remains secure and private.
+## What ITTC Phone adds
 
-🚀 **SEAMLESS PERFORMANCE:**  
-The Fossify Phone App offers a fluid and responsive mobile interface, enhancing your phone's performance while safeguarding your privacy. Experience a lag-free, smooth user experience, optimized for efficiency and speed.
+- 🎓 **The lead on the call screen** — when the number belongs to a lead in the ITTC
+  Admission Tracker, the call screen shows the lead's name, course, stage and last note.
+- 📞 **Lead calls reach the Tracker the moment they end** — ITTC Phone tells the Tracker which
+  row of the phone's call log the call is; the Tracker reads that row itself. Only lead calls
+  are handed over; personal calls are never sent anywhere.
+- App name "ITTC Phone" and its own app id (`bd.edu.ittc.phone`), so it installs next to
+  Fossify Phone.
 
-🌐 **OPEN-SOURCE ASSURANCE:**  
-With the Fossify Phone App, transparency is at your fingertips. Built on an open-source foundation, our app allows you to review our code on GitHub, fostering trust and a community committed to privacy.
+The two apps talk only through Android, protected by a signature permission: they must be
+signed with the same key. The contract is in [docs/ITTC.md](docs/ITTC.md).
 
-🖼️ **TAILOR-MADE CUSTOMIZATION:**  
-Customize your mobile experience with the Fossify Phone App. Adjust your app settings for a personalized interface, from thematic designs to functional preferences. Enjoy a user interface that's intuitive and uniquely yours.
+## Changes from Fossify Phone (GPL-3.0 §5)
 
-🔋 **EFFICIENT RESOURCE MANAGEMENT:**  
-The Fossify Phone App is designed for optimal resource usage, contributing to extended battery life. It's light on your phone's resources, ensuring your device runs efficiently with minimized battery drain.
+- `app/src/main/kotlin/org/fossify/phone/helpers/IttcBridge.kt` (new): lead lookup and the
+  call-ended message.
+- `services/CallService.kt`, `activities/CallActivity.kt`, `res/layout/activity_call.xml`:
+  the hooks for the above and the lead line on the call screen.
+- `AndroidManifest.xml`, `gradle.properties`, `app/build.gradle.kts`, `res/values/ittc_strings.xml`:
+  name, app id, version, the shared permission.
+- `.github/workflows/build.yml`: builds the signed APK; Fossify's own workflows removed.
 
-Download the Fossify Phone App now and step into a mobile world where privacy seamlessly blends with functionality. Your journey towards a safer, personalized mobile experience starts here.
+## Build
 
-➡️ Explore more Fossify apps: https://www.fossify.org<br>
-➡️ Open-Source Code: https://www.github.com/FossifyOrg<br>
-➡️ Join the community on Reddit: https://www.reddit.com/r/Fossify<br>
-➡️ Connect on Telegram: https://t.me/Fossify
+GitHub Actions builds every push. A tag `v1.2.3` makes a GitHub Release with the APK.
+Signing uses the repository secrets `ITTC_KEYSTORE_BASE64`, `ITTC_KEYSTORE_PASSWORD`,
+`ITTC_KEY_ALIAS` and `ITTC_KEY_PASSWORD` (the Tracker's key).
 
-<div align="center">
-<img alt="App image" src="fastlane/metadata/android/en-US/images/phoneScreenshots/1_en-US.png" width="30%">
-<img alt="App image" src="fastlane/metadata/android/en-US/images/phoneScreenshots/2_en-US.png" width="30%">
-<img alt="App image" src="fastlane/metadata/android/en-US/images/phoneScreenshots/3_en-US.png" width="30%">
-</div>
+Locally: `./gradlew assembleFossRelease` (unsigned without the signing variables).
