@@ -2,6 +2,8 @@
 #  - every push / pull request: build (the signed APK is kept as a workflow artifact)
 #  - a tag "v1.2.3" (must match VERSION_NAME in gradle.properties): the same, then a
 #    GitHub Release with the APK — the Tracker's "Get ITTC Phone" button opens /releases/latest
+#  - 📱 from a phone: Actions → Build → Run workflow (branch main) → "Make a release" ✓ —
+#    makes the release "v<VERSION_NAME>" with the APK, no tag to type, no Releases page needed
 name: Build
 
 on:
@@ -13,6 +15,11 @@ on:
     types: [published]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Make a release (v + VERSION_NAME in gradle.properties) with the APK'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,6 +28,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +39,18 @@ jobs:
           java-version: "17"
 
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: The app's version
+        id: version
+        run: echo "version=$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: A release from the phone is made from main only
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run it on the main branch to make a release (now: $GITHUB_REF_NAME)."
+            exit 1
+          fi
 
       - name: A release tag matches the app's version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -49,7 +70,7 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/ittc.jks"
             echo "SIGNING_STORE_FILE=$RUNNER_TEMP/ittc.jks" >> "$GITHUB_ENV"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]] || [ "${{ github.event_name == 'workflow_dispatch' && inputs.release }}" = "true" ]; then
             echo "::error::No signing key: a release must be signed (secret ITTC_KEYSTORE_BASE64)."
             exit 1
           else
@@ -92,7 +113,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -105,14 +126,19 @@ jobs:
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          cp apk/*.apk "ITTC-Phone-${GITHUB_REF_NAME}.apk"
+          # (a tag push / Releases page: that tag; "Make a release" from Actions: v + VERSION_NAME)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then TAG="$GITHUB_REF_NAME"; else TAG="v$VERSION"; fi
+          cp apk/*.apk "ITTC-Phone-${TAG}.apk"
           # made by hand on GitHub's Releases page already: just add the APK to it
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "ITTC-Phone-${GITHUB_REF_NAME}.apk" --repo "$GITHUB_REPOSITORY" --clobber
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" "ITTC-Phone-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "ITTC-Phone-${GITHUB_REF_NAME}.apk" \
+            gh release create "$TAG" "ITTC-Phone-${TAG}.apk" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "ITTC Phone ${GITHUB_REF_NAME}" \
+              --target "$GITHUB_SHA" \
+              --title "ITTC Phone ${TAG}" \
               --notes "Install on Android, then open it and make it the phone app. Source: this repository (GPL-3.0), based on Fossify Phone."
           fi
+          echo "✅ Release $TAG: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
