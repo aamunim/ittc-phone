@@ -21,4 +21,18 @@
         <item name="android:layout_centerHorizontal">true</item>
     </style>
 
+    <!-- 🎓 ITTC Phone: a row on the About screen -->
+    <style name="IttcAboutRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">@dimen/medium_margin</item>
+        <item name="android:paddingEnd">@dimen/medium_margin</item>
+        <item name="android:paddingTop">@dimen/medium_margin</item>
+        <item name="android:paddingBottom">@dimen/medium_margin</item>
+        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:textSize">@dimen/bigger_text_size</item>
+    </style>
+
 </resources>
