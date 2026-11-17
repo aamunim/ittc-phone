@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC Phone: no donation / upgrade prompts and no store links (it is not the store's Fossify Phone) -->
+<resources>
+    <bool name="hide_google_relations">true</bool>
+</resources>

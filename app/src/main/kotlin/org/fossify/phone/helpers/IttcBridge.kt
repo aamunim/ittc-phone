@@ -102,6 +102,14 @@ object IttcBridge {
     // moment later), then tell the Tracker which row it is.
     // -------------------------------------------------------------------
     fun onCallEnded(context: Context, call: Call) {
+        // (never in the way of the phone: anything going wrong here is dropped)
+        try {
+            handOver(context, call)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun handOver(context: Context, call: Call) {
         val app = context.applicationContext
         val details = try {
             call.details
