@@ -34,6 +34,12 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
   Team Leads / Callers (all of them, or one person).
 - 🧭 **Stage after a call** (Tracker 2.10.6+) — change the pipeline stage with the result; a stage
   that needs a note or a date asks for it.
+- 🎨 **ITTC look** (1.5.0) — the ITTC logo as the app icon (with a small green phone badge; a
+  monochrome one for themed icons), ITTC blue as the default colour, the icon on the Android 12+
+  opening screen, and ITTC Phone's own About screen (version, new version, the Tracker, privacy,
+  licence, source code, libraries). Fossify's "More apps" menu item and its About screen (its
+  links, donation and social pages) are gone. Kept, as the GNU GPL requires: the licence, the
+  copyright notices in the source, and a credit line "based on Fossify Phone" in About.
 - App name "ITTC Phone". The app id stays `org.fossify.phone` because Fossify's shared library
   checks for it (calls, the phone-app role, app icons). So ITTC Phone and the real Fossify Phone
   cannot be installed together; uninstall Fossify Phone first if it is there.

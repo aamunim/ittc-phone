@@ -2,6 +2,18 @@
 <!-- 🎓 ITTC Phone: strings of its own (not translated; the rest are Fossify Phone's) -->
 <resources>
     <string name="ittc_app_name" translatable="false">ITTC Phone</string>
+    <!-- About -->
+    <string name="ittc_about_version" translatable="false">Version %s</string>
+    <string name="ittc_about_tagline" translatable="false">The phone app for ITTC admissions — calls, leads and results, with ITTC Admission Tracker.</string>
+    <string name="ittc_about_update" translatable="false">⬆️ Check for a new version</string>
+    <string name="ittc_about_tracker" translatable="false">🎓 Open ITTC Admission Tracker</string>
+    <string name="ittc_about_privacy" translatable="false">🔐 Privacy: your calls stay on this phone. Only calls with leads are handed to ITTC Admission Tracker, which sends them to ITTC.</string>
+    <string name="ittc_about_source" translatable="false">💻 Source code</string>
+    <string name="ittc_about_licence" translatable="false">📄 Licence: GNU GPL v3 (no warranty)</string>
+    <string name="ittc_about_libraries" translatable="false">📚 Open-source libraries</string>
+    <string name="ittc_about_no_browser" translatable="false">No browser on this phone</string>
+    <string name="ittc_about_libraries_text" translatable="false">• Fossify Commons — GNU GPL v3\n• Glide — BSD, MIT and Apache 2.0\n• Indicator Fast Scroll — Apache 2.0\n• AutoFitTextView — Apache 2.0\n• AndroidX and Material Components — Apache 2.0</string>
+    <string name="ittc_about_credit" translatable="false">ITTC Phone is free software, based on Fossify Phone © the Fossify contributors. You may share and change it under the GNU General Public License, version 3.</string>
     <string name="ittc_lead_badge" translatable="false">🎓 Lead</string>
     <!-- after a lead call -->
     <string name="ittc_after_call_badge" translatable="false">🎓 Lead · call ended</string>

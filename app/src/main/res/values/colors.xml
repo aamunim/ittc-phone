@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 🎓 ITTC Phone: ITTC blue (as the Admission Tracker) instead of Fossify's green; the app icon on white -->
+    <color name="color_primary">#3557D4</color>
+    <color name="color_primary_dark">#6E8BFF</color>
+    <color name="ittc_icon_background">#FFFFFF</color>
     <color name="ripple_foreground">#33FFFFFF</color>
     <color name="color_missed_call">@color/md_red_500_dark</color>
     <color name="color_outgoing_call">@color/md_green_600</color>
