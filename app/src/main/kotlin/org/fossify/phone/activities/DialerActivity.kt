@@ -20,6 +20,12 @@ class DialerActivity : SimpleActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // 🎓 ITTC: re-created while waiting after the call (rotated): never place the call twice
+        if (savedInstanceState != null) {
+            finish()
+            return
+        }
+
         if (intent.action == Intent.ACTION_CALL && intent.data != null) {
             callNumber = intent.data
 
