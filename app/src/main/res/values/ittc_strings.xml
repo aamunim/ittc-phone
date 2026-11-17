@@ -9,6 +9,9 @@
     <string name="ittc_call_again" translatable="false">📞 Call again</string>
     <string name="ittc_open_lead" translatable="false">👤 Open the lead</string>
     <string name="ittc_close" translatable="false">Close</string>
+    <string name="ittc_whatsapp" translatable="false">💬 WhatsApp</string>
+    <string name="ittc_sms" translatable="false">✉️ SMS</string>
+    <string name="ittc_no_app" translatable="false">No app on this phone for that</string>
     <string name="ittc_talked" translatable="false">📞 Talked %s</string>
     <string name="ittc_no_answer" translatable="false">📵 No answer</string>
     <string name="ittc_busy" translatable="false">📵 Busy</string>

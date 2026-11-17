@@ -252,6 +252,14 @@ object IttcBridge {
 
     fun rowIdFor(number: String?): String? = clean(number)?.let { rowIds[it] }
 
+    /** The number the after-call screen really opened for (Android may refuse to open it) */
+    @Volatile
+    private var shownFor: String? = null
+
+    fun afterCallShown(number: String?) {
+        shownFor = clean(number)
+    }
+
     fun onCallEnded(context: Context, call: Call, lastCall: Boolean) {
         // (never in the way of the phone: anything going wrong here is dropped)
         try {
@@ -286,6 +294,7 @@ object IttcBridge {
         }
         val canShow = lastCall && screensOpen > 0 && !locked
         rowIds.remove(number)
+        shownFor = null
         forgetRecents()
         ended.execute {
             try {
@@ -301,11 +310,20 @@ object IttcBridge {
                 }
                 val id = findRow(app, number, startedAt) ?: return@execute
                 rowIds[number] = id
+                // (give the after-call screen a moment to open, up to ~2 s)
+                if (show) {
+                    var waited = 0
+                    while (shownFor != number && waited < 2_000) {
+                        Thread.sleep(200)
+                        waited += 200
+                    }
+                }
                 val extras = Bundle().apply {
                     putString("number", number)
                     if (reason != null) putString("end_reason", reason)
-                    // (the after-call screen has "Add a note": the Tracker sends no notification too)
-                    if (show) putString("shows_note", "1")
+                    // (the after-call screen has "Add a note": the Tracker sends no notification too.
+                    // Only if it really opened by now; else the Tracker's notification is the way in)
+                    if (show && shownFor == number) putString("shows_note", "1")
                 }
                 withTracker(app) { it.call("call_ended", id, extras) }
             } catch (_: Throwable) {
