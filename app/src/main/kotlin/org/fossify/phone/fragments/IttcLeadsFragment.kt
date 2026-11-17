@@ -149,6 +149,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             val leads = IttcBridge.myLeads(ctx)
             val m = IttcBridge.phoneMeta(ctx)
             post {
+                // (the Tracker installed / signed in after this tab opened: watch it now)
+                if (observer == null && isAttachedToWindow) observer = IttcBridge.watchLeads(context) { reload() }
                 loadedOnce = true
                 all = leads ?: emptyList()
                 meta = m
@@ -267,7 +269,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         val scoped = all.filter { inScope(it) }
         // (a stage that is gone: all stages)
         val stages = meta?.stages.orEmpty()
-        if (stageId != null && stages.none { it.id == stageId }) stageId = null
+        if (meta != null && stageId != null && stages.none { it.id == stageId }) stageId = null
         val staged = scoped.filter { stageId == null || it.stageId == stageId }
         renderChips(today, staged)
         renderStages(scoped.filter { query.isNotEmpty() || matches(filter, it, today) }, stages)

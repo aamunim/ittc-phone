@@ -12,8 +12,8 @@
     <string name="ittc_saved" translatable="false">✅ Saved — the Tracker sends it</string>
     <string name="ittc_old_tracker" translatable="false">Update ITTC Admission Tracker (2.10.5) to save here — opening it instead</string>
     <string name="ittc_stage" translatable="false">Pipeline stage</string>
-    <string name="ittc_stage_needs_note" translatable="false">✍️ "%s" needs a note</string>
-    <string name="ittc_stage_needs_date" translatable="false">📅 "%1$s" needs the %2$s — pick it under Next call</string>
+    <string name="ittc_stage_needs_note" translatable="false">✍️ “%s” needs a note</string>
+    <string name="ittc_stage_needs_date" translatable="false">📅 “%1$s” needs the %2$s — pick it under Next call</string>
     <string name="ittc_stage_auto_next" translatable="false">Next call is set by the stage: in %d day(s), 10 AM</string>
     <string name="ittc_stage_old_tracker" translatable="false">Update ITTC Admission Tracker (2.10.6) to change the stage here</string>
     <string name="ittc_pick_outcome" translatable="false">Choose what happened, or write a note</string>

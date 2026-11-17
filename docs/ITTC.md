@@ -89,8 +89,9 @@ Asks this app for a fresh list (`asked` when it is running, else `later`).
   (≤ 2000, their own first) from `my_phone_data()`; everyone else only their own (≤ 500).
 - Each new list is announced with `notifyChange(content://com.abamunim.leads.leadlookup/my_leads)`:
   ITTC Phone registers a `ContentObserver` on that URI and re-reads it. The app fetches a new list
-  ~2 s after the server pings it (Supabase Realtime on `phone_lead_pings`, touched by a trigger
-  when a lead's owner, stage, next call… changes) while it runs, and when asked (`refresh_leads`).
+  ~2 s after the server pings it (Supabase Realtime INSERTs on `phone_lead_pings`, added by triggers
+  when a lead's owner, stage, next call… changes; a super admin's "any lead" ping waits up to 20 s)
+  while it runs, and when asked (`refresh_leads`).
 
       query content://com.abamunim.leads.leadlookup/phone_meta
 

@@ -132,9 +132,10 @@ class IttcAfterCallActivity : SimpleActivity() {
 
     private fun loadStages(leadId: String, stageName: String?) {
         ensureBackgroundThread {
-            val meta = IttcBridge.metaCache ?: IttcBridge.phoneMeta(this)
-            val lead = IttcBridge.myLeadsCache.firstOrNull { it.leadId == leadId }
-                ?: IttcBridge.myLeads(this)?.firstOrNull { it.leadId == leadId }
+            // (fresh from the Tracker: the stage may have changed on the last call; the caches only
+            // when it cannot answer)
+            val meta = IttcBridge.phoneMeta(this) ?: IttcBridge.metaCache
+            val lead = (IttcBridge.myLeads(this) ?: IttcBridge.myLeadsCache).firstOrNull { it.leadId == leadId }
             val list = meta?.stages.orEmpty().filter { it.forCourse(lead?.courseId) }
             val current = lead?.stageId ?: list.firstOrNull { it.name.equals(stageName, true) }?.id
             runOnUiThread {

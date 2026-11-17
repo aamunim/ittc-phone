@@ -456,11 +456,13 @@ object IttcBridge {
      * ⚡ Called (on the main thread) when the Tracker saves a new list; null when there is no
      * Tracker. Unregister with [unwatchLeads].
      */
-    fun watchLeads(context: Context, onChange: () -> Unit): android.database.ContentObserver? {
+    fun watchLeads(context: Context, callback: () -> Unit): android.database.ContentObserver? {
         val app = context.applicationContext
         if (!trackerReady(app)) return null
         val observer = object : android.database.ContentObserver(main) {
-            override fun onChange(selfChange: Boolean) = onChange()
+            override fun onChange(selfChange: Boolean) {
+                callback()
+            }
         }
         return try {
             app.contentResolver.registerContentObserver(Uri.parse("$PROVIDER/my_leads"), false, observer)
