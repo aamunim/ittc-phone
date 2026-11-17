@@ -32,6 +32,8 @@ import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.isDefaultDialer
 import org.fossify.commons.extensions.normalizeString
 import org.fossify.commons.extensions.onTextChangeListener
+import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.performHapticFeedback
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.value
@@ -44,6 +46,7 @@ import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.REQUEST_CODE_SET_DEFAULT_DIALER
 import org.fossify.commons.helpers.isOreoPlus
 import org.fossify.commons.models.contacts.Contact
+import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.R
 import org.fossify.phone.adapters.ContactsAdapter
 import org.fossify.phone.databinding.ActivityDialpadBinding
@@ -350,6 +353,29 @@ class DialpadActivity : SimpleActivity() {
 
         binding.dialpadPlaceholder.beVisibleIf(filtered.isEmpty())
         binding.dialpadList.beVisibleIf(filtered.isNotEmpty())
+        ittcShowLead(text)
+    }
+
+    // 🎓 ITTC: a full number that is a lead's → who it is, above the dial pad (tap: the lead)
+    private fun ittcShowLead(text: String) {
+        val view = binding.ittcDialpadLead
+        val digits = text.count { it.isDigit() }
+        if (digits < 10) {
+            view.beGone()
+            return
+        }
+        IttcBridge.lookup(this, text) { lead ->
+            if (isFinishing || isDestroyed || binding.dialpadInput.value != text) return@lookup
+            if (lead == null) {
+                view.beGone()
+                return@lookup
+            }
+            val about = listOfNotNull(lead.name.ifEmpty { null }, lead.course, lead.stage).joinToString(" · ")
+            view.text = getString(R.string.ittc_dialpad_lead, about)
+            view.setTextColor(getProperPrimaryColor())
+            view.setOnClickListener { IttcBridge.openLead(this, lead.leadId) }
+            view.beVisible()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {

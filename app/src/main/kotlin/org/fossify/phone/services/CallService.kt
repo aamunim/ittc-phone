@@ -68,11 +68,12 @@ class CallService : InCallService() {
 
     override fun onCallRemoved(call: Call) {
         super.onCallRemoved(call)
-        // 🎓 ITTC: tell the Admission Tracker a lead call ended (in the background)
-        IttcBridge.onCallEnded(this, call)
         call.unregisterCallback(callListener)
         val wasPrimaryCall = call == CallManager.getPrimaryCall()
         CallManager.onCallRemoved(call)
+        // 🎓 ITTC: tell the Admission Tracker a lead call ended (in the background); the after-call
+        // screen only when no other call is left (never over a call on hold)
+        IttcBridge.onCallEnded(this, call, lastCall = CallManager.getPhoneState() == NoCall)
         if (CallManager.getPhoneState() == NoCall) {
             CallManager.inCallService = null
             callNotificationManager.cancelNotification()

@@ -124,6 +124,15 @@
             android:screenOrientation="portrait"
             android:showOnLockScreen="true" />
 
+        <!-- 🎓 ITTC: after a lead call (own task: the call screen's task is removed when it ends) -->
+        <activity
+            android:name=".activities.IttcAfterCallActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:taskAffinity="org.fossify.phone.ittc.aftercall" />
+
         <activity
             android:name=".activities.DialpadActivity"
             android:exported="true"

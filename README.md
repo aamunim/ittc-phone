@@ -13,6 +13,11 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
 - 📞 **Lead calls reach the Tracker the moment they end** — ITTC Phone tells the Tracker which
   row of the phone's call log the call is; the Tracker reads that row itself. Only lead calls
   are handed over; personal calls are never sent anywhere.
+- 📝 **After a lead call** — a screen with the lead, how the call went (talked 2m 34s / no answer /
+  missed) and "Add a note" (opens the Tracker's note popup for that very call), "Call again",
+  "Open the lead". Calls started from the Tracker skip it: the Tracker shows its own popup.
+- 🕘 **Recents** — lead numbers show the lead's name and "🎓 Lead · course · stage".
+- 🔢 **Dial pad** — a full number that is a lead's shows who it is above the keys (tap: the lead).
 - App name "ITTC Phone". The app id stays `org.fossify.phone` because Fossify's shared library
   checks for it (calls, the phone-app role, app icons). So ITTC Phone and the real Fossify Phone
   cannot be installed together; uninstall Fossify Phone first if it is there.
@@ -23,10 +28,14 @@ contract is in [docs/ITTC.md](docs/ITTC.md).
 
 ## Changes from Fossify Phone (GPL-3.0 §5)
 
-- `app/src/main/kotlin/org/fossify/phone/helpers/IttcBridge.kt` (new): lead lookup and the
-  call-ended message.
+- `app/src/main/kotlin/org/fossify/phone/helpers/IttcBridge.kt` (new): lead lookup, the
+  call-ended message, Recents lookups, opening a lead in the Tracker.
+- `activities/IttcAfterCallActivity.kt`, `res/layout/ittc_activity_after_call.xml` (new): the
+  after-call screen.
 - `services/CallService.kt`, `activities/CallActivity.kt`, `res/layout/activity_call.xml`:
   the hooks for the above and the lead line on the call screen.
+- `adapters/RecentCallsAdapter.kt`, `res/layout/item_recent_call.xml`: the lead line in Recents.
+- `activities/DialpadActivity.kt`, `res/layout/activity_dialpad.xml`: the lead above the dial pad.
 - `AndroidManifest.xml`, `gradle.properties`, `app/build.gradle.kts`, `res/values/ittc_strings.xml`:
   name, version, package visibility of the Tracker.
 - `.github/workflows/build.yml`: builds the signed APK; Fossify's own workflows removed.

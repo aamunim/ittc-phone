@@ -53,7 +53,7 @@
             android:clipToPadding="false"
             android:scrollbars="none"
             app:layoutManager="org.fossify.commons.views.MyLinearLayoutManager"
-            app:layout_constraintBottom_toTopOf="@+id/dialpad_input"
+            app:layout_constraintBottom_toTopOf="@+id/ittc_dialpad_lead"
             app:layout_constraintTop_toTopOf="parent" />
 
         <com.reddit.indicatorfastscroll.FastScrollerView
@@ -74,6 +74,23 @@
             app:layout_constraintBottom_toTopOf="@+id/dialpad_divider"
             app:layout_constraintEnd_toStartOf="@+id/letter_fastscroller"
             app:layout_constraintTop_toTopOf="@+id/dialpad_list" />
+
+        <!-- 🎓 ITTC: the number typed is a lead's: who it is (tap: open the lead) -->
+        <TextView
+            android:id="@+id/ittc_dialpad_lead"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingTop="@dimen/medium_margin"
+            android:paddingEnd="@dimen/activity_margin"
+            android:paddingBottom="@dimen/medium_margin"
+            android:textSize="@dimen/bigger_text_size"
+            android:visibility="gone"
+            app:layout_constraintBottom_toTopOf="@+id/dialpad_divider" />
 
         <TextView
             android:id="@+id/dialpad_divider"
