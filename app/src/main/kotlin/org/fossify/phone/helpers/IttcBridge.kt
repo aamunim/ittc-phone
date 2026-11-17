@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.provider.CallLog
@@ -26,7 +27,8 @@ import java.util.concurrent.Executors
  */
 object IttcBridge {
     private const val TRACKER = "com.abamunim.leads"
-    private const val PROVIDER = "content://com.abamunim.leads.leadlookup"
+    private const val AUTHORITY = "com.abamunim.leads.leadlookup"
+    private const val PROVIDER = "content://$AUTHORITY"
     private const val LOOKUP = "$PROVIDER/number/"
 
     /** SHA-256 of the Tracker's signing certificates: Google Play's app signing key, and the upload key (APK builds) */
@@ -55,7 +57,10 @@ object IttcBridge {
         }
     }
 
-    /** The real Tracker is installed (its certificate is on the list: nothing is ever sent to another app) */
+    /**
+     * The real Tracker is installed and owns the provider (its certificate is on the list:
+     * nothing is ever sent to another app)
+     */
     @Suppress("DEPRECATION")
     private fun trackerReady(context: Context): Boolean =
         try {
@@ -66,7 +71,8 @@ object IttcBridge {
             } else {
                 pm.getPackageInfo(TRACKER, PackageManager.GET_SIGNATURES).signatures
             } ?: emptyArray()
-            certs.any { sha256(it.toByteArray()) in TRACKER_CERTS }
+            pm.resolveContentProvider(AUTHORITY, 0)?.packageName == TRACKER &&
+                certs.any { sha256(it.toByteArray()) in TRACKER_CERTS }
         } catch (_: Throwable) {
             false
         }
@@ -95,9 +101,34 @@ object IttcBridge {
         }
     }
 
-    private fun query(context: Context, number: String): Lead? {
+    /**
+     * The Tracker's provider as an "unstable" client: if the Tracker dies mid-request we get an
+     * exception (caught) instead of Android killing the phone app with it.
+     */
+    private fun <T> withTracker(context: Context, block: (android.content.ContentProviderClient) -> T?): T? {
+        val client = context.contentResolver.acquireUnstableContentProviderClient(AUTHORITY) ?: return null
+        return try {
+            block(client)
+        } finally {
+            client.close()
+        }
+    }
+
+    private fun query(context: Context, number: String): Lead? = withTracker(context) { client ->
         val uri = Uri.parse(LOOKUP + Uri.encode(number))
-        context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+        // (ask the Tracker to give up after 3 s, so a slow one holds up the next calls less)
+        val cancel = CancellationSignal()
+        val timeout = Runnable { cancel.cancel() }
+        main.postDelayed(timeout, 3_000)
+        try {
+            readLead(client.query(uri, null, null, null, null, cancel))
+        } finally {
+            main.removeCallbacks(timeout)
+        }
+    }
+
+    private fun readLead(cursor: android.database.Cursor?): Lead? {
+        cursor?.use { c ->
             if (!c.moveToFirst()) return null
             fun col(name: String): String? {
                 val i = c.getColumnIndex(name)
@@ -148,7 +179,7 @@ object IttcBridge {
                     putString("number", number)
                     if (reason != null) putString("end_reason", reason)
                 }
-                app.contentResolver.call(Uri.parse(PROVIDER), "call_ended", id, extras)
+                withTracker(app) { it.call("call_ended", id, extras) }
             } catch (_: Throwable) {
                 // never break the phone because of the Tracker; its own sync is the backup
             }
