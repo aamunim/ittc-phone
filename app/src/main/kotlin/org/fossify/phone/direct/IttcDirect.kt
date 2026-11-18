@@ -186,6 +186,7 @@ object IttcDirect {
         if (!ok) {
             IttcAuth.clear(app)
             val msg = lastMessage(app) ?: "Could not check your sign-in. Please try again."
+            clearMessage(app)
             throw IllegalStateException(msg)
         }
         prefs(app).edit().putBoolean("allowed", true).apply()
@@ -259,6 +260,18 @@ object IttcDirect {
         val answer = try {
             JSONObject(IttcApi.rpc(app, "ittc_phone_session", JSONObject().put("p_device_id", deviceId(app)).put("p_info", info).put("p_fresh", fresh)))
         } catch (e: IttcApi.ApiError) {
+            // (a fresh sign-in: say why it could not be checked)
+            if (fresh) {
+                prefs(app).edit().putString(
+                    "message",
+                    when {
+                        e.status == 404 -> "The ITTC server is not updated for ITTC Phone yet. Ask your admin to run the database update (App update → Database only)."
+                        e.status == 0 -> "No internet. Please try again."
+                        else -> "Could not check your sign-in (${e.status}: ${e.message}). Please try again."
+                    },
+                ).apply()
+                return false
+            }
             // (no internet / the server busy: keep working with what is kept)
             return e.status == 0 || e.status >= 500
         } catch (_: Throwable) {
