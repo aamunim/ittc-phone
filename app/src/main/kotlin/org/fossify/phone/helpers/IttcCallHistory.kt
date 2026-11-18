@@ -148,17 +148,19 @@ object IttcCallHistory {
         return entries
     }
 
-    /** The call-log ids of every call with one of these numbers; off the main thread */
+    /** The call-log ids of every call with one of these numbers (only those of [kind]); off the main thread */
     @SuppressLint("MissingPermission") // (READ_CALL_LOG checked first)
-    fun idsFor(context: Context, numbers: Collection<String>): List<Int> {
+    fun idsFor(context: Context, numbers: Collection<String>, kind: Int = KIND_ALL): List<Int> {
         val keys = numbers.map { key(it) }.filter { it.isNotEmpty() }.toHashSet()
         if (keys.isEmpty() || !context.hasPermission(PERMISSION_READ_CALL_LOG)) return emptyList()
 
         val ids = ArrayList<Int>()
         try {
-            context.contentResolver.query(Calls.CONTENT_URI, arrayOf(Calls._ID, Calls.NUMBER), null, null, null)?.use { cursor ->
+            context.contentResolver.query(Calls.CONTENT_URI, arrayOf(Calls._ID, Calls.NUMBER, Calls.TYPE), null, null, null)?.use { cursor ->
                 while (cursor.moveToNext()) {
-                    if (key(cursor.getStringValueOrNull(Calls.NUMBER)) in keys) ids += cursor.getIntValue(Calls._ID)
+                    if (key(cursor.getStringValueOrNull(Calls.NUMBER)) !in keys) continue
+                    if (kind != KIND_ALL && !matchesKind(cursor.getIntValue(Calls.TYPE), kind)) continue
+                    ids += cursor.getIntValue(Calls._ID)
                 }
             }
         } catch (_: Throwable) {

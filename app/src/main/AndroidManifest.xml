@@ -25,6 +25,8 @@
     <!-- 🎓 ITTC: only when signed in to ITTC (direct mode): the lead list and lead calls go to the ITTC server -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- (changes waiting for internet are sent after a restart too: the job is kept across it) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-permission
         android:name="android.permission.USE_FINGERPRINT"
@@ -46,6 +48,8 @@
     <application
         android:name="org.fossify.commons.FossifyApp"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/ittc_data_extraction_rules"
+        android:fullBackupContent="@xml/ittc_backup_rules"
         android:appCategory="productivity"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/ittc_app_name"

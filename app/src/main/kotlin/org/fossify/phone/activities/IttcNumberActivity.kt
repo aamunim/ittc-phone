@@ -277,8 +277,39 @@ class IttcNumberActivity : SimpleActivity() {
         }
     }
 
+    /** What the call list shows now (count · newest id · access · day): the same → no rebuild */
+    private var shownKey: String? = null
+    /** Rows on screen (the newest first; "Show more" adds [PAGE] each tap) */
+    private var shownRows = 0
+    private var lastDayCode = ""
+
     private fun showCalls(calls: List<IttcCallHistory.Entry>, noAccess: Boolean) {
+        // (back from somewhere with nothing changed: keep the list as it is, and its "Show more")
+        val key = "${calls.size}|${calls.firstOrNull()?.id}|$noAccess|${System.currentTimeMillis().getDayCode()}"
+        if (key == shownKey) return
+        shownKey = key
         entries = calls
+
+        binding.apply {
+            ittcNumberPlaceholder.setText(if (noAccess) R.string.ittc_hist_no_access else R.string.ittc_hist_none)
+            ittcNumberPlaceholder.beVisibleIf(calls.isEmpty())
+            ittcNumberDelete.beVisibleIf(calls.isNotEmpty())
+            ittcNumberSummary.beVisibleIf(calls.isNotEmpty())
+            ittcNumberSummary.text = summary(calls)
+            ittcNumberCalls.removeAllViews()
+        }
+        shownRows = 0
+        lastDayCode = ""
+        showMoreCalls()
+    }
+
+    /** The next [PAGE] calls (not every call at once: a number may have thousands) */
+    private fun showMoreCalls() {
+        val calls = entries
+        val list = binding.ittcNumberCalls
+        // (the old "Show more" goes; a new one at the end if calls are left)
+        list.findViewWithTag<android.view.View>(SHOW_MORE_TAG)?.let { list.removeView(it) }
+
         val textColor = getProperTextColor()
         val secondaryTextColor = textColor.adjustAlpha(0.6f)
         val missedColor = resources.getColor(R.color.color_missed_call, theme)
@@ -287,63 +318,74 @@ class IttcNumberActivity : SimpleActivity() {
         val missedIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_missed_vector, missedColor)
         val showSim = areMultipleSIMsAvailable()
 
-        binding.apply {
-            ittcNumberPlaceholder.setText(if (noAccess) R.string.ittc_hist_no_access else R.string.ittc_hist_none)
-            ittcNumberPlaceholder.beVisibleIf(calls.isEmpty())
-            ittcNumberDelete.beVisibleIf(calls.isNotEmpty())
-            ittcNumberSummary.beVisibleIf(calls.isNotEmpty())
-            ittcNumberSummary.text = summary(calls)
-
-            val list = ittcNumberCalls
-            list.removeAllViews()
-            var lastDayCode = ""
-            for (call in calls) {
-                val dayCode = call.startTS.getDayCode()
-                if (dayCode != lastDayCode) {
-                    lastDayCode = dayCode
-                    val date = ItemRecentsDateBinding.inflate(layoutInflater, list, false)
-                    date.dateTextView.apply {
-                        text = dayLabel(dayCode, call.startTS)
-                        setTextColor(secondaryTextColor)
-                    }
-                    list.addView(date.root)
-                }
-
-                val row = IttcItemNumberCallBinding.inflate(layoutInflater, list, false)
-                val missed = call.type == Calls.MISSED_TYPE
-                row.ittcCallType.setImageDrawable(
-                    when (call.type) {
-                        Calls.OUTGOING_TYPE -> outgoingIcon
-                        Calls.MISSED_TYPE -> missedIcon
-                        else -> incomingIcon
-                    }
-                )
-                row.ittcCallTime.apply {
-                    text = call.startTS.formatTime(this@IttcNumberActivity)
-                    setTextColor(if (missed) missedColor else textColor)
-                }
-                row.ittcCallKind.apply {
-                    setText(
-                        when (call.type) {
-                            Calls.OUTGOING_TYPE -> R.string.ittc_hist_outgoing
-                            Calls.MISSED_TYPE -> R.string.ittc_hist_missed
-                            else -> R.string.ittc_hist_incoming
-                        }
-                    )
-                    setTextColor(textColor)
-                }
-                row.ittcCallDuration.apply {
-                    val talked = call.type != Calls.MISSED_TYPE && call.type != Calls.REJECTED_TYPE && call.duration > 0
-                    text = if (talked) formatSecondsToShortTimeString(call.duration) else ""
-                    setTextColor(textColor)
-                }
-                row.ittcCallSim.apply {
-                    beVisibleIf(showSim && call.simID != -1)
-                    text = getString(R.string.ittc_hist_sim, call.simID)
+        val until = minOf(calls.size, shownRows + PAGE)
+        for (i in shownRows until until) {
+            val call = calls[i]
+            val dayCode = call.startTS.getDayCode()
+            if (dayCode != lastDayCode) {
+                lastDayCode = dayCode
+                val date = ItemRecentsDateBinding.inflate(layoutInflater, list, false)
+                date.dateTextView.apply {
+                    text = dayLabel(dayCode, call.startTS)
                     setTextColor(secondaryTextColor)
                 }
-                list.addView(row.root)
+                list.addView(date.root)
             }
+
+            val row = IttcItemNumberCallBinding.inflate(layoutInflater, list, false)
+            val missed = call.type == Calls.MISSED_TYPE
+            row.ittcCallType.setImageDrawable(
+                when (call.type) {
+                    Calls.OUTGOING_TYPE -> outgoingIcon
+                    Calls.MISSED_TYPE -> missedIcon
+                    else -> incomingIcon
+                }
+            )
+            row.ittcCallTime.apply {
+                text = call.startTS.formatTime(this@IttcNumberActivity)
+                setTextColor(if (missed) missedColor else textColor)
+            }
+            row.ittcCallKind.apply {
+                setText(
+                    when (call.type) {
+                        Calls.OUTGOING_TYPE -> R.string.ittc_hist_outgoing
+                        Calls.MISSED_TYPE -> R.string.ittc_hist_missed
+                        else -> R.string.ittc_hist_incoming
+                    }
+                )
+                setTextColor(textColor)
+            }
+            row.ittcCallDuration.apply {
+                val talked = call.type != Calls.MISSED_TYPE && call.type != Calls.REJECTED_TYPE && call.duration > 0
+                text = if (talked) formatSecondsToShortTimeString(call.duration) else ""
+                setTextColor(textColor)
+            }
+            row.ittcCallSim.apply {
+                beVisibleIf(showSim && call.simID != -1)
+                text = getString(R.string.ittc_hist_sim, call.simID)
+                setTextColor(secondaryTextColor)
+            }
+            list.addView(row.root)
+        }
+        shownRows = until
+
+        val left = calls.size - shownRows
+        if (left > 0) {
+            val density = resources.displayMetrics.density
+            val pad = (density * 12).toInt()
+            list.addView(
+                TextView(this).apply {
+                    tag = SHOW_MORE_TAG
+                    text = getString(R.string.ittc_hist_show_more, left)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    setTextColor(getProperPrimaryColor())
+                    gravity = Gravity.CENTER
+                    setPadding(pad, pad, pad, pad)
+                    isClickable = true
+                    setOnClickListener { showMoreCalls() }
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
         }
     }
 
@@ -442,6 +484,8 @@ class IttcNumberActivity : SimpleActivity() {
         const val EXTRA_NUMBER = "ittc_number"
         const val EXTRA_NAME = "ittc_name"
         private const val WHATSAPP_GREEN = 0xFF25D366.toInt()
+        private const val PAGE = 100
+        private const val SHOW_MORE_TAG = "ittc_show_more"
 
         fun open(context: Context, number: String, name: String? = null) {
             if (number.isBlank()) return

@@ -37,12 +37,16 @@ internal object IttcAuth {
     fun isSignedIn(context: Context): Boolean = session(context) != null
 
     fun save(context: Context, t: IttcApi.Tokens) {
+        // (in memory first: a Keystore hiccup must not lose a token the server already rotated)
+        cached = t
         val json = JSONObject()
             .put("access", t.access).put("refresh", t.refresh).put("expires_at", t.expiresAt)
             .put("user_id", t.userId).put("email", t.email ?: "")
             .toString()
-        prefs(context).edit().putString(KEY_SESSION, IttcSecure.encrypt(json)).apply()
-        cached = t
+        try {
+            prefs(context).edit().putString(KEY_SESSION, IttcSecure.encrypt(json)).commit()
+        } catch (_: Throwable) {
+        }
     }
 
     fun clear(context: Context) {
@@ -52,26 +56,32 @@ internal object IttcAuth {
 
     /**
      * A token good for at least a minute (refreshed if needed; null: signed out, or the server
-     * refused the refresh — then the person signs in again)
+     * refused the refresh — then the person signs in again). Signing out happens after the lock is
+     * let go (it stops live updates, which may be waiting for a token).
      */
     fun accessToken(context: Context, forceRefresh: Boolean = false): String? {
-        synchronized(lock) {
+        var ended = false
+        val token = synchronized(lock) {
             val s = session(context) ?: return null
             if (!forceRefresh && s.expiresAt - System.currentTimeMillis() > 60_000) return s.access
-            return try {
+            try {
                 val fresh = IttcApi.refresh(s.refresh)
                 save(context, fresh.copy(userId = fresh.userId.ifEmpty { s.userId }, email = fresh.email ?: s.email))
                 fresh.access
             } catch (e: IttcApi.ApiError) {
-                if (e.status in 400..499) {
-                    // (the refresh token is no longer valid: signed out elsewhere / password changed)
-                    IttcDirect.signedOutByServer(context, "Your sign-in ended. Please sign in again.")
+                // (only a refused refresh token ends the sign-in; busy / rate-limited / no internet:
+                // keep the old one, the next request tries again)
+                if (e.status == 400 || e.status == 401 || e.status == 403) {
+                    ended = true
                     null
                 } else {
-                    // (no internet: keep the old one; the next request tries again)
                     s.access
                 }
+            } catch (_: Throwable) {
+                s.access
             }
         }
+        if (ended) IttcDirect.signedOutByServer(context, "Your sign-in ended. Please sign in again.")
+        return token
     }
 }

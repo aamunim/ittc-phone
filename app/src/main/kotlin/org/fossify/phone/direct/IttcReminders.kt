@@ -27,8 +27,11 @@ object IttcReminders {
 
     fun enabled(c: Context): Boolean = prefs(c).getBoolean("on", true)
 
+    /** The person turned them on or off themselves (with the Tracker, they are off until then) */
+    fun chosen(c: Context): Boolean = prefs(c).getBoolean("chosen", false)
+
     fun setEnabled(c: Context, on: Boolean) {
-        prefs(c).edit().putBoolean("on", on).apply()
+        prefs(c).edit().putBoolean("on", on).putBoolean("chosen", true).apply()
         if (!on) cancelAll(c) else schedule(c, IttcBridge.myLeadsCache)
     }
 
@@ -38,7 +41,7 @@ object IttcReminders {
         cancelAll(app)
         if (!enabled(app)) return
         val now = System.currentTimeMillis()
-        val me = IttcBridge.metaCache?.meId
+        val me = (if (IttcDirect.isSignedIn(app)) IttcDirect.meta(app) else null)?.meId ?: IttcBridge.metaCache?.meId
         val due = leads.filter { l ->
             val at = l.nextCall ?: return@filter false
             at > now && at < now + 24 * 3600_000L && (me == null || l.assignedTo == null || l.assignedTo == me) && l.callNumber != null
@@ -57,9 +60,21 @@ object IttcReminders {
         prefs(app).edit().putStringSet("ids", ids).apply()
     }
 
-    fun cancelAll(context: Context) {
+    fun cancelAll(context: Context, notifications: Boolean = false) {
         val app = context.applicationContext
         val am = app.getSystemService(AlarmManager::class.java) ?: return
+        if (notifications) {
+            // (signed out: the snoozed one and those on screen go too)
+            PendingIntent.getBroadcast(
+                app, 7299, Intent(app, IttcReminderReceiver::class.java),
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+            )?.let { am.cancel(it) }
+            try {
+                val nm = app.getSystemService(NotificationManager::class.java)
+                nm?.activeNotifications?.filter { it.notification.channelId == CHANNEL }?.forEach { nm.cancel(it.id) }
+            } catch (_: Throwable) {
+            }
+        }
         prefs(app).getStringSet("ids", emptySet())?.forEach { id ->
             id.toIntOrNull()?.let { i ->
                 PendingIntent.getBroadcast(
@@ -103,6 +118,14 @@ object IttcReminders {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // (a tap opens the number's page — the lead, its calls — never dials by itself)
+        val open = PendingIntent.getActivity(
+            c, nid + 2,
+            Intent(c, org.fossify.phone.activities.IttcNumberActivity::class.java)
+                .putExtra("ittc_number", number).putExtra("ittc_name", name)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val later = PendingIntent.getBroadcast(
             c, nid + 1, Intent(c, IttcReminderReceiver::class.java).putExtras(i).putExtra("snooze", true).putExtra("nid", nid),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -111,7 +134,7 @@ object IttcReminders {
             .setSmallIcon(org.fossify.commons.R.drawable.ic_phone_vector)
             .setContentTitle("⏰ Call $name now")
             .setContentText(i.getStringExtra("line").orEmpty().ifEmpty { number })
-            .setContentIntent(call)
+            .setContentIntent(open)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .addAction(0, "📞 Call", call)

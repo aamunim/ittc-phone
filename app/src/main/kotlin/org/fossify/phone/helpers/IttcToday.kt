@@ -39,6 +39,17 @@ object IttcToday {
     var lastError: String? = null
         private set
 
+    /** Signed out: nothing of the last person's day stays */
+    fun clear(context: Context) {
+        cached = null
+        cachedAt = 0L
+        cachedDay = null
+        fetchedAt = 0L
+        lastError = null
+        offline = false
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
     private fun day(): String = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
 
     /**

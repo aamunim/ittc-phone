@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC (Android 12+): as ittc_backup_rules.xml, for cloud backups and moving to a new phone -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="direct_leads.json" />
+        <exclude domain="file" path="direct_meta.json" />
+        <exclude domain="file" path="direct_directory.json" />
+        <exclude domain="file" path="direct_outbox.json" />
+        <exclude domain="sharedpref" path="ittc_direct.xml" />
+        <exclude domain="sharedpref" path="ittc_today.xml" />
+        <exclude domain="sharedpref" path="ittc_dialer.xml" />
+        <exclude domain="sharedpref" path="ittc_reminders.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="direct_leads.json" />
+        <exclude domain="file" path="direct_meta.json" />
+        <exclude domain="file" path="direct_directory.json" />
+        <exclude domain="file" path="direct_outbox.json" />
+        <exclude domain="sharedpref" path="ittc_direct.xml" />
+        <exclude domain="sharedpref" path="ittc_today.xml" />
+        <exclude domain="sharedpref" path="ittc_dialer.xml" />
+        <exclude domain="sharedpref" path="ittc_reminders.xml" />
+    </device-transfer>
+</data-extraction-rules>

@@ -72,6 +72,23 @@ class IttcAfterCallActivity : SimpleActivity() {
         super.onDestroy()
     }
 
+    /** ▶ Back on the dialer's current lead: as ✕ (the list stops) */
+    override fun onBackPressedCompat(): Boolean {
+        if (dialerHere()) {
+            IttcDialer.stop(this)
+            toast(R.string.ittc_l2_calling_stopped)
+        }
+        return false
+    }
+
+    /** ▶ Is this screen's lead the one the power dialer is calling now? (another lead's call, an
+     * incoming call or a number that is no lead: the screen behaves as normal) */
+    private fun dialerHere(): Boolean {
+        if (unknownMode) return false
+        val leadId = intent?.getStringExtra(LEAD_ID)?.takeIf { it.isNotEmpty() } ?: return false
+        return IttcDialer.currentLead?.leadId == leadId
+    }
+
     /** The key of what is on screen (a new call: the note written for the last one goes) */
     private var shownKey: String? = null
     private var unknownMode = false
@@ -154,7 +171,7 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcAddLead.setTextColor(primary.getContrastColor())
             ittcAcAddLead.setOnClickListener {
                 try {
-                    IttcAddLeadActivity.open(this@IttcAfterCallActivity, number, contactName)
+                    IttcAddLeadActivity.open(this@IttcAfterCallActivity, number, contactName, intent.getLongExtra(STARTED_AT, 0L))
                 } catch (e: Throwable) {
                     IttcCrash.record(this@IttcAfterCallActivity, e, "After-call: add as a lead")
                 }
@@ -215,8 +232,8 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcSave.setTextColor(primary.getContrastColor())
             ittcAcSave.setOnClickListener { save(leadId, number) }
             ittcAcClose.setOnClickListener {
-                // (✕ while calling through a list: the list stops)
-                if (IttcDialer.active) {
+                // (✕ on the lead the list is calling: the list stops)
+                if (dialerHere()) {
                     IttcDialer.stop(this@IttcAfterCallActivity)
                     toast(R.string.ittc_l2_calling_stopped)
                 }
@@ -258,7 +275,7 @@ class IttcAfterCallActivity : SimpleActivity() {
     // ▶ The power dialer: "Save & call next (N left)" · "Stop calling"
     // ------------------------------------------------------------------
     private fun renderDialer() {
-        val on = IttcDialer.active && !unknownMode
+        val on = dialerHere()
         binding.ittcAcSave.text = when {
             !on -> getString(R.string.ittc_save)
             IttcDialer.remaining > 0 -> getString(R.string.ittc_l2_save_next, IttcDialer.remaining)
@@ -564,7 +581,7 @@ class IttcAfterCallActivity : SimpleActivity() {
         binding.ittcAcSave.isEnabled = false
         val chosen = outcome
         val next = nextAt
-        val dialing = IttcDialer.active
+        val dialing = dialerHere()
         ensureBackgroundThread {
             // (the call's row in the call log, so the result lands on that very call; if it is not
             // found yet, the Tracker finds it later by the number and the call's start time)
@@ -582,7 +599,7 @@ class IttcAfterCallActivity : SimpleActivity() {
                 if (ok) {
                     toast(R.string.ittc_saved)
                     // ▶ calling through a list: the next lead at once (the dial screen opens on its own)
-                    if (dialing && IttcDialer.active) {
+                    if (dialing && IttcDialer.currentLead?.leadId == leadId) {
                         try {
                             if (!IttcDialer.next(applicationContext)) toast(R.string.ittc_l2_all_called)
                         } catch (e: Throwable) {

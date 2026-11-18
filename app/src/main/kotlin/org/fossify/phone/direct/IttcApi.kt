@@ -143,7 +143,11 @@ internal object IttcApi {
             throw ApiError(0, "No internet")
         }
         r.use {
-            val text = it.body?.string().orEmpty()
+            val text = try {
+                it.body?.string().orEmpty()
+            } catch (e: IOException) {
+                throw ApiError(0, "No internet")
+            }
             if (!it.isSuccessful) throw ApiError(it.code, message(text) ?: "Server error ${it.code}")
             return text
         }

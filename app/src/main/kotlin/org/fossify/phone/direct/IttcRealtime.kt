@@ -14,95 +14,134 @@ import java.util.concurrent.TimeUnit
 /**
  * ⚡ Live updates while ITTC Phone is open and signed in by itself: the server's "your leads
  * changed" pings (Supabase Realtime, table phone_lead_pings — the same the Tracker listens to) make
- * the lists come again a moment later (2 s for my own leads, 20 s for "any lead" of a super admin).
+ * the list come again a moment later (1.5 s for my own leads, 20 s for "any lead" of a super admin;
+ * several pings close together make one request).
+ * The sign-in token goes with the join, so the socket is opened again with a fresh one every 40
+ * minutes (the server drops a channel whose token ran out), and whenever the server closes it.
  */
 internal object IttcRealtime {
     @Volatile private var socket: WebSocket? = null
     @Volatile private var users = 0
+    @Volatile private var openedAt = 0L
     private var ref = 0
     private val timer = Executors.newSingleThreadScheduledExecutor()
     private var beat: ScheduledFuture<*>? = null
+    private var retry: ScheduledFuture<*>? = null
+    private const val REOPEN_MS = 40 * 60_000L
 
     /** A screen that shows leads wants live updates (call off the main thread) */
-    @Synchronized
     fun start(context: Context) {
-        users++
+        synchronized(this) { users++ }
         open(context.applicationContext)
     }
 
-    @Synchronized
+    /** (the token is fetched before the lock: getting one may sign out, which calls [stop]) */
     private fun open(app: Context) {
-        if (socket != null || users == 0 || !IttcDirect.isActive(app)) return
+        synchronized(this) { if (socket != null || users == 0) return }
+        if (!IttcDirect.isActive(app)) return
         val access = IttcAuth.accessToken(app) ?: return
         val uid = IttcAuth.session(app)?.userId ?: return
-        socket = IttcApi.http.newWebSocket(
-            Request.Builder().url(IttcApi.realtimeUrl()).build(),
-            object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) {
-                    val config = JSONObject().put(
-                        "postgres_changes",
-                        JSONArray().put(
-                            JSONObject().put("event", "INSERT").put("schema", "public")
-                                .put("table", "phone_lead_pings").put("filter", "target=in.($uid,all)"),
-                        ),
-                    )
-                    webSocket.send(
-                        JSONObject().put("topic", "realtime:ittc-phone:$uid").put("event", "phx_join")
-                            .put("payload", JSONObject().put("config", config).put("access_token", access))
-                            .put("ref", (++ref).toString()).toString(),
-                    )
-                    // (the server closes a quiet socket: a heartbeat every 25 s)
-                    synchronized(this@IttcRealtime) {
-                        beat?.cancel(false)
-                        beat = timer.scheduleAtFixedRate({
-                            webSocket.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat").put("payload", JSONObject()).put("ref", (++ref).toString()).toString())
-                        }, 25, 25, TimeUnit.SECONDS)
-                    }
-                    // (anything changed while it was closed)
-                    IttcDirect.refreshAsync(app, force = true)
-                }
-
-                override fun onMessage(webSocket: WebSocket, text: String) {
-                    val o = try {
-                        JSONObject(text)
-                    } catch (_: Throwable) {
-                        return
-                    }
-                    if (o.optString("event") != "postgres_changes") return
-                    val target = o.optJSONObject("payload")?.optJSONObject("data")?.optJSONObject("record")?.optString("target")
-                    IttcDirect.refreshAsync(app, force = true, delayMs = if (target == "all") 20_000 else 1_500)
-                }
-
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    synchronized(this@IttcRealtime) {
-                        if (socket === webSocket) {
-                            socket = null
-                            beat?.cancel(false)
-                            // (still wanted: try again in a while, e.g. when the internet is back)
-                            if (users > 0) timer.schedule({ synchronized(this@IttcRealtime) { open(app) } }, 15, TimeUnit.SECONDS)
-                        }
-                    }
-                }
-
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    synchronized(this@IttcRealtime) { if (socket === webSocket) socket = null }
-                }
-            },
-        )
+        synchronized(this) {
+            if (socket != null || users == 0) return
+            openedAt = System.currentTimeMillis()
+            socket = IttcApi.http.newWebSocket(Request.Builder().url(IttcApi.realtimeUrl()).build(), listener(app, uid, access))
+        }
     }
+
+    private fun listener(app: Context, uid: String, access: String) = object : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            val config = JSONObject().put(
+                "postgres_changes",
+                JSONArray().put(
+                    JSONObject().put("event", "INSERT").put("schema", "public")
+                        .put("table", "phone_lead_pings").put("filter", "target=in.($uid,all)"),
+                ),
+            )
+            webSocket.send(
+                JSONObject().put("topic", "realtime:ittc-phone:$uid").put("event", "phx_join")
+                    .put("payload", JSONObject().put("config", config).put("access_token", access))
+                    .put("ref", nextRef()).toString(),
+            )
+            synchronized(this@IttcRealtime) {
+                beat?.cancel(false)
+                // (the server closes a quiet socket: a heartbeat every 25 s; a fresh token now and then)
+                beat = timer.scheduleAtFixedRate({
+                    if (System.currentTimeMillis() - openedAt > REOPEN_MS) {
+                        reopen(app, webSocket, 1_000)
+                    } else {
+                        webSocket.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat").put("payload", JSONObject()).put("ref", nextRef()).toString())
+                    }
+                }, 25, 25, TimeUnit.SECONDS)
+            }
+            // (anything changed while it was closed)
+            IttcDirect.refreshAsync(app, force = true)
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            val o = try {
+                JSONObject(text)
+            } catch (_: Throwable) {
+                return
+            }
+            when (o.optString("event")) {
+                "postgres_changes" -> {
+                    val target = o.optJSONObject("payload")?.optJSONObject("data")?.optJSONObject("record")?.optString("target")
+                    IttcDirect.refreshAsync(app, force = true, delayMs = if (target == "all") 20_000 else 1_500, directory = false)
+                }
+                // (the channel ended — token ran out, server restart: join again with a fresh token)
+                "phx_close", "phx_error" -> reopen(app, webSocket, 5_000)
+                "phx_reply" -> if (o.optJSONObject("payload")?.optString("status") == "error") reopen(app, webSocket, 30_000)
+            }
+        }
+
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = reopen(app, webSocket, 15_000)
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = reopen(app, webSocket, 5_000)
+    }
+
+    /** Close this socket (if it is still the one) and, while still wanted, open a new one later */
+    private fun reopen(app: Context, webSocket: WebSocket, afterMs: Long) {
+        synchronized(this) {
+            if (socket !== webSocket) return
+            socket = null
+            beat?.cancel(false)
+            try {
+                webSocket.close(1000, null)
+            } catch (_: Throwable) {
+            }
+            if (users > 0) {
+                retry?.cancel(false)
+                retry = timer.schedule({ open(app) }, afterMs, TimeUnit.MILLISECONDS)
+            }
+        }
+    }
+
+    @Synchronized
+    private fun nextRef(): String = (++ref).toString()
 
     /** One screen less needs it; closed when none does */
     @Synchronized
     fun release() {
         users = (users - 1).coerceAtLeast(0)
-        if (users == 0) stop()
+        if (users == 0) closeNow()
+    }
+
+    /** Signed out: closed, whoever wanted it */
+    @Synchronized
+    fun stop() {
+        users = 0
+        closeNow()
     }
 
     @Synchronized
-    fun stop() {
+    private fun closeNow() {
         beat?.cancel(false)
-        socket?.close(1000, null)
+        retry?.cancel(false)
+        val s = socket
         socket = null
-        users = 0
+        try {
+            s?.close(1000, null)
+        } catch (_: Throwable) {
+        }
     }
 }

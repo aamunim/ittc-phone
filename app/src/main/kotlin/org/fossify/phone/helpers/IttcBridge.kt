@@ -130,7 +130,8 @@ object IttcBridge {
                 }
             } == true
         } catch (_: Throwable) {
-            false
+            // (the Tracker busy / restarting: the last answer stands)
+            signedInAnswer
         }
         if (answer != signedInAnswer) {
             app.getSharedPreferences("ittc", Context.MODE_PRIVATE).edit().putBoolean("tracker_signed_in", answer).apply()
@@ -624,6 +625,7 @@ object IttcBridge {
             rowIdFor(number)?.let { item.put("device_call_id", it) }
             stage?.let {
                 item.put("stage_id", it.id)
+                if (it.noteRequired) item.put("stage_note", true)
                 if (it.askDate) item.put("stage_due", true)
             }
             IttcDirect.enqueue(app, item)
@@ -653,6 +655,13 @@ object IttcBridge {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    /** Signed out of ITTC Phone: nothing of the last person's lists stays */
+    fun clearCaches() {
+        myLeadsCache = emptyList()
+        metaCache = null
+        known.clear()
     }
 
     /** Forget what Recents knew (a call just ended: its lead may have changed) */
@@ -795,7 +804,12 @@ object IttcBridge {
         if (canShow) {
             main.post { IttcAfterCallActivity.open(app, lead, number, outgoing, talkedSec, reason, startedAt) }
         }
-        val id = findRow(app, number, startedAt) ?: return
+        val id = findRow(app, number, startedAt)
+        if (id == null) {
+            // (the call log not written yet: found later by number and time)
+            IttcDirect.queueCallAt(app, number, startedAt, refreshFirst = false)
+            return
+        }
         rowIds[number] = id
         IttcDirect.queueCall(app, id)
         IttcDirect.kick(app)

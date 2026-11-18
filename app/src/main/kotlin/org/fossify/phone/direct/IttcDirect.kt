@@ -13,10 +13,10 @@ import android.provider.CallLog
 import android.telephony.SubscriptionManager
 import org.fossify.phone.BuildConfig
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcToday
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -164,8 +164,15 @@ object IttcDirect {
         IttcAuth.save(app, t)
         val ok = checkSession(app, fresh = true)
         if (!ok) {
-            val msg = lastMessage(app) ?: "You may not sign in to ITTC Phone. Ask your admin."
+            IttcAuth.clear(app)
+            val msg = lastMessage(app) ?: "Could not check your sign-in. Please try again."
             throw IllegalStateException(msg)
+        }
+        // (changes kept from an earlier sign-in go only with the same person)
+        synchronized(outboxLock) {
+            val owner = prefs(app).getString("outbox_user", null)
+            if (owner != null && owner != t.userId) file(app, OUTBOX).delete()
+            prefs(app).edit().putString("outbox_user", t.userId).apply()
         }
         prefs(app).edit().putBoolean("allowed", true).apply()
         modeAt = 0
@@ -190,18 +197,31 @@ object IttcDirect {
         clearLocal(app, null)
     }
 
-    /** The server ended it (signed out by an admin, not allowed, password changed) */
+    /**
+     * The server ended it (signed out by an admin, not allowed, password changed). Changes not sent
+     * yet stay on the phone: they go if the same person signs in again (another person: deleted).
+     */
     fun signedOutByServer(context: Context, message: String) {
-        clearLocal(context.applicationContext, message)
+        clearLocal(context.applicationContext, message, keepOutbox = true)
     }
 
-    private fun clearLocal(app: Context, message: String?) {
+    private fun clearLocal(app: Context, message: String?, keepOutbox: Boolean = false) {
         IttcAuth.clear(app)
-        listOf(LEADS, META, DIR, OUTBOX).forEach { file(app, it).delete() }
-        prefs(app).edit().remove("me").remove("settings").remove("last_refresh").remove("last_check").apply()
+        generation++
+        listOf(LEADS, META, DIR).forEach { file(app, it).delete() }
+        if (!keepOutbox) synchronized(outboxLock) { file(app, OUTBOX).delete() }
+        leadsCache = null
+        metaCache = null
+        dirCache = null
+        IttcBridge.clearCaches()
+        IttcLeadApi.forget()
+        IttcToday.clear(app)
+        org.fossify.phone.helpers.IttcDialer.stop(app)
+        prefs(app).edit().remove("me").remove("settings").remove("last_refresh").remove("last_check")
+            .remove("last_directory").remove("refresh_error").remove("tracker_device_id").apply()
         if (message != null) prefs(app).edit().putString("message", message).apply()
         IttcRealtime.stop()
-        IttcReminders.cancelAll(app)
+        IttcReminders.cancelAll(app, notifications = true)
         modeAt = 0
         modeActive = false
         syncTrackerFlag(app)
@@ -287,12 +307,19 @@ object IttcDirect {
         dirCache?.let { return it }
         val f = file(context, DIR)
         val map = HashMap<String, IttcBridge.Lead>()
+        // (my own leads first, from the list that comes every few seconds: a lead assigned a moment
+        // ago is known on the call screen before the whole list comes again)
+        leads(context).forEach { l ->
+            val lead = IttcBridge.Lead(l.leadId, l.name, l.rating, l.stage, l.course, l.lastNote)
+            listOf(l.phone, l.altPhone, l.whatsapp).forEach { n -> normalizeBd(n)?.let { map[sha256(it)] = lead } }
+        }
         try {
             if (f.exists()) {
                 val arr = JSONArray(f.readText())
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
                     val hash = o.optString("hash").takeIf { it.isNotEmpty() } ?: continue
+                    if (map.containsKey(hash)) continue
                     map[hash] = IttcBridge.Lead(
                         leadId = o.optString("lead_id"),
                         name = o.optString("name"),
@@ -333,35 +360,74 @@ object IttcDirect {
         )
     }
 
-    @Volatile private var refreshing = false
+    private val refreshing = java.util.concurrent.atomic.AtomicBoolean(false)
+    @Volatile private var again = false
+    @Volatile private var againForce = false
+    @Volatile private var againDirectory = false
+
+    /** Changes with every sign-in / sign-out: a list fetched for the last person is never kept */
+    @Volatile private var generation = 0
 
     /**
      * Fetch the lists again (off the main thread). At most every 20 s unless forced; the "who is a
-     * lead" list every 15 min. Also checks the session every 5 min.
+     * lead" list every 15 min (or [directory]). Also checks the session every 5 min. Asked while one
+     * runs: it runs once more after it.
      */
-    fun refresh(context: Context, force: Boolean = false) {
+    fun refresh(context: Context, force: Boolean = false, directory: Boolean = force) {
         val app = context.applicationContext
-        if (!isSignedIn(app) || refreshing) return
+        if (!isSignedIn(app)) return
+        if (!refreshing.compareAndSet(false, true)) {
+            againForce = againForce || force
+            againDirectory = againDirectory || directory
+            again = true
+            return
+        }
+        try {
+            refreshOnce(app, force, directory)
+            while (again) {
+                again = false
+                val f = againForce
+                val d = againDirectory
+                againForce = false
+                againDirectory = false
+                refreshOnce(app, f, d)
+            }
+        } finally {
+            refreshing.set(false)
+        }
+    }
+
+    private fun refreshOnce(app: Context, force: Boolean, directory: Boolean) {
         val p = prefs(app)
         val now = System.currentTimeMillis()
+        if (!isSignedIn(app)) return
         if (!force && now - p.getLong("last_refresh", 0) < 20_000) return
-        refreshing = true
+        val gen = generation
         try {
-            if (now - p.getLong("last_check", 0) > 5 * 60_000 && !checkSession(app)) return
+            if (now - p.getLong("last_check", 0) > 5 * 60_000 && !checkSession(app)) {
+                if (isSignedIn(app)) p.edit().putString("refresh_error", "Could not check your sign-in").apply()
+                return
+            }
             val data = JSONObject(IttcApi.rpc(app, "my_phone_data"))
             val leads = data.optJSONArray("leads") ?: JSONArray()
             data.remove("leads")
+            val dir = if (directory || now - p.getLong("last_directory", 0) > 15 * 60_000 || !file(app, DIR).exists()) {
+                fetchDirectory(app)
+            } else {
+                null
+            }
+            // (signed out / someone else signed in meanwhile: this list is not theirs)
+            if (gen != generation || !isSignedIn(app)) return
             writeAtomic(file(app, LEADS), leads.toString())
             writeAtomic(file(app, META), data.toString())
             data.optJSONObject("settings")?.let { p.edit().putString("settings", it.toString()).apply() }
             leadsCache = null
             metaCache = null
-            if (force || now - p.getLong("last_directory", 0) > 15 * 60_000 || !file(app, DIR).exists()) {
-                val dir = JSONArray(IttcApi.rpc(app, "my_lead_directory"))
+            if (dir != null) {
                 writeAtomic(file(app, DIR), dir.toString())
-                dirCache = null
                 p.edit().putLong("last_directory", now).apply()
             }
+            dirCache = null
             p.edit().putLong("last_refresh", now).remove("refresh_error").apply()
             // (the Tracker forgets "ITTC Phone works by itself" after 2 hours unless told again)
             if (now - p.getLong("last_flag", 0) > 10 * 60_000) {
@@ -372,16 +438,40 @@ object IttcDirect {
             IttcReminders.schedule(app, leads(app))
         } catch (e: Throwable) {
             p.edit().putString("refresh_error", e.message ?: "Could not update").apply()
-        } finally {
-            refreshing = false
         }
         changed(app)
     }
 
-    fun refreshAsync(context: Context, force: Boolean = false, delayMs: Long = 0) {
+    /** Only leads (alumni / bank numbers cannot take a result); an older database: the whole list */
+    private fun fetchDirectory(app: Context): JSONArray =
+        try {
+            JSONArray(IttcApi.rpc(app, "phone_lead_directory"))
+        } catch (e: IttcApi.ApiError) {
+            if (e.status != 404) throw e
+            JSONArray(IttcApi.rpc(app, "my_lead_directory"))
+        }
+
+    private var pendingRefresh: Runnable? = null
+
+    /**
+     * Refresh soon. With a delay, several asks close together make one (the live pings);
+     * [directory] false: the "who is a lead" list only when it is due.
+     */
+    fun refreshAsync(context: Context, force: Boolean = false, delayMs: Long = 0, directory: Boolean = force) {
         val app = context.applicationContext
-        if (delayMs > 0) main.postDelayed({ io.execute { refresh(app, force) } }, delayMs)
-        else io.execute { refresh(app, force) }
+        if (delayMs <= 0) {
+            io.execute { refresh(app, force, directory) }
+            return
+        }
+        main.post {
+            pendingRefresh?.let { main.removeCallbacks(it) }
+            val r = Runnable {
+                pendingRefresh = null
+                io.execute { refresh(app, force, directory) }
+            }
+            pendingRefresh = r
+            main.postDelayed(r, delayMs)
+        }
     }
 
     fun lastRefresh(context: Context): Long = prefs(context).getLong("last_refresh", 0)
@@ -413,6 +503,18 @@ object IttcDirect {
         val row = callRow(app, callLogId) ?: return
         if (lookupLead(app, row.number) == null) return
         enqueue(app, JSONObject().put("kind", "call").put("call", row.toJson()))
+    }
+
+    /**
+     * A lead call by its number and start time (its call-log row may not be written yet): queued,
+     * found when sent. [refreshFirst]: the number just became a lead (Add lead) — the list first.
+     */
+    fun queueCallAt(context: Context, number: String, startedAt: Long, refreshFirst: Boolean = true) {
+        val app = context.applicationContext
+        io.execute {
+            if (refreshFirst) refresh(app, force = true)
+            enqueue(app, JSONObject().put("kind", "call_at").put("number", number).put("started_at", startedAt))
+        }
     }
 
     internal data class Row(val id: String, val number: String, val direction: String, val durationSec: Long, val dateMs: Long, val sim: String?) {
@@ -488,6 +590,8 @@ object IttcDirect {
         synchronized(outboxLock) {
             val arr = readArray(file(app, OUTBOX))
             item.put("qid", UUID.randomUUID().toString()).put("at", System.currentTimeMillis())
+            // (the phone id fixed now: a call and its result always go with the same one)
+            if (!item.has("device")) item.put("device", callDeviceId(app))
             arr.put(item)
             // (never grows without end: the oldest go first)
             val keep = JSONArray()
@@ -522,6 +626,7 @@ object IttcDirect {
             js.schedule(
                 JobInfo.Builder(JOB_ID, ComponentName(app, IttcOutboxJob::class.java))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setPersisted(true)
                     .setMinimumLatency(30_000)
                     .setBackoffCriteria(60_000, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
                     .build(),
@@ -531,7 +636,12 @@ object IttcDirect {
     }
 
     /** The number of items still waiting */
-    internal fun sendAll(app: Context): Int {
+    private val sendLock = Any()
+
+    /** The number of items still waiting (one sender at a time: nothing goes twice) */
+    internal fun sendAll(app: Context): Int = synchronized(sendLock) { sendAllNow(app) }
+
+    private fun sendAllNow(app: Context): Int {
         if (!isSignedIn(app)) return 0
         val items = synchronized(outboxLock) { readArray(file(app, OUTBOX)) }
         val now = System.currentTimeMillis()
@@ -543,7 +653,9 @@ object IttcDirect {
             } catch (e: IttcApi.ApiError) {
                 when {
                     e.status == 0 -> return pendingCount(app) // no internet: all wait
-                    e.status in 400..499 && e.status != 401 -> Done // refused: it would never go
+                    // refused: it would never go (busy / rate-limited / timed out / not found while the
+                    // server reloads: later)
+                    e.status in 400..499 && e.status !in setOf(401, 404, 408, 425, 429) -> Done
                     else -> Keep
                 }
             } catch (_: Throwable) {
@@ -568,8 +680,20 @@ object IttcDirect {
     private fun send(app: Context, item: JSONObject): Result = when (item.optString("kind")) {
         "call" -> {
             val calls = JSONArray().put(item.getJSONObject("call"))
-            rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", callDeviceId(app)).put("p_calls", calls))
+            rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", deviceOf(app, item)).put("p_calls", calls))
             Done
+        }
+        // (a lead call whose call-log row was not written yet when it ended: found by number and time)
+        "call_at" -> {
+            val row = callRowAt(app, item.getString("number"), item.getLong("started_at"))
+            when {
+                row != null -> {
+                    rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", deviceOf(app, item)).put("p_calls", JSONArray().put(row.toJson())))
+                    Done
+                }
+                System.currentTimeMillis() - item.optLong("at") < 30 * 60_000 -> Keep
+                else -> Done
+            }
         }
         "outcome" -> sendOutcome(app, item)
         "note" -> {
@@ -607,6 +731,9 @@ object IttcDirect {
         else -> Done
     }
 
+    private fun deviceOf(app: Context, item: JSONObject): String =
+        item.optString("device").takeIf { it.isNotBlank() } ?: callDeviceId(app)
+
     private val OUTCOME_LABELS = mapOf(
         "connected" to "Connected", "no_answer" to "No answer", "busy" to "Busy",
         "switched_off" to "Switched off", "wrong_number" to "Wrong number", "call_back" to "Call back later",
@@ -631,7 +758,7 @@ object IttcDirect {
                 // (the call itself first: the result lands on it, never a second call; call sync
                 // may be off for this person — then the result alone makes the call)
                 try {
-                    rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", callDeviceId(app)).put("p_calls", JSONArray().put(row.toJson())))
+                    rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", deviceOf(app, o)).put("p_calls", JSONArray().put(row.toJson())))
                 } catch (e: IttcApi.ApiError) {
                     if (e.status == 0 || e.status >= 500) throw e
                 }
@@ -640,7 +767,7 @@ object IttcDirect {
                     JSONObject().put("p_lead_id", leadId).put("p_outcome", outcome).put("p_notes", note ?: "")
                         .put("p_duration_sec", row.durationSec).put("p_called_at", iso(row.dateMs))
                         .put("p_direction", if (row.direction == "outgoing") "outgoing" else "incoming")
-                        .put("p_device_id", callDeviceId(app)).put("p_device_call_id", rowId)
+                        .put("p_device_id", deviceOf(app, o)).put("p_device_call_id", rowId)
                         .apply { row.sim?.let { put("p_sim_label", it) } },
                 )
             } else if (outcome != null && o.has("started_at") && System.currentTimeMillis() - o.optLong("at") < 15 * 60_000) {
@@ -720,8 +847,18 @@ object IttcDirect {
         return if (bdMobile.matches(d)) d else null
     }
 
-    internal fun sha256(text: String): String =
-        MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    private val HEX = "0123456789abcdef".toCharArray()
+
+    internal fun sha256(text: String): String {
+        val d = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray())
+        val out = CharArray(d.size * 2)
+        d.forEachIndexed { i, b ->
+            val v = b.toInt() and 0xff
+            out[i * 2] = HEX[v ushr 4]
+            out[i * 2 + 1] = HEX[v and 0x0f]
+        }
+        return String(out)
+    }
 
     internal fun iso(ms: Long): String =
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(ms))

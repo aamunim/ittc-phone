@@ -322,11 +322,28 @@ class RecentCallsAdapter(
             it.groupedCalls?.mapTo(idsToRemove) { call -> call.id }
         }
 
-        // 🎓 ITTC: one row per number: every call of the selected numbers, also those not loaded yet
+        // 🎓 ITTC: one row per number: every call of the selected numbers, also those not loaded yet —
+        // with a Missed / Incoming / Outgoing chip on, only the calls of that kind (what the row stands for)
         val perNumber = ittcPerNumber
+        val kind = if (perNumber && textToHighlight.isEmpty()) IttcCallHistory.kind(activity) else IttcCallHistory.KIND_ALL
         ensureBackgroundThread {
             if (perNumber) {
-                idsToRemove.addAll(IttcCallHistory.idsFor(activity, callsToRemove.filter { !it.isUnknownNumber }.map { it.phoneNumber }))
+                val known = callsToRemove.filter { !it.isUnknownNumber }
+                if (kind == IttcCallHistory.KIND_ALL) {
+                    idsToRemove.addAll(IttcCallHistory.idsFor(activity, known.map { it.phoneNumber }))
+                } else {
+                    // (a row is of that kind when all its calls are: the filtered list; else, e.g. a
+                    // search result, the number's every call as before)
+                    val (ofKind, mixed) = known.partition { row ->
+                        (row.groupedCalls ?: listOf(row)).all { IttcCallHistory.matchesKind(it.type, kind) }
+                    }
+                    if (ofKind.isNotEmpty()) {
+                        idsToRemove.addAll(IttcCallHistory.idsFor(activity, ofKind.map { it.phoneNumber }, kind))
+                    }
+                    if (mixed.isNotEmpty()) {
+                        idsToRemove.addAll(IttcCallHistory.idsFor(activity, mixed.map { it.phoneNumber }))
+                    }
+                }
             }
 
             RecentsHelper(activity).removeRecentCalls(idsToRemove.distinct()) {

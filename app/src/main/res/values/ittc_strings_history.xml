@@ -25,6 +25,7 @@
     <string name="ittc_hist_deleted" translatable="false">Call history deleted</string>
     <string name="ittc_hist_blocked" translatable="false">Number blocked</string>
     <string name="ittc_hist_none" translatable="false">No calls with this number</string>
+    <string name="ittc_hist_show_more" translatable="false">Show more (%d left)</string>
     <string name="ittc_hist_no_access" translatable="false">The call history can\'t be read</string>
     <string name="ittc_hist_no_app" translatable="false">No app can open this</string>
     <string name="ittc_hist_one_call" translatable="false">1 call</string>

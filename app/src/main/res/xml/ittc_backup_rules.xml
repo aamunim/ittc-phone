@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC: the sign-in, lead lists and changes waiting to be sent never go to a backup (they
+     belong to this phone and this sign-in; the Keystore key that opens the sign-in does not move) -->
+<full-backup-content>
+    <exclude domain="file" path="direct_leads.json" />
+    <exclude domain="file" path="direct_meta.json" />
+    <exclude domain="file" path="direct_directory.json" />
+    <exclude domain="file" path="direct_outbox.json" />
+    <exclude domain="sharedpref" path="ittc_direct.xml" />
+    <exclude domain="sharedpref" path="ittc_today.xml" />
+    <exclude domain="sharedpref" path="ittc_dialer.xml" />
+    <exclude domain="sharedpref" path="ittc_reminders.xml" />
+</full-backup-content>

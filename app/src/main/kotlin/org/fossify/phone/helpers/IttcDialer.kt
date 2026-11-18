@@ -12,11 +12,11 @@ import org.json.JSONObject
 /**
  * ▶ The power dialer: "Call all" in the Leads tab queues the leads shown, calls the first, and the
  * after-call screen's "Save & call next" goes on with the rest. Kept in memory and in the prefs (the
- * app may be closed between two calls). A queue untouched for an hour is forgotten.
+ * app may be closed between two calls). A queue untouched for 20 minutes is forgotten.
  */
 object IttcDialer {
     private const val PREFS = "ittc_dialer"
-    private const val STALE_MS = 60 * 60 * 1000L
+    private const val STALE_MS = 20 * 60 * 1000L
 
     data class Item(val leadId: String, val number: String, val name: String)
 

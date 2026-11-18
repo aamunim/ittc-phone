@@ -244,13 +244,17 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             } catch (_: Throwable) {
                 false
             }
-            // ⏰ Tracker mode: follow-up reminders from this list too (direct mode sets them itself)
+            // ⏰ Tracker mode: follow-up reminders from this list too (direct mode sets them itself) —
+            // only when the person turned them on here (the Tracker has its own reminders: off by default)
             val now = System.currentTimeMillis()
             if (!isDirect && leads != null && now - remindersAt > 10 * 60_000) {
                 try {
-                    if (IttcReminders.enabled(ctx)) {
-                        remindersAt = now
+                    remindersAt = now
+                    if (IttcReminders.enabled(ctx) && IttcReminders.chosen(ctx)) {
                         IttcReminders.schedule(ctx, leads)
+                    } else {
+                        // (alarms an older version set on its own go)
+                        IttcReminders.cancelAll(ctx)
                     }
                 } catch (e: Throwable) {
                     IttcCrash.record(ctx, e, "Leads tab: reminders")
