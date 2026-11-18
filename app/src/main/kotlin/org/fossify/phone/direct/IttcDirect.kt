@@ -238,6 +238,12 @@ object IttcDirect {
         IttcAdmitApi.forget()
         IttcVisitFeeApi.forget()
         IttcToday.clear(app)
+        org.fossify.phone.helpers.IttcNoteDraft.clear(app)
+        // (receipt pictures with students' names and amounts)
+        try {
+            File(app.cacheDir, "ittc_receipts").deleteRecursively()
+        } catch (_: Throwable) {
+        }
         org.fossify.phone.helpers.IttcDialer.stop(app)
         prefs(app).edit().remove("me").remove("settings").remove("last_refresh").remove("last_check")
             .remove("last_directory").remove("refresh_error").remove("tracker_device_id").apply()

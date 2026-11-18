@@ -21,6 +21,12 @@ object IttcNoteDraft {
     @Volatile private var loaded = false
     private val io = Executors.newSingleThreadExecutor()
 
+    /** Signed out: no draft stays */
+    fun clear(context: Context) {
+        synchronized(drafts) { drafts.clear() }
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
     /** "+880 1711-000000" / "01711000000" → the same key (the last 10 digits) */
     private fun keyOf(number: String?): String? =
         number?.filter { it.isDigit() }?.takeIf { it.length >= 6 }?.takeLast(10)

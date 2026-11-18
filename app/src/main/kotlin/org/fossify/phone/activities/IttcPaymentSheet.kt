@@ -177,6 +177,8 @@ object IttcPaymentSheet {
                 val error = IttcDUi.errorBox(activity)
                 body.addView(error)
                 var busy = false
+                // (a save whose reply and whose check were both lost: the next Save looks first)
+                var unsure = false
                 val save = IttcDUi.button(activity, activity.getString(R.string.ittc_d_save_payment), IttcDUi.Btn.CALL) {}
                 save.setOnClickListener {
                     if (busy) return@setOnClickListener
@@ -190,7 +192,44 @@ object IttcPaymentSheet {
                     // the payments there before this attempt (the list on screen)
                     val knownIds = pays.payments.map { it.id }.toSet()
                     var notConfirmed = false
+                    fun onPaid(res: IttcAdmitApi.PayResult) {
+                        val amount = IttcAdmitApi.money(amountNow)
+                        activity.toast(activity.getString(R.string.ittc_d_payment_saved, amount, res.receiptNo))
+                        // Offer the receipt straight away (as the Tracker)
+                        try {
+                            AlertDialog.Builder(activity)
+                                .setTitle(R.string.ittc_d_payment_saved_title)
+                                .setMessage("${res.receiptNo} · $amount")
+                                .setPositiveButton(R.string.ittc_d_share_receipt) { _, _ -> IttcReceipt.shareById(activity, lead.id, res.id, res.receiptNo) }
+                                .setNegativeButton(R.string.ittc_d_done, null)
+                                .show()
+                        } catch (_: Throwable) {
+                        }
+                        saved()
+                    }
                     ensureBackgroundThread {
+                        if (unsure) {
+                            val prior: Result<IttcAdmitApi.PayResult?> = try {
+                                Result.success(IttcAdmitApi.findJustRecorded(app, lead.id, amountNow, knownIds))
+                            } catch (e: Throwable) {
+                                Result.failure(e)
+                            }
+                            val found = prior.getOrNull()
+                            if (prior.isFailure || found != null) {
+                                if (found != null) unsure = false
+                                val r0: Result<IttcAdmitApi.PayResult> =
+                                    if (found != null) Result.success(found) else Result.failure(prior.exceptionOrNull()!!)
+                                activity.runOnUiThread {
+                                    busy = false
+                                    save.alpha = 1f
+                                    if (!IttcDUi.alive(activity)) return@runOnUiThread
+                                    r0.onFailure { IttcDUi.showError(error, IttcAdmitApi.errorText(it, activity.getString(R.string.ittc_d_could_not_save))) }
+                                    r0.onSuccess { onPaid(it) }
+                                }
+                                return@ensureBackgroundThread
+                            }
+                            unsure = false
+                        }
                         val r: Result<IttcAdmitApi.PayResult> = try {
                             Result.success(
                                 IttcAdmitApi.recordPayment(app, lead.id, amountNow, form.method!!, form.txn(), form.dayMs(), form.note(), form.college()),
@@ -208,6 +247,7 @@ object IttcPaymentSheet {
                                     }
                                 } catch (e2: Throwable) {
                                     if (e2 is IttcApi.ApiError && e2.status == 0) {
+                                        unsure = true
                                         Result.failure(e) // still no internet: the original error
                                     } else {
                                         notConfirmed = true
@@ -230,21 +270,7 @@ object IttcPaymentSheet {
                                     IttcDUi.showError(error, IttcAdmitApi.errorText(it, activity.getString(R.string.ittc_d_could_not_save)))
                                 }
                             }
-                            r.onSuccess { res ->
-                                val amount = IttcAdmitApi.money(amountNow)
-                                activity.toast(activity.getString(R.string.ittc_d_payment_saved, amount, res.receiptNo))
-                                // Offer the receipt straight away (as the Tracker)
-                                try {
-                                    AlertDialog.Builder(activity)
-                                        .setTitle(R.string.ittc_d_payment_saved_title)
-                                        .setMessage("${res.receiptNo} · $amount")
-                                        .setPositiveButton(R.string.ittc_d_share_receipt) { _, _ -> IttcReceipt.shareById(activity, lead.id, res.id, res.receiptNo) }
-                                        .setNegativeButton(R.string.ittc_d_done, null)
-                                        .show()
-                                } catch (_: Throwable) {
-                                }
-                                saved()
-                            }
+                            r.onSuccess { onPaid(it) }
                         }
                     }
                 }
