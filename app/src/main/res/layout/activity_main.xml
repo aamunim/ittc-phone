@@ -104,13 +104,17 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:rippleColor="@color/pressed_item_foreground" />
 
-        <!-- 🎓 ITTC 3.6: the dial pad, open at start, above the tab bar -->
+        <!-- 🎓 ITTC 3.6: the dial pad, open at start, above the tab bar (never taller than the room
+             under the top bar; IttcMainDialpad sizes the keys so it fits with room for matches) -->
         <include
             android:id="@+id/ittc_main_dialpad"
             layout="@layout/ittc_main_dialpad"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:layout_constraintBottom_toTopOf="@+id/ittc_tabs_divider" />
+            app:layout_constrainedHeight="true"
+            app:layout_constraintBottom_toTopOf="@+id/ittc_tabs_divider"
+            app:layout_constraintTop_toBottomOf="@+id/ittc_update_banner"
+            app:layout_constraintVertical_bias="1" />
 
         <!-- 🎓 ITTC 3.6: the tab bar's thin top line -->
         <View

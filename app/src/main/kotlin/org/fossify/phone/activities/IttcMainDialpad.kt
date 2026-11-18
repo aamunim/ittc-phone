@@ -22,6 +22,7 @@ import android.view.Menu
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -95,8 +96,6 @@ class IttcMainDialpad(
     private val longPressHandler = Handler(Looper.getMainLooper())
     private val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
 
-    // (a key typed by touch: its click (also TalkBack's) types nothing more)
-    private var typedByTouch = false
 
     /** On in Settings (off: the round button opens the dial pad screen, as before) */
     val enabled: Boolean get() = activity.config.ittcOpenWithDialpad
@@ -114,7 +113,30 @@ class IttcMainDialpad(
         )
     }
 
+    // the key size for this window's height (dp): the pad, the tab bar, the top bar and at least
+    // 120 dp of matches have to fit; null: not even with 44 dp keys
+    private var keyDp: Int? = null
+    private val fits: Boolean get() = keyDp != null
+
+    private fun sizeKeys() {
+        val heightDp = activity.resources.configuration.screenHeightDp
+        // top bar 56 + tab bar 67 + matches 120 + number row 56 + ≡ / call row and padding 84
+        val free = heightDp - (56 + 67 + 120 + 56 + 84)
+        val size = (free / 4 - KEY_GAP_DP).coerceAtMost(KEY_MAX_DP)
+        keyDp = size.takeIf { it >= KEY_MIN_DP }
+        val px = IttcTheme.dp(activity, (keyDp ?: KEY_MAX_DP).toFloat())
+        (keys.map { it.first } + listOf(pad.ittcDpMenu, pad.ittcDpCall, pad.ittcDpHide)).forEach { v ->
+            val lp = v.layoutParams ?: return@forEach
+            if (lp.width != px || lp.height != px) {
+                lp.width = px
+                lp.height = px
+                v.layoutParams = lp
+            }
+        }
+    }
+
     init {
+        sizeKeys()
         setupKeys()
         setupActions()
         main.ittcDialList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -129,7 +151,8 @@ class IttcMainDialpad(
 
     /** The round button: the pad (or, with the setting off, the dial pad screen) */
     fun open() {
-        if (!enabled) {
+        // (with the setting off, or a window too short for it — landscape — the dial pad screen)
+        if (!enabled || !fits) {
             activity.startActivity(Intent(activity.applicationContext, DialpadActivity::class.java))
             return
         }
@@ -186,14 +209,22 @@ class IttcMainDialpad(
 
     /** At start: open on a fresh start (with the setting on), as it was after a restart */
     fun restore(savedInstanceState: Bundle?) {
+        if (!enabled) return
         if (savedInstanceState == null) {
-            if (enabled) open()
+            // (not when a missed call's notification opened the app: Recents first)
+            if (activity.intent?.action != Intent.ACTION_VIEW && fits) open()
             return
         }
         number = savedInstanceState.getString(STATE_NUMBER).orEmpty()
         resultsWanted = savedInstanceState.getBoolean(STATE_RESULTS)
-        if (enabled && savedInstanceState.getBoolean(STATE_OPEN)) open()
+        if (savedInstanceState.getBoolean(STATE_OPEN) && fits) open()
         numberChanged()
+    }
+
+    /** Turned / resized (the activity is kept): keys sized again; too short now → folded */
+    fun configurationChanged() {
+        sizeKeys()
+        if (!fits) hideAll()
     }
 
     /** The contacts were read again: what the number matches again */
@@ -300,11 +331,15 @@ class IttcMainDialpad(
     // 1–9 for its speed dial)
     @SuppressLint("ClickableViewAccessibility")
     private fun setupKey(view: View, char: Char) {
-        view.setOnClickListener {
-            if (typedByTouch) {
-                typedByTouch = false
-            } else {
-                type(charOf(char), view)
+        // (typed on touch down only, so no click listener; TalkBack's "double tap" — an
+        // accessibility click, not a touch — types it here)
+        view.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
+                if (action == AccessibilityNodeInfo.ACTION_CLICK) {
+                    type(charOf(char), host)
+                    return true
+                }
+                return super.performAccessibilityAction(host, action, args)
             }
         }
         view.setOnTouchListener { _, event ->
@@ -312,7 +347,6 @@ class IttcMainDialpad(
             val longClickable = typed in '0'..'9'
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    typedByTouch = true
                     type(typed, view)
                     startTone(typed)
                     if (longClickable) {
@@ -324,8 +358,6 @@ class IttcMainDialpad(
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     stopTone(typed)
                     longPressHandler.removeCallbacksAndMessages(null)
-                    // (a cancelled touch has no click to take the flag back)
-                    if (event.action == MotionEvent.ACTION_CANCEL) typedByTouch = false
                 }
 
                 MotionEvent.ACTION_MOVE -> {
@@ -363,19 +395,25 @@ class IttcMainDialpad(
         clearJob?.cancel()
         number += char
         haptic(view)
-        numberChanged()
+        numberChanged(byUser = true)
     }
 
     private fun setNumber(value: String) {
         clearJob?.cancel()
         number = value.take(MAX_LENGTH)
-        numberChanged()
+        numberChanged(byUser = true)
     }
 
     private fun paste() {
         val clip = (activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.primaryClip
         val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(activity)?.toString().orEmpty()
-        val cleaned = text.filter { it.isDigit() || it in "+*#,;" }
+        // (any script's digits as 0–9, e.g. Bengali ০–৯; of the rest only + * # , ;)
+        val cleaned = buildString {
+            text.forEach { c ->
+                val d = Character.digit(c, 10)
+                if (d >= 0) append('0' + d) else if (c in "+*#,;") append(c)
+            }
+        }
         if (cleaned.isNotEmpty()) setNumber(cleaned)
     }
 
@@ -492,7 +530,8 @@ class IttcMainDialpad(
 
     private class Found(val contacts: ArrayList<Contact>, val leads: List<IttcBridge.PhoneLead>, val recents: List<RecentCall>)
 
-    private fun numberChanged() {
+    /** [byUser]: typed / pasted now (only then is a secret code sent — not again on a refresh) */
+    private fun numberChanged(byUser: Boolean = false) {
         val text = number
         pad.ittcDpNumberRow.beVisibleIf(text.isNotEmpty())
         pad.ittcDpNumber.text = text
@@ -505,7 +544,12 @@ class IttcMainDialpad(
             main.ittcDialList.adapter = null
             return
         }
-        if (IttcDialSearch.secretCode(activity, text)) return
+        if (byUser && IttcDialSearch.secretCode(activity, text)) {
+            // (sent once: the code goes, so a refresh or a restart cannot send it again)
+            number = ""
+            numberChanged()
+            return
+        }
         showResults(resultsWanted)
         askLeadsOnce()
 
@@ -601,7 +645,8 @@ class IttcMainDialpad(
     // (a full number that is a lead's → who it is, at the top; a tap opens the lead)
     private fun showFullNumberLead(text: String) {
         val view = main.ittcDialLead
-        if (text.count { it.isDigit() } < 10) {
+        // (no lead lookup behind the first-start disclosure)
+        if (text.count { it.isDigit() } < 10 || !IttcDisclosure.agreed(activity)) {
             view.beGone()
             return
         }
@@ -658,6 +703,9 @@ class IttcMainDialpad(
 
     companion object {
         private const val MAX_LENGTH = 40
+        private const val KEY_MAX_DP = 60
+        private const val KEY_MIN_DP = 44
+        private const val KEY_GAP_DP = 4
         private const val STATE_NUMBER = "ittc_dp_number"
         private const val STATE_OPEN = "ittc_dp_open"
         private const val STATE_RESULTS = "ittc_dp_results"

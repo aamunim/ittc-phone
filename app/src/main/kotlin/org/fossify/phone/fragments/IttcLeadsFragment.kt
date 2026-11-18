@@ -124,6 +124,9 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         innerBinding = LeadsInnerBinding(binding)
     }
 
+    // 🎓 ITTC 3.6: dragging the leads list folds the main screen's dial pad
+    override fun ittcScrollList(): RecyclerView = binding.ittcLeadsList
+
     override fun setupFragment() {
         binding.ittcLeadsList.adapter = adapter
         scope = prefs.getString("leads_scope", null)?.let { v -> Scope.values().firstOrNull { it.name == v } } ?: Scope.MY

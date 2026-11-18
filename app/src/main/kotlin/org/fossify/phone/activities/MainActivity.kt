@@ -238,6 +238,8 @@ class MainActivity : SimpleActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        // 🎓 ITTC 3.6: the dial pad's keys for the new height (folded when it no longer fits)
+        ittcDialpad.configurationChanged()
         if (IttcDisclosure.agreed(this)) refreshItems()
     }
 
