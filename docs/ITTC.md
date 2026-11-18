@@ -1,8 +1,8 @@
 # 📞 ITTC Phone ↔ ITTC Admission Tracker
 
 ITTC Phone is a separate app (made from Fossify Phone, GPL-3.0, source at
-github.com/aamunim/ittc-phone). Its app id stays `org.fossify.phone` (Fossify's shared
-library needs it). This app stays private; the two only talk through the provider below.
+github.com/aamunim/ittc-phone). Its app id is `com.abamunim.ittcphone` (Google
+Play, 2.0.0+); older GitHub builds used `org.fossify.phone`, still accepted while people move. This app stays private; the two only talk through the provider below.
 
 ## Who may talk to whom: certificate lists
 
@@ -13,7 +13,7 @@ certificate (SHA-256) against a fixed list, on every request:
 
 | app | certificates it is accepted with |
 |---|---|
-| ITTC Phone (`org.fossify.phone`) | upload key `2955a704…0d83` (GitHub Actions signs with it) |
+| ITTC Phone (`com.abamunim.ittcphone`; old: `org.fossify.phone`) | upload key `2955a704…0d83` (GitHub Actions), and Google Play's app signing key for ITTC Phone once known (Play Console → App integrity) |
 | Tracker (`com.abamunim.leads`) | Google Play app signing key `d07ea3e9…4e54`, upload key `2955a704…0d83` (APK builds) |
 
 The lists live in `IttcPhone.kt` (here) and `IttcBridge.kt` (ITTC Phone). A new signing key
@@ -21,7 +21,7 @@ means adding its SHA-256 on both sides.
 
 ## Android 11+ package visibility
 
-Each app lists the other in `<queries>` (this one: `org.fossify.phone`; ITTC Phone:
+Each app lists the other in `<queries>` (this one: `com.abamunim.ittcphone` and `org.fossify.phone`; ITTC Phone:
 `com.abamunim.leads`).
 
 ## 1. Is this number a lead? (ITTC Phone → this app)

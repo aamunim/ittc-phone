@@ -80,6 +80,12 @@ class SettingsActivity : SimpleActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 🎓 ITTC: opened from Android's settings before the first start: the disclosure first
+        if (!org.fossify.phone.helpers.IttcDisclosure.agreed(this)) {
+            startActivity(Intent(this, MainActivity::class.java))
+            finish()
+            return
+        }
         setContentView(binding.root)
         setupOptionsMenu()
         refreshMenuItems()

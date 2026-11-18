@@ -505,7 +505,8 @@ object IttcBridge {
         stage: Stage? = null,
     ): Boolean {
         val app = context.applicationContext
-        if (!trackerReady(app)) return false
+        // (nothing goes to the Tracker before the person has seen the disclosure)
+        if (!IttcDisclosure.agreed(app) || !trackerReady(app)) return false
         val extras = Bundle().apply {
             putString("lead_id", leadId)
             number?.let { putString("number", it) }
@@ -583,6 +584,9 @@ object IttcBridge {
 
     private fun handOver(context: Context, call: Call, lastCall: Boolean) {
         val app = context.applicationContext
+        // (made the phone app in Android's settings and never opened: no hand-over before the
+        // disclosure; the Tracker's own call-log sync still has the call)
+        if (!IttcDisclosure.agreed(app)) return
         val details = try {
             call.details
         } catch (_: Throwable) {

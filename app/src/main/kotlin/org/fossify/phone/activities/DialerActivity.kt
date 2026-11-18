@@ -30,10 +30,9 @@ class DialerActivity : SimpleActivity() {
             callNumber = intent.data
 
             // make sure Simple Dialer is the default Phone app before initiating an outgoing call
-            if (!isDefaultDialer()) {
-                launchSetDefaultDialerIntent()
-            } else {
-                initOutgoingCall()
+            // 🎓 ITTC: what the app does with calls and contacts first (Play disclosure), then call
+            org.fossify.phone.helpers.IttcDisclosure.showOnce(this) {
+                if (!isDefaultDialer()) launchSetDefaultDialerIntent() else initOutgoingCall()
             }
         } else {
             toast(R.string.unknown_error_occurred)

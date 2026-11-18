@@ -25,6 +25,7 @@ import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import org.fossify.commons.models.RadioItem
 import org.fossify.commons.models.contacts.Contact
+import org.fossify.phone.helpers.IttcDisclosure
 import org.fossify.phone.BuildConfig
 import org.fossify.phone.R
 import org.fossify.phone.adapters.ViewPagerAdapter
@@ -73,32 +74,39 @@ class MainActivity : SimpleActivity() {
         EventBus.getDefault().register(this)
         launchedDialer = savedInstanceState?.getBoolean(OPEN_DIAL_PAD_AT_LAUNCH) ?: false
 
-        if (isDefaultDialer()) {
-            checkContactPermissions()
+        // 🎓 ITTC: first what the app does with calls and contacts (Google Play's "prominent
+        // disclosure") — also when it was made the phone app in Android's settings — then the rest
+        val disclosureFirst = !IttcDisclosure.agreed(this)
+        IttcDisclosure.showOnce(this) {
+            // (the lists were held back while the disclosure was open: load them now)
+            if (disclosureFirst) refreshItems(true)
+            if (isDefaultDialer()) {
+                checkContactPermissions()
 
-            if (!config.wasOverlaySnackbarConfirmed && !Settings.canDrawOverlays(this)) {
-                val snackbar = Snackbar.make(
-                    binding.mainHolder,
-                    R.string.allow_displaying_over_other_apps,
-                    Snackbar.LENGTH_INDEFINITE
-                ).setAction(R.string.ok) {
-                    config.wasOverlaySnackbarConfirmed = true
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                if (!config.wasOverlaySnackbarConfirmed && !Settings.canDrawOverlays(this)) {
+                    val snackbar = Snackbar.make(
+                        binding.mainHolder,
+                        R.string.allow_displaying_over_other_apps,
+                        Snackbar.LENGTH_INDEFINITE
+                    ).setAction(R.string.ok) {
+                        config.wasOverlaySnackbarConfirmed = true
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                    }
+
+                    snackbar.setBackgroundTint(getProperBackgroundColor().darkenColor())
+                    snackbar.setTextColor(getProperTextColor())
+                    snackbar.setActionTextColor(getProperTextColor())
+                    snackbar.show()
                 }
 
-                snackbar.setBackgroundTint(getProperBackgroundColor().darkenColor())
-                snackbar.setTextColor(getProperTextColor())
-                snackbar.setActionTextColor(getProperTextColor())
-                snackbar.show()
-            }
-
-            handleFullScreenNotificationsPermission { granted ->
-                if (!granted) {
-                    toast(org.fossify.commons.R.string.notifications_disabled)
+                handleFullScreenNotificationsPermission { granted ->
+                    if (!granted) {
+                        toast(org.fossify.commons.R.string.notifications_disabled)
+                    }
                 }
+            } else {
+                launchSetDefaultDialerIntent()
             }
-        } else {
-            launchSetDefaultDialerIntent()
         }
 
         if (isQPlus() && (config.blockUnknownNumbers || config.blockHiddenNumbers)) {
@@ -136,7 +144,8 @@ class MainActivity : SimpleActivity() {
             storedStartNameWithSurname = config.startNameWithSurname
         }
 
-        if (!binding.mainMenu.isSearchOpen) {
+        // 🎓 ITTC: no contacts / calls read behind the first-start disclosure
+        if (!binding.mainMenu.isSearchOpen && IttcDisclosure.agreed(this)) {
             refreshItems(true)
         }
 
@@ -149,8 +158,16 @@ class MainActivity : SimpleActivity() {
 
         checkShortcuts()
         Handler().postDelayed({
-            getRecentsFragment()?.refreshItems()
+            if (IttcDisclosure.agreed(this)) getRecentsFragment()?.refreshItems()
         }, 2000)
+    }
+
+    // 🎓 ITTC: the Tracker's "Make it the phone app" while this is already open
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("ask_default", false) && !isDefaultDialer()) {
+            IttcDisclosure.showOnce(this) { launchSetDefaultDialerIntent() }
+        }
     }
 
     override fun onPause() {
@@ -179,7 +196,7 @@ class MainActivity : SimpleActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        refreshItems()
+        if (IttcDisclosure.agreed(this)) refreshItems()
     }
 
     override fun onBackPressedCompat(): Boolean {
@@ -372,7 +389,15 @@ class MainActivity : SimpleActivity() {
         return icons
     }
 
+    // (once: the phone-app prompt from Recents comes back here and asks again)
+    private var fragmentsInited = false
+
     private fun initFragments() {
+        if (fragmentsInited) {
+            refreshItems()
+            return
+        }
+        fragmentsInited = true
         binding.viewPager.offscreenPageLimit = 3
         binding.viewPager.addOnPageChangeListener(object : ViewPager.OnPageChangeListener {
             override fun onPageScrollStateChanged(state: Int) {}
@@ -646,6 +671,6 @@ class MainActivity : SimpleActivity() {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun refreshCallLog(event: Events.RefreshCallLog) {
-        getRecentsFragment()?.refreshItems()
+        if (IttcDisclosure.agreed(this)) getRecentsFragment()?.refreshItems()
     }
 }

@@ -110,7 +110,8 @@ android {
         )
     }
 
-    namespace = project.property("APP_ID").toString()
+    // (the code stays in org.fossify.phone; the app id on the phone / Google Play is APP_ID)
+    namespace = "org.fossify.phone"
 
     lint {
         checkReleaseBuilds = false
@@ -135,7 +136,8 @@ detekt {
 }
 
 dependencies {
-    implementation(libs.fossify.commons)
+    // (Fossify Commons, kept in this repository with ITTC changes)
+    implementation(project(":commons"))
     implementation(libs.indicator.fast.scroll)
     implementation(libs.autofit.text.view)
     implementation(libs.kotlinx.serialization.json)
