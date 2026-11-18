@@ -12,14 +12,17 @@ import android.os.Bundle
 import android.os.Handler
 import android.provider.Settings
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.viewpager.widget.ViewPager
+import com.google.android.material.tabs.TabLayout
 import com.google.android.material.snackbar.Snackbar
 import me.grantland.widget.AutofitHelper
 import org.fossify.commons.dialogs.ChangeViewTypeDialog
@@ -48,9 +51,13 @@ import org.fossify.phone.fragments.FavoritesFragment
 import org.fossify.phone.fragments.IttcLeadsFragment
 import org.fossify.phone.fragments.MyViewPagerFragment
 import org.fossify.phone.fragments.RecentsFragment
+import org.fossify.phone.helpers.ITTC_TAB_LEADS
+import org.fossify.phone.helpers.IttcTabBadges
+import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcUi
 import org.fossify.phone.helpers.OPEN_DIAL_PAD_AT_LAUNCH
 import org.fossify.phone.helpers.RecentsHelper
-import org.fossify.phone.helpers.tabsList
+import org.fossify.phone.helpers.ittcVisibleTabs
 import org.fossify.phone.models.Events
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
@@ -79,6 +86,24 @@ class MainActivity : SimpleActivity() {
     private var ittcUserTouched = false
     private var ittcLastTab = -1
     private var ittcStoredOpenWithDialpad = true
+
+    // 🎓 ITTC 3.8: the kinds of the tabs shown, in their order (Call History, Leads, Contacts,
+    // Favorites — ittcVisibleTabs): the one source of every tab position on this screen. Read once
+    // (a change of the tabs shown in Settings restarts the app).
+    private var tabKindsCache: List<Int>? = null
+    private val tabKinds: List<Int>
+        get() = tabKindsCache ?: ittcVisibleTabs(config.showTabs).also { tabKindsCache = it }
+
+    /** The kind of the tab at [position] (null: none there) */
+    private fun kindAt(position: Int): Int? = tabKinds.getOrNull(position)
+
+    /** The position of the tab of [kind] (-1: hidden) */
+    private fun positionOf(kind: Int): Int = tabKinds.indexOf(kind)
+
+    /** The kind of the page on screen (before the pages exist: of the tab chosen) */
+    private fun currentKind(): Int? = kindAt(
+        if (binding.viewPager.adapter != null) binding.viewPager.currentItem else binding.mainTabsHolder.selectedTabPosition
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         org.fossify.phone.helpers.IttcCrash.install(this)
@@ -136,6 +161,7 @@ class MainActivity : SimpleActivity() {
         }
 
         setupTabs()
+        IttcTabBadges.addListener(ittcBadgesListener)
         Contact.sorting = config.sorting
         setupIttcDialpad(savedInstanceState)
         storedFontSize = config.fontSize
@@ -144,7 +170,7 @@ class MainActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         if (storedShowTabs != config.showTabs) {
-            config.lastUsedViewPagerPage = 0
+            // (the last tab is kept by kind: still right with other tabs shown, or the first one)
             System.exit(0)
             return
         }
@@ -178,6 +204,8 @@ class MainActivity : SimpleActivity() {
         if (!binding.mainMenu.isSearchOpen && IttcDisclosure.agreed(this)) {
             refreshItems(true)
         }
+        // 🎓 ITTC 3.8: the tabs' counts (missed calls not seen yet, leads due)
+        ittcRefreshBadges()
 
         val configFontSize = config.fontSize
         if (storedFontSize != configFontSize) {
@@ -192,7 +220,11 @@ class MainActivity : SimpleActivity() {
 
         checkShortcuts()
         Handler().postDelayed({
-            if (IttcDisclosure.agreed(this)) getRecentsFragment()?.refreshItems()
+            if (IttcDisclosure.agreed(this)) {
+                getRecentsFragment()?.refreshItems()
+                // (the Leads tab has read its list by now)
+                IttcTabBadges.leadsChanged()
+            }
         }, 2000)
     }
 
@@ -219,7 +251,11 @@ class MainActivity : SimpleActivity() {
         storedShowTabs = config.showTabs
         storedFontSize = config.fontSize
         storedStartNameWithSurname = config.startNameWithSurname
-        config.lastUsedViewPagerPage = binding.viewPager.currentItem
+        // 🎓 ITTC 3.8: the last tab by kind (not before the pages exist: nothing was shown yet)
+        if (binding.viewPager.adapter != null) {
+            currentKind()?.let { config.ittcLastTabKind = it }
+            if (currentKind() == TAB_CALL_HISTORY && ittcRecentsShown) config.ittcRecentsSeenAt = System.currentTimeMillis()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
@@ -283,20 +319,52 @@ class MainActivity : SimpleActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        IttcTabBadges.removeListener(ittcBadgesListener)
         EventBus.getDefault().unregister(this)
     }
 
     private fun refreshMenuItems() {
-        val currentFragment = getCurrentFragment()
+        val kind = currentKind()
         binding.mainMenu.requireToolbar().menu.apply {
-            findItem(R.id.clear_call_history).isVisible = currentFragment == getRecentsFragment()
-            val contactsTab = currentFragment != getRecentsFragment() && currentFragment != getLeadsFragment()
+            findItem(R.id.clear_call_history).isVisible = kind == TAB_CALL_HISTORY
+            val contactsTab = kind == TAB_CONTACTS || kind == TAB_FAVORITES
             findItem(R.id.sort).isVisible = contactsTab
             findItem(R.id.filter).isVisible = contactsTab
-            findItem(R.id.create_new_contact).isVisible = currentFragment == getContactsFragment()
-            findItem(R.id.change_view_type).isVisible = currentFragment == getFavoritesFragment()
-            findItem(R.id.column_count).isVisible = currentFragment == getFavoritesFragment() && config.viewType == VIEW_TYPE_GRID
+            findItem(R.id.create_new_contact).isVisible = kind == TAB_CONTACTS
+            findItem(R.id.change_view_type).isVisible = kind == TAB_FAVORITES
+            findItem(R.id.column_count).isVisible = kind == TAB_FAVORITES && config.viewType == VIEW_TYPE_GRID
         }
+        ittcSearchForTab(kind)
+    }
+
+    // 🎓 ITTC 3.8: no toolbar search on the Leads tab (its own 🔍 "Search leads" stays in the top
+    // bar): the search field, its icon and its rounded box go; an open search is closed first
+    private var ittcSearchHidden = false
+    private var ittcSearchBox: Drawable? = null
+
+    private fun ittcSearchForTab(kind: Int?) {
+        val hide = kind == ITTC_TAB_LEADS
+        if (hide == ittcSearchHidden) return
+        ittcSearchHidden = hide
+        val menu = binding.mainMenu
+        val searchField = menu.binding.topToolbarSearch
+        val box = menu.binding.toolbarContainer
+        if (hide) {
+            if (menu.isSearchOpen) menu.closeSearch()
+            searchField.clearFocus()
+            ittcSearchBox = box.background
+            box.background = null
+        } else {
+            ittcSearchBox?.let {
+                // (in the accent of now: the theme may have changed meanwhile)
+                it.applyColorFilter(getProperPrimaryColor().adjustAlpha(LOWER_ALPHA))
+                box.background = it
+            }
+            ittcSearchBox = null
+        }
+        searchField.isEnabled = !hide
+        searchField.beInvisibleIf(hide)
+        menu.binding.topToolbarSearchIcon.beGoneIf(hide)
     }
 
     private fun setupOptionsMenu() {
@@ -417,94 +485,71 @@ class MainActivity : SimpleActivity() {
     }
 
     private fun setupTabColors() {
-        val activeView = binding.mainTabsHolder.getTabAt(binding.viewPager.currentItem)?.customView
-        ittcStyleTab(activeView, true, getSelectedTabDrawableIds()[binding.viewPager.currentItem])
-
-        getInactiveTabIndexes(binding.viewPager.currentItem).forEach { index ->
-            val inactiveView = binding.mainTabsHolder.getTabAt(index)?.customView
-            ittcStyleTab(inactiveView, false, getDeselectedTabDrawableIds()[index])
+        val current = if (binding.viewPager.adapter != null) binding.viewPager.currentItem else binding.mainTabsHolder.selectedTabPosition
+        for (i in 0 until binding.mainTabsHolder.tabCount) {
+            ittcStyleTab(binding.mainTabsHolder.getTabAt(i), i == current, animate = false)
         }
 
         // 🎓 ITTC 3.6: a flat surface bar with a thin line on top (no shadow)
-        val p = org.fossify.phone.helpers.IttcTheme.of(this)
+        val p = IttcTheme.of(this)
         binding.mainTabsHolder.setBackgroundColor(p.surface)
         binding.ittcTabsDivider.setBackgroundColor(if (p.dark) p.divider else p.outline)
         binding.ittcTabsDivider.beVisibleIf(binding.mainTabsHolder.isVisible())
+        ittcShowBadges()
     }
 
+    private val ittcTabInterpolator = DecelerateInterpolator()
+
     /**
-     * 🎓 ITTC 3.6: a tab as in Material 3 — chosen: the filled icon on a soft pill and a bold label,
-     * in the app's accent; the others: the outlined icon and label, muted
+     * 🎓 ITTC 3.8: a tab as in Material 3 — chosen: the filled icon on a soft accent pill and a bold
+     * label, in the app's accent; the others: the outlined icon and label, muted. [animate]: the pill
+     * fades / grows in (or out) in 150 ms (only when the person changes the tab).
      */
-    private fun ittcStyleTab(view: View?, active: Boolean, drawableId: Int) {
-        view ?: return
-        val p = org.fossify.phone.helpers.IttcTheme.of(this)
+    private fun ittcStyleTab(tab: TabLayout.Tab?, active: Boolean, animate: Boolean) {
+        val view = tab?.customView ?: return
+        val kind = kindAt(tab.position) ?: return
+        val p = IttcTheme.of(this)
         val accent = getProperPrimaryColor()
         val color = if (active) accent else p.muted
         view.findViewById<ImageView>(R.id.tab_item_icon)?.apply {
-            setImageResource(drawableId)
+            setImageResource(getTabIconId(kind, active))
             setColorFilter(color)
         }
         view.findViewById<TextView>(R.id.tab_item_label)?.apply {
             setTextColor(color)
             setTypeface(null, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
-        view.findViewById<View>(R.id.ittc_tab_pill)?.background = if (active) ittcTabPill(accent.adjustAlpha(0.16f)) else null
-    }
-
-    // 🎓 ITTC: the chosen tab's pill, made once per colour (only one tab shows it at a time)
-    private var ittcTabPillDrawable: android.graphics.drawable.GradientDrawable? = null
-    private var ittcTabPillColor = 0
-
-    private fun ittcTabPill(color: Int): android.graphics.drawable.GradientDrawable {
-        val cached = ittcTabPillDrawable
-        if (cached != null && ittcTabPillColor == color) return cached
-        return org.fossify.phone.helpers.IttcTheme.rounded(this, color, 999f).also {
-            ittcTabPillDrawable = it
-            ittcTabPillColor = color
+        val pill = view.findViewById<View>(R.id.ittc_tab_pill) ?: return
+        // (each tab its own pill drawable, made again only when the colour changes)
+        val pillColor = ittcPillColor(p, accent)
+        if (pill.tag != pillColor) {
+            pill.background = IttcTheme.rounded(this, pillColor, 999f)
+            pill.tag = pillColor
+        }
+        val alpha = if (active) 1f else 0f
+        val scale = if (active) 1f else 0.6f
+        pill.animate().cancel()
+        if (animate) {
+            pill.animate().alpha(alpha).scaleX(scale).setDuration(150L).setInterpolator(ittcTabInterpolator).start()
+        } else {
+            pill.alpha = alpha
+            pill.scaleX = scale
         }
     }
 
-    private fun getInactiveTabIndexes(activeIndex: Int) = (0 until binding.mainTabsHolder.tabCount).filter { it != activeIndex }
-
-    private fun getSelectedTabDrawableIds(): List<Int> {
-        val showTabs = config.showTabs
-        val icons = mutableListOf<Int>()
-
-        if (showTabs and TAB_CONTACTS != 0) {
-            icons.add(R.drawable.ic_person_vector)
+    /** The chosen tab's pill: the palette's soft primary with the app's own accent, else the accent made soft */
+    private fun ittcPillColor(p: IttcTheme.Palette, accent: Int): Int =
+        if (accent == p.primary || accent == resources.getColor(R.color.color_primary, theme)) {
+            p.primarySoft
+        } else {
+            accent.adjustAlpha(if (p.dark) 0.24f else 0.14f)
         }
 
-        if (showTabs and TAB_FAVORITES != 0) {
-            icons.add(R.drawable.ic_star_vector)
-        }
-
-        if (showTabs and TAB_CALL_HISTORY != 0) {
-            icons.add(R.drawable.ic_clock_filled_vector)
-        }
-
-        icons.add(R.drawable.ittc_ic_leads)
-        return icons
-    }
-
-    private fun getDeselectedTabDrawableIds(): ArrayList<Int> {
-        val showTabs = config.showTabs
-        val icons = ArrayList<Int>()
-
-        if (showTabs and TAB_CONTACTS != 0) {
-            icons.add(R.drawable.ic_person_outline_vector)
-        }
-
-        if (showTabs and TAB_FAVORITES != 0) {
-            icons.add(R.drawable.ic_star_outline_vector)
-        }
-
-        if (showTabs and TAB_CALL_HISTORY != 0) {
-            icons.add(R.drawable.ic_clock_vector)
-        }
-
-        icons.add(R.drawable.ittc_ic_leads_outline)
-        return icons
+    private fun getTabIconId(kind: Int, selected: Boolean): Int = when (kind) {
+        TAB_CONTACTS -> if (selected) R.drawable.ic_person_vector else R.drawable.ic_person_outline_vector
+        TAB_FAVORITES -> if (selected) R.drawable.ic_star_vector else R.drawable.ic_star_outline_vector
+        TAB_CALL_HISTORY -> if (selected) R.drawable.ic_clock_filled_vector else R.drawable.ic_clock_vector
+        else -> if (selected) R.drawable.ittc_ic_leads else R.drawable.ittc_ic_leads_outline
     }
 
     // (once: the phone-app prompt from Recents comes back here and asks again)
@@ -537,9 +582,9 @@ class MainActivity : SimpleActivity() {
                 var wantedTab = getDefaultTab()
 
                 // open the Recents tab if we got here by clicking a missed call notification
-                if (intent.action == Intent.ACTION_VIEW && config.showTabs and TAB_CALL_HISTORY > 0) {
-                    // (the Leads tab is the last one: Recents is just before it)
-                    wantedTab = binding.mainTabsHolder.tabCount - 2
+                val recentsPosition = positionOf(TAB_CALL_HISTORY)
+                if (intent.action == Intent.ACTION_VIEW && recentsPosition >= 0) {
+                    wantedTab = recentsPosition
                 }
 
                 binding.mainTabsHolder.getTabAt(wantedTab)?.select()
@@ -561,48 +606,52 @@ class MainActivity : SimpleActivity() {
     private fun setupTabs() {
         binding.viewPager.adapter = null
         binding.mainTabsHolder.removeAllTabs()
-        tabsList.forEachIndexed { index, value ->
-            if (config.showTabs and value != 0) {
-                binding.mainTabsHolder.newTab().setCustomView(R.layout.ittc_tab_item).apply {
-                    customView?.findViewById<ImageView>(R.id.tab_item_icon)?.setImageDrawable(getTabIcon(index))
-                    customView?.findViewById<TextView>(R.id.tab_item_label)?.text = getTabLabel(index)
-                    AutofitHelper.create(customView?.findViewById(R.id.tab_item_label))
-                    binding.mainTabsHolder.addTab(this)
-                }
+        tabKindsCache = ittcVisibleTabs(config.showTabs)
+        // 🎓 ITTC 3.8: Call History, Leads (always), Contacts, Favorites
+        tabKinds.forEach { kind ->
+            binding.mainTabsHolder.newTab().setCustomView(R.layout.ittc_tab_item).apply {
+                customView?.findViewById<ImageView>(R.id.tab_item_icon)?.setImageDrawable(getTabIcon(kind))
+                customView?.findViewById<TextView>(R.id.tab_item_label)?.text = getTabLabel(kind)
+                AutofitHelper.create(customView?.findViewById(R.id.tab_item_label))
+                binding.mainTabsHolder.addTab(this)
             }
-        }
-
-        // 🎓 ITTC: the "Leads" tab, always last
-        binding.mainTabsHolder.newTab().setCustomView(R.layout.ittc_tab_item).apply {
-            customView?.findViewById<ImageView>(R.id.tab_item_icon)?.setImageDrawable(
-                resources.getColoredDrawableWithColor(R.drawable.ittc_ic_leads, getProperTextColor())
-            )
-            customView?.findViewById<TextView>(R.id.tab_item_label)?.text = getString(R.string.ittc_leads_tab)
-            AutofitHelper.create(customView?.findViewById(R.id.tab_item_label))
-            binding.mainTabsHolder.addTab(this)
         }
 
         binding.mainTabsHolder.onTabSelectionChanged(
             tabUnselectedAction = {
-                ittcStyleTab(it.customView, false, getDeselectedTabDrawableIds()[it.position])
+                ittcStyleTab(it, false, animate = ittcUserTouched)
+                // (Call History was on screen: its missed calls are seen now)
+                if (kindAt(it.position) == TAB_CALL_HISTORY && ittcRecentsShown) {
+                    ittcRecentsShown = false
+                    ittcRecentsSeen()
+                }
             },
             tabSelectedAction = {
+                val changed = ittcLastTab != it.position
                 // 🎓 ITTC 3.6: another tab (chosen by hand, not the one picked at start) hides the dial pad
-                if (ittcLastTab != -1 && ittcLastTab != it.position && ittcUserTouched && ::ittcDialpad.isInitialized) {
-                    ittcDialpad.hideAll()
+                if (ittcLastTab != -1 && changed && ittcUserTouched) {
+                    if (::ittcDialpad.isInitialized) ittcDialpad.hideAll()
+                    // 🎓 ITTC 3.8: a light tick (the system's touch feedback setting decides)
+                    binding.mainTabsHolder.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                 }
                 ittcLastTab = it.position
                 getCurrentFragment()?.onSearchQueryChanged(binding.mainMenu.getCurrentQuery())
                 binding.viewPager.currentItem = it.position
-                ittcStyleTab(it.customView, true, getSelectedTabDrawableIds()[it.position])
+                ittcStyleTab(it, true, animate = changed && ittcUserTouched)
+                ittcSearchForTab(kindAt(it.position))
 
-                // (Recents is just before the Leads tab)
-                val recentsPosition = binding.mainTabsHolder.tabCount - 2
-                if (it.position == recentsPosition && config.showTabs and TAB_CALL_HISTORY > 0) {
-                    clearMissedCalls()
-                }
-                if (it.position == binding.mainTabsHolder.tabCount - 1) {
-                    getLeadsFragment()?.refreshItems()
+                when (kindAt(it.position)) {
+                    TAB_CALL_HISTORY -> {
+                        clearMissedCalls()
+                        ittcRecentsShown = true
+                        ittcRecentsSeen()
+                    }
+
+                    ITTC_TAB_LEADS -> {
+                        getLeadsFragment()?.refreshItems()
+                        // (its count again once the list is read)
+                        binding.mainTabsHolder.postDelayed({ IttcTabBadges.leadsChanged() }, 1500L)
+                    }
                 }
             }
         )
@@ -613,24 +662,81 @@ class MainActivity : SimpleActivity() {
         storedStartNameWithSurname = config.startNameWithSurname
     }
 
-    private fun getTabIcon(position: Int): Drawable {
-        val drawableId = when (position) {
-            0 -> R.drawable.ic_person_vector
-            1 -> R.drawable.ic_star_vector
-            else -> R.drawable.ic_clock_vector
-        }
+    private fun getTabIcon(kind: Int): Drawable =
+        resources.getColoredDrawableWithColor(getTabIconId(kind, false), getProperTextColor())
 
-        return resources.getColoredDrawableWithColor(drawableId, getProperTextColor())
+    private fun getTabLabel(kind: Int): String = getString(
+        when (kind) {
+            TAB_CONTACTS -> R.string.contacts_tab
+            TAB_FAVORITES -> R.string.favorites_tab
+            TAB_CALL_HISTORY -> R.string.call_history_tab
+            else -> R.string.ittc_leads_tab
+        }
+    )
+
+    // ------------------------------------------------------------------ 🎓 ITTC 3.8: tab badges
+
+    /** Call History is (was) on screen since it was last chosen */
+    private var ittcRecentsShown = false
+    private var ittcMissed = 0
+    private val ittcBadgesListener: () -> Unit = { if (!isFinishing && !isDestroyed) ittcShowBadges() }
+
+    /** Call History looked at: its missed calls are seen */
+    private fun ittcRecentsSeen() {
+        config.ittcRecentsSeenAt = System.currentTimeMillis()
+        ittcMissed = 0
+        ittcShowBadges()
     }
 
-    private fun getTabLabel(position: Int): String {
-        val stringId = when (position) {
-            0 -> R.string.contacts_tab
-            1 -> R.string.favorites_tab
-            else -> R.string.call_history_tab
+    /** The counts again: leads due (from the list already read), missed calls (a light count, off the main thread) */
+    private fun ittcRefreshBadges() {
+        if (!IttcDisclosure.agreed(this)) return
+        IttcTabBadges.leadsChanged()
+        ittcShowBadges()
+        if (positionOf(TAB_CALL_HISTORY) < 0) return
+        if (currentKind() == TAB_CALL_HISTORY && ittcRecentsShown) {
+            ittcRecentsSeen()
+            return
         }
+        val app = applicationContext
+        ensureBackgroundThread {
+            val n = IttcTabBadges.missedNotSeen(app)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                // (Call History opened meanwhile: they are seen)
+                ittcMissed = if (currentKind() == TAB_CALL_HISTORY && ittcRecentsShown) 0 else n
+                ittcShowBadges()
+            }
+        }
+    }
 
-        return resources.getString(stringId)
+    private fun ittcShowBadges() {
+        ittcSetBadge(TAB_CALL_HISTORY, ittcMissed)
+        ittcSetBadge(ITTC_TAB_LEADS, IttcTabBadges.leadsDue)
+    }
+
+    /** A tab's small red count (99+; none at 0), said with the tab's name by TalkBack */
+    private fun ittcSetBadge(kind: Int, count: Int) {
+        val tab = binding.mainTabsHolder.getTabAt(positionOf(kind).takeIf { it >= 0 } ?: return) ?: return
+        val badge = tab.customView?.findViewById<TextView>(R.id.ittc_tab_badge) ?: return
+        val n = count.coerceAtLeast(0)
+        val red = IttcTheme.of(this).dangerStrong
+        if (badge.tag != red) {
+            badge.background = IttcTheme.rounded(this, red, 999f)
+            badge.setTextColor(red.getContrastColor())
+            badge.tag = red
+        }
+        val text = if (n > 99) "99+" else n.toString()
+        if (badge.text.toString() != text) badge.text = text
+        IttcUi.fadeIf(badge, n > 0)
+        val label = getTabLabel(kind)
+        tab.setContentDescription(
+            when {
+                n <= 0 -> label
+                kind == TAB_CALL_HISTORY -> resources.getQuantityString(R.plurals.ittc_v38_tab_missed, n, label, n)
+                else -> resources.getQuantityString(R.plurals.ittc_v38_tab_due, n, label, n)
+            }
+        )
     }
 
     private fun refreshItems(openLastTab: Boolean = false) {
@@ -640,8 +746,8 @@ class MainActivity : SimpleActivity() {
 
         binding.apply {
             if (viewPager.adapter == null) {
-                viewPager.adapter = ViewPagerAdapter(this@MainActivity)
-                viewPager.currentItem = if (openLastTab) config.lastUsedViewPagerPage else getDefaultTab()
+                viewPager.adapter = ViewPagerAdapter(this@MainActivity, tabKinds)
+                viewPager.currentItem = if (openLastTab) positionOf(config.ittcLastTabKind).coerceAtLeast(0) else getDefaultTab()
                 viewPager.onGlobalLayout {
                     refreshFragments()
                 }
@@ -665,27 +771,17 @@ class MainActivity : SimpleActivity() {
         getLeadsFragment()?.refreshItems()
     }
 
-    private fun getAllFragments(): ArrayList<MyViewPagerFragment<*>?> {
-        val showTabs = config.showTabs
-        val fragments = arrayListOf<MyViewPagerFragment<*>?>()
+    private fun getAllFragments(): ArrayList<MyViewPagerFragment<*>?> = tabKinds.mapTo(ArrayList<MyViewPagerFragment<*>?>()) { fragmentOf(it) }
 
-        if (showTabs and TAB_CONTACTS > 0) {
-            fragments.add(getContactsFragment())
-        }
-
-        if (showTabs and TAB_FAVORITES > 0) {
-            fragments.add(getFavoritesFragment())
-        }
-
-        if (showTabs and TAB_CALL_HISTORY > 0) {
-            fragments.add(getRecentsFragment())
-        }
-
-        fragments.add(getLeadsFragment())
-        return fragments
+    private fun fragmentOf(kind: Int): MyViewPagerFragment<*>? = when (kind) {
+        TAB_CONTACTS -> getContactsFragment()
+        TAB_FAVORITES -> getFavoritesFragment()
+        TAB_CALL_HISTORY -> getRecentsFragment()
+        ITTC_TAB_LEADS -> getLeadsFragment()
+        else -> null
     }
 
-    private fun getCurrentFragment(): MyViewPagerFragment<*>? = getAllFragments().getOrNull(binding.viewPager.currentItem)
+    private fun getCurrentFragment(): MyViewPagerFragment<*>? = currentKind()?.let { fragmentOf(it) }
 
     private fun getContactsFragment(): ContactsFragment? = findViewById(R.id.contacts_fragment)
 
@@ -695,32 +791,13 @@ class MainActivity : SimpleActivity() {
 
     private fun getLeadsFragment(): IttcLeadsFragment? = findViewById(R.id.ittc_leads_fragment)
 
+    /** The tab to open: the one set in Settings (or the last used), the first one when it is hidden */
     private fun getDefaultTab(): Int {
-        val showTabsMask = config.showTabs
-        return when (config.defaultTab) {
-            TAB_LAST_USED -> if (config.lastUsedViewPagerPage < binding.mainTabsHolder.tabCount) config.lastUsedViewPagerPage else 0
-            TAB_CONTACTS -> 0
-            TAB_FAVORITES -> if (showTabsMask and TAB_CONTACTS > 0) 1 else 0
-            else -> {
-                if (showTabsMask and TAB_CALL_HISTORY > 0) {
-                    if (showTabsMask and TAB_CONTACTS > 0) {
-                        if (showTabsMask and TAB_FAVORITES > 0) {
-                            2
-                        } else {
-                            1
-                        }
-                    } else {
-                        if (showTabsMask and TAB_FAVORITES > 0) {
-                            1
-                        } else {
-                            0
-                        }
-                    }
-                } else {
-                    0
-                }
-            }
+        val kind = when (val wanted = config.defaultTab) {
+            TAB_LAST_USED -> config.ittcLastTabKind
+            else -> wanted
         }
+        return positionOf(kind).coerceAtLeast(0)
     }
 
     // 🎓 ITTC 3.2: direct mode on every return to the main screen (all off the main thread), and
@@ -929,6 +1006,9 @@ class MainActivity : SimpleActivity() {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun refreshCallLog(event: Events.RefreshCallLog) {
-        if (IttcDisclosure.agreed(this)) getRecentsFragment()?.refreshItems()
+        if (IttcDisclosure.agreed(this)) {
+            getRecentsFragment()?.refreshItems()
+            ittcRefreshBadges()
+        }
     }
 }

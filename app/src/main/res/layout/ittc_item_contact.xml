@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.8: one Contacts tab row, a piece of its letter's card — the photo or the initials,
+     the name, "Mobile · 01712 345678", and a "Lead" pill when the number is an ITTC lead.
+     (the ids of the old row are kept: ContactsAdapter binds both) -->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/item_contact_frame"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="@dimen/ittc_space_l"
+    android:layout_marginEnd="36dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    android:minHeight="64dp">
+
+    <!-- the line between two rows of one card -->
+    <View
+        android:id="@+id/ittc_contact_divider"
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_marginStart="66dp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- a contact's photo; no photo: the initials below -->
+    <ImageView
+        android:id="@+id/item_contact_image"
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        android:layout_marginStart="@dimen/ittc_space_m"
+        android:contentDescription="@null"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/ittc_contact_avatar"
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        android:layout_marginStart="@dimen/ittc_space_m"
+        android:gravity="center"
+        android:importantForAccessibility="no"
+        android:maxLines="1"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="RH" />
+
+    <TextView
+        android:id="@+id/item_contact_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="66dp"
+        android:layout_marginTop="@dimen/ittc_space_m"
+        android:layout_marginEnd="@dimen/ittc_space_s"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="1"
+        android:singleLine="true"
+        android:textAlignment="viewStart"
+        android:textDirection="locale"
+        android:textSize="@dimen/ittc_text_title"
+        app:layout_constraintBottom_toTopOf="@+id/ittc_contact_number"
+        app:layout_constraintEnd_toStartOf="@+id/ittc_contact_lead"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_chainStyle="packed"
+        app:layout_goneMarginEnd="@dimen/ittc_space_m"
+        tools:text="Rahim Hasan" />
+
+    <TextView
+        android:id="@+id/ittc_contact_number"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="@dimen/ittc_space_m"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:singleLine="true"
+        android:textAlignment="viewStart"
+        android:textDirection="locale"
+        android:textSize="13sp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@+id/item_contact_name"
+        app:layout_constraintStart_toStartOf="@+id/item_contact_name"
+        app:layout_constraintTop_toBottomOf="@+id/item_contact_name"
+        tools:text="Mobile · 01712 345678" />
+
+    <!-- an ITTC lead: tap to open it (40 dp tall to tap; the pill drawn inside is smaller) -->
+    <TextView
+        android:id="@+id/ittc_contact_lead"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="@dimen/ittc_space_xs"
+        android:gravity="center"
+        android:maxLines="1"
+        android:minHeight="40dp"
+        android:text="@string/ittc_ct_lead"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:visibility="visible" />
+
+    <!-- (not used here: ContactsAdapter's rows all have one) -->
+    <ImageView
+        android:id="@+id/drag_handle_icon"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:contentDescription="@null"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

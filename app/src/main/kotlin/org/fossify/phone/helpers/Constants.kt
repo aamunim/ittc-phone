@@ -20,10 +20,25 @@ const val DIALPAD_VIBRATION = "dialpad_vibration"
 const val DIALPAD_BEEPS = "dialpad_beeps"
 const val HIDE_DIALPAD_NUMBERS = "hide_dialpad_numbers"
 const val ALWAYS_SHOW_FULLSCREEN = "always_show_fullscreen"
+const val ITTC_LAST_TAB_KIND = "ittc_last_tab_kind" // 🎓 ITTC 3.8
+const val ITTC_RECENTS_SEEN_AT = "ittc_recents_seen_at" // 🎓 ITTC 3.8
 
 const val ALL_TABS_MASK = TAB_CONTACTS or TAB_FAVORITES or TAB_CALL_HISTORY
 
+// (the tabs that can be hidden; their order on screen is [ittcTabOrder]'s)
 val tabsList = arrayListOf(TAB_CONTACTS, TAB_FAVORITES, TAB_CALL_HISTORY)
+
+/** 🎓 ITTC: the Leads tab's kind (not a commons TAB_* bit: it is never hidden, never in the show-tabs mask) */
+const val ITTC_TAB_LEADS = 1 shl 20
+
+/** 🎓 ITTC 3.8: the tabs' order — Call History, Leads, Contacts, Favorites */
+val ittcTabOrder = listOf(TAB_CALL_HISTORY, ITTC_TAB_LEADS, TAB_CONTACTS, TAB_FAVORITES)
+
+/**
+ * 🎓 ITTC 3.8: the kinds of the tabs shown, in their order on screen (Leads always). The one source
+ * of every tab position: the pager's pages, the tab bar, the default tab, the last used tab.
+ */
+fun ittcVisibleTabs(showTabs: Int): List<Int> = ittcTabOrder.filter { it == ITTC_TAB_LEADS || showTabs and it != 0 }
 
 private const val PATH = "org.fossify.phone.action."
 const val ACCEPT_CALL = PATH + "ACCEPT_CALL"

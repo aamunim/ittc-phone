@@ -28,6 +28,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.NestedScrollView
 import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisibleIf
@@ -129,6 +130,10 @@ class IttcLeadActivity : SimpleActivity() {
             ittcLeadInfo.setOnClickListener { callLead() }
             ittcLeadStar.setOnClickListener { if (signedIn) changeRating() }
             ittcLeadMore.setOnClickListener { showMore() }
+            // (scrolled past the hero's Call: the name, 📞 and WhatsApp in the top bar — the same actions)
+            ittcLeadBarCall.setOnClickListener { callLead() }
+            ittcLeadBarWhatsapp.setOnClickListener { openWhatsApp(null) }
+            ittcLeadScrollview.setOnScrollChangeListener(NestedScrollView.OnScrollChangeListener { _, _, y, _, _ -> updateBar(y) })
             ittcLeadChangeStage.setOnClickListener { changeStage() }
             ittcLeadNext.setOnClickListener { if (signedIn) nextCall() }
             ittcLeadStepper.setOnClickListener { if (signedIn) changeStage() }
@@ -139,6 +144,8 @@ class IttcLeadActivity : SimpleActivity() {
         }
         styleStatic()
         templatesWanted = savedInstanceState == null && intent.getBooleanExtra(SHOW_TEMPLATES, false)
+        // (from the Leads tab's sheet: once; a turn of the phone keeps it only if it has not run yet)
+        pendingAction = if (savedInstanceState == null) intent.getStringExtra(EXTRA_ACTION) else savedInstanceState.getString(EXTRA_ACTION)
         render()
         load()
     }
@@ -210,6 +217,7 @@ class IttcLeadActivity : SimpleActivity() {
                         // (the kept lead is up: no "Loading…" line pushing the page down)
                         binding.ittcLeadStatus.beGone()
                         render()
+                        runPendingAction()
                     }
                 }
             }
@@ -273,6 +281,7 @@ class IttcLeadActivity : SimpleActivity() {
                     templatesWanted = false
                     showTemplates()
                 }
+                runPendingAction()
             }
         }
     }
@@ -341,6 +350,9 @@ class IttcLeadActivity : SimpleActivity() {
             ittcLeadInfo.setTextColor(p.onPrimaryMuted)
             ittcLeadMeta.setTextColor(p.onPrimaryMuted)
             ittcLeadMore.setColorFilter(p.onPrimary)
+            ittcLeadBarTitle.setTextColor(p.onPrimary)
+            ittcLeadBarCall.setColorFilter(p.onPrimary)
+            ittcLeadBarWhatsapp.setColorFilter(p.onPrimary)
             ittcLeadStageCard.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 16f)
             ittcLeadStageDivider.setBackgroundColor(p.divider)
             ittcLeadNext.setTextColor(p.text2)
@@ -357,7 +369,7 @@ class IttcLeadActivity : SimpleActivity() {
             val amber = IttcTheme.stageColors(this@IttcLeadActivity, "interested").second
             listOf(
                 Triple(ittcLeadCall, R.drawable.ic_phone_vector, onCall),
-                Triple(ittcLeadWhatsapp, R.drawable.ic_sms_vector, WHATSAPP_GREEN),
+                Triple(ittcLeadWhatsapp, R.drawable.ittc_ic_whatsapp, WHATSAPP_GREEN),
                 Triple(ittcLeadSms, R.drawable.ic_sms_vector, p.primary),
                 Triple(ittcLeadNote, R.drawable.ic_edit_vector, amber),
             ).forEach { (view, icon, color) ->
@@ -392,6 +404,8 @@ class IttcLeadActivity : SimpleActivity() {
             ittcLeadStar.beVisibleIf(has && signedIn)
             ittcLeadMore.beVisibleIf(has)
         }
+        // (the page's height may change: is the hero's Call still on screen?)
+        binding.ittcLeadScrollview.post { if (alive()) updateBar() }
         if (l == null) {
             binding.ittcLeadNotesLabel.beGone()
             binding.ittcLeadNotes.beGone()
@@ -413,10 +427,41 @@ class IttcLeadActivity : SimpleActivity() {
         renderTimeline(l)
     }
 
+    /** The top bar's name · 📞 · WhatsApp are shown (the hero's Call is scrolled away) */
+    private var barShown = false
+
+    /** Shows / hides the top bar's actions — only when that changes (a cheap comparison per scroll) */
+    private fun updateBar(y: Int = binding.ittcLeadScrollview.scrollY) {
+        val b = binding
+        val actions = b.ittcLeadActions
+        val show = lead != null && actions.visibility == View.VISIBLE && actions.height > 0 &&
+            y >= actions.top + b.ittcLeadCall.bottom
+        if (show == barShown) return
+        barShown = show
+        fadeBar(b.ittcLeadBarTitle, show)
+        fadeBar(b.ittcLeadBarCall, show)
+        fadeBar(b.ittcLeadBarWhatsapp, show)
+    }
+
+    private fun fadeBar(v: View, show: Boolean) {
+        v.animate().cancel()
+        if (show) {
+            if (v.visibility != View.VISIBLE) {
+                v.alpha = 0f
+                v.visibility = View.VISIBLE
+            }
+            v.animate().alpha(1f).setDuration(BAR_FADE_MS).start()
+        } else {
+            // (invisible, not gone: the bar's other buttons stay where they are; no taps while hidden)
+            v.animate().alpha(0f).setDuration(BAR_FADE_MS).withEndAction { v.visibility = View.INVISIBLE }.start()
+        }
+    }
+
     /** 🟦 Avatar, name, "number · course · batch", "Hot · AI chance 72% · Assigned to you" */
     private fun renderHero(l: JSONObject) {
         val name = l.s("name") ?: l.s("phone") ?: ""
         binding.ittcLeadName.text = name
+        binding.ittcLeadBarTitle.text = name
         val (avBg, avFg) = IttcTheme.avatarColors(this, name)
         binding.ittcLeadAvatar.text = IttcTheme.initials(l.s("name"))
         binding.ittcLeadAvatar.setTextColor(avFg)
@@ -627,23 +672,50 @@ class IttcLeadActivity : SimpleActivity() {
     /** Only super admins: my_phone_data lists the people (whom to hand over to) only for them */
     private fun canHandOver(): Boolean = meta?.isSuper == true
 
-    /** The chips row: admission steps first, then the rest */
+    /** The chips row: admission steps first, then the rest (each by its key: [CHIP_ACTIONS]) */
     private fun chipItems(): List<Pair<Int, () -> Unit>> {
         if (!signedIn) return emptyList()
-        val items = mutableListOf<Pair<Int, () -> Unit>>(
-            R.string.ittc_b_book_visit to { bookVisit() },
-            R.string.ittc_b_fee to { feeOffer() },
-            R.string.ittc_b_papers to { papers() },
-            R.string.ittc_b_payment to { payment() },
-            R.string.ittc_b_admit to { admit() },
-            R.string.ittc_b_templates to { showTemplates() },
-            R.string.ittc_b_next_call to { nextCall() },
-            R.string.ittc_b_rating to { changeRating() },
-            R.string.ittc_b_edit to { editLead() },
-        )
-        if (canHandOver()) items += R.string.ittc_b_hand_over to { handOver() }
-        items += R.string.ittc_b_web to { openWeb() }
-        return items
+        return chipActions(canHandOver()).map { (key, label) -> label to { runAction(key) } }
+    }
+
+    /** One of the page's actions by its key ([ACTION_CHANGE_STAGE], [ACTION_ADD_NOTE] or a chip's) */
+    private fun runAction(key: String) {
+        when (key) {
+            ACTION_CHANGE_STAGE -> if (signedIn) changeStage() else toast(R.string.ittc_lp_not_signed_in)
+            ACTION_ADD_NOTE -> if (signedIn) addNote() else toast(R.string.ittc_lp_not_signed_in)
+            "visit" -> bookVisit()
+            "fee" -> feeOffer()
+            "papers" -> papers()
+            "payment" -> payment()
+            "admit" -> admit()
+            "templates" -> showTemplates()
+            "next_call" -> if (signedIn) nextCall() else toast(R.string.ittc_lp_not_signed_in)
+            "rating" -> if (signedIn) changeRating() else toast(R.string.ittc_lp_not_signed_in)
+            "edit" -> if (signedIn) editLead() else toast(R.string.ittc_lp_not_signed_in)
+            "hand_over" -> if (signedIn && canHandOver()) handOver() else toast(R.string.ittc_lp_not_signed_in)
+            "web" -> openWeb()
+        }
+    }
+
+    /** An action asked for when the page was opened (the Leads tab's sheet): run once, when the lead is up */
+    private var pendingAction: String? = null
+
+    private fun runPendingAction() {
+        val key = pendingAction ?: return
+        if (lead == null || !alive()) return
+        pendingAction = null
+        intent.removeExtra(EXTRA_ACTION)
+        try {
+            runAction(key)
+        } catch (e: Throwable) {
+            IttcCrash.record(this, e, "Lead page: $key")
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // (not run yet — the lead was still loading: run it after the turn; once run, never again)
+        pendingAction?.let { outState.putString(EXTRA_ACTION, it) }
     }
 
     private fun renderChips() {
@@ -673,8 +745,8 @@ class IttcLeadActivity : SimpleActivity() {
         if (lead == null) return
         val items = ArrayList<Pair<String, () -> Unit>>()
         if (signedIn) {
-            items += getString(R.string.ittc_b_change_stage) to { changeStage() }
-            items += getString(R.string.ittc_b_add_note) to { addNote() }
+            items += getString(R.string.ittc_b_change_stage) to { runAction(ACTION_CHANGE_STAGE) }
+            items += getString(R.string.ittc_b_add_note) to { runAction(ACTION_ADD_NOTE) }
         }
         chipItems().forEach { (label, action) -> items += getString(label) to action }
         if (!signedIn) items += getString(R.string.ittc_b_web) to { openWeb() }
@@ -1451,6 +1523,7 @@ class IttcLeadActivity : SimpleActivity() {
         private const val LEAD_ID = "ittc_lead_id"
         private const val SHOW_TEMPLATES = "ittc_show_templates"
         private const val WHATSAPP_GREEN = 0xFF25D366.toInt()
+        private const val BAR_FADE_MS = 150L
 
         private const val STEP_DONE = 0
         private const val STEP_CURRENT = 1
@@ -1475,14 +1548,41 @@ class IttcLeadActivity : SimpleActivity() {
             "message" to "Message",
         )
 
-        /** The lead page (direct mode); [showTemplates]: the templates open at once */
-        fun open(context: Context, leadId: String, showTemplates: Boolean = false) {
+        /** Run once the lead is up: [ACTION_CHANGE_STAGE], [ACTION_ADD_NOTE] or a key of [chipActions] */
+        const val EXTRA_ACTION = "ittc_lead_action"
+        const val ACTION_CHANGE_STAGE = "change_stage"
+        const val ACTION_ADD_NOTE = "add_note"
+
+        /** The chips row's actions by key, in order ("hand_over" only for super admins) */
+        private val CHIP_ACTIONS = listOf(
+            "visit" to R.string.ittc_b_book_visit,
+            "fee" to R.string.ittc_b_fee,
+            "papers" to R.string.ittc_b_papers,
+            "payment" to R.string.ittc_b_payment,
+            "admit" to R.string.ittc_b_admit,
+            "templates" to R.string.ittc_b_templates,
+            "next_call" to R.string.ittc_b_next_call,
+            "rating" to R.string.ittc_b_rating,
+            "edit" to R.string.ittc_b_edit,
+            "hand_over" to R.string.ittc_b_hand_over,
+            "web" to R.string.ittc_b_web,
+        )
+
+        fun chipActions(canHandOver: Boolean): List<Pair<String, Int>> = CHIP_ACTIONS.filter { it.first != "hand_over" || canHandOver }
+
+        /** Everything ⋮ More offers when signed in (key, label): change stage, add a note, then the chips' */
+        fun pageActions(canHandOver: Boolean): List<Pair<String, Int>> =
+            listOf(ACTION_CHANGE_STAGE to R.string.ittc_b_change_stage, ACTION_ADD_NOTE to R.string.ittc_b_add_note) + chipActions(canHandOver)
+
+        /** The lead page (direct mode); [showTemplates]: the templates open at once; [action]: run once the lead is up */
+        fun open(context: Context, leadId: String, showTemplates: Boolean = false, action: String? = null) {
             if (leadId.isBlank()) return
             try {
                 context.startActivity(
                     Intent(context, IttcLeadActivity::class.java)
                         .putExtra(LEAD_ID, leadId)
                         .putExtra(SHOW_TEMPLATES, showTemplates)
+                        .apply { if (action != null) putExtra(EXTRA_ACTION, action) }
                         .apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) },
                 )
             } catch (_: Throwable) {

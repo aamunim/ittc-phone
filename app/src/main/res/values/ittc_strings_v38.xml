@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.8: the main screen's tab bar (what TalkBack says for a tab with a count) -->
+<resources>
+    <!-- "Call history, 3 missed calls" -->
+    <plurals name="ittc_v38_tab_missed" translatable="false">
+        <item quantity="one">%1$s, %2$d new missed call</item>
+        <item quantity="other">%1$s, %2$d new missed calls</item>
+    </plurals>
+    <!-- "Leads, 5 due today or overdue" -->
+    <plurals name="ittc_v38_tab_due" translatable="false">
+        <item quantity="one">%1$s, %2$d lead due today or overdue</item>
+        <item quantity="other">%1$s, %2$d leads due today or overdue</item>
+    </plurals>
+</resources>

@@ -8,6 +8,7 @@ import android.telephony.TelephonyManager
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import org.fossify.commons.helpers.BaseConfig
+import org.fossify.commons.helpers.LAST_USED_VIEW_PAGER_PAGE
 import org.fossify.phone.extensions.getPhoneAccountHandleModel
 import org.fossify.phone.extensions.putPhoneAccountHandle
 import org.fossify.phone.models.SpeedDial
@@ -99,6 +100,30 @@ class Config(context: Context) : BaseConfig(context) {
     var showTabs: Int
         get() = prefs.getInt(SHOW_TABS, ALL_TABS_MASK)
         set(showTabs) = prefs.edit().putInt(SHOW_TABS, showTabs).apply()
+
+    /**
+     * 🎓 ITTC 3.8: the tab last used, by kind (TAB_CALL_HISTORY, ITTC_TAB_LEADS, …), so a change of
+     * the tabs' order or of the tabs shown never lands on another tab. Before 3.8 a page number was
+     * kept (Contacts, Favorites, Call History, Leads order): read once into its kind.
+     */
+    var ittcLastTabKind: Int
+        get() {
+            if (prefs.contains(ITTC_LAST_TAB_KIND)) return prefs.getInt(ITTC_LAST_TAB_KIND, ittcTabOrder.first())
+            val kind = if (prefs.contains(LAST_USED_VIEW_PAGER_PAGE)) {
+                val oldOrder = tabsList.filter { showTabs and it != 0 } + ITTC_TAB_LEADS
+                oldOrder.getOrNull(lastUsedViewPagerPage) ?: ittcTabOrder.first()
+            } else {
+                ittcTabOrder.first()
+            }
+            prefs.edit().putInt(ITTC_LAST_TAB_KIND, kind).apply()
+            return kind
+        }
+        set(kind) = prefs.edit().putInt(ITTC_LAST_TAB_KIND, kind).apply()
+
+    /** 🎓 ITTC 3.8: when Call History was last looked at (its tab's missed-calls badge counts the ones after; 0: never) */
+    var ittcRecentsSeenAt: Long
+        get() = prefs.getLong(ITTC_RECENTS_SEEN_AT, 0L)
+        set(at) = prefs.edit().putLong(ITTC_RECENTS_SEEN_AT, at).apply()
 
     var groupSubsequentCalls: Boolean
         get() = prefs.getBoolean(GROUP_SUBSEQUENT_CALLS, true)

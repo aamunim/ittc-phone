@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.8: view tag keys of the Contacts tab -->
+<resources>
+    <!-- IttcContactRows: a contact row's own shapes (made once with the row) -->
+    <item name="ittc_contact_row_state" type="id" />
+</resources>

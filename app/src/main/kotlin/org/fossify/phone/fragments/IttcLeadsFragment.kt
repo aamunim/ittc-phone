@@ -3,33 +3,41 @@ package org.fossify.phone.fragments
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
-import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.format.DateUtils
+import android.text.style.ForegroundColorSpan
+import android.transition.AutoTransition
+import android.transition.TransitionManager
 import android.util.AttributeSet
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.doOnLayout
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getColoredDrawableWithColor
-import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.phone.R
 import org.fossify.phone.activities.IttcAddLeadActivity
 import org.fossify.phone.activities.IttcLeadActivity
+import org.fossify.phone.activities.IttcLeadSheet
 import org.fossify.phone.activities.IttcTeamActivity
 import org.fossify.phone.databinding.IttcFragmentLeadsBinding
 import org.fossify.phone.databinding.IttcItemLeadBinding
@@ -42,6 +50,7 @@ import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDialer
 import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcTabBadges
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcToday
 import org.fossify.phone.helpers.IttcUi
@@ -117,6 +126,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         /** start / release in order, never two at once (the refcount stays right) */
         private val liveExec = Executors.newSingleThreadExecutor()
         @Volatile private var remindersAt = 0L
+        private const val KEY_TODAY_COLLAPSED = "leads_today_collapsed"
+        private const val TODAY_FOLD_MS = 180L
     }
 
     override fun onFinishInflate() {
@@ -145,6 +156,11 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             render()
         }
         binding.ittcLeadsTeam.setOnClickListener { IttcTeamActivity.open(context) }
+        // 📊 the Today card folds to one line (remembered)
+        todayCollapsed = prefs.getBoolean(KEY_TODAY_COLLAPSED, false)
+        binding.ittcLeadsTodayToggle.setOnClickListener { toggleToday() }
+        binding.ittcLeadsTodayLine.setOnClickListener { toggleToday() }
+        applyTodayCollapsed(animate = false)
         // 🎨 the system's pressed ripple over the custom pill buttons; the list fills the page
         listOf(binding.ittcLeadsAdd, binding.ittcLeadsCallAll, binding.ittcLeadsStop, binding.ittcLeadsTeam).forEach { IttcUi.ripple(it) }
         binding.ittcLeadsList.setHasFixedSize(true)
@@ -307,6 +323,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 all = leads ?: emptyList()
                 meta = m
                 noTracker = leads == null
+                // (the main screen's Leads badge: my leads due today or overdue)
+                if (leads != null) IttcTabBadges.leadsChanged()
                 // (the list is here: the Tracker answered)
                 if (leads != null && m?.at != null && m.at > lastAsk - 60_000) {
                     asking = false
@@ -405,6 +423,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             b.ittcLeadsRing.setColors(if (p.dark) p.outline else p.onPrimary.adjustAlpha(0.22f), p.ring, strong, soft)
             listOf(b.ittcLeadsTodayTitle, b.ittcLeadsStatCalls, b.ittcLeadsStatConnected, b.ittcLeadsStatTalk).forEach { it.setTextColor(strong) }
             listOf(b.ittcLeadsStatCallsLabel, b.ittcLeadsStatConnectedLabel, b.ittcLeadsStatTalkLabel, b.ittcLeadsTodayStats).forEach { it.setTextColor(soft) }
+            b.ittcLeadsTodayLine.setTextColor(strong)
+            b.ittcLeadsTodayToggle.setColorFilter(strong)
             b.ittcLeadsTeam.background = IttcTheme.rounded(context, if (p.dark) p.surfaceAlt else p.onPrimary.adjustAlpha(0.16f), 999f)
             b.ittcLeadsTeam.setTextColor(strong)
         }
@@ -420,8 +440,16 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         } else {
             context.getString(R.string.ittc_a_ring_calls, calls)
         }
-        b.ittcLeadsTodayTitle.text = context.getString(R.string.ittc_a_today) +
+        val todayTitle = context.getString(R.string.ittc_a_today) +
             if (t != null && todayOffline) " · " + context.getString(R.string.ittc_a_offline) else ""
+        b.ittcLeadsTodayTitle.text = todayTitle
+        // (folded: the same day in one line)
+        val talk = IttcToday.duration(talkSec)
+        b.ittcLeadsTodayLine.text = if (target > 0) {
+            context.getString(R.string.ittc_l3_today_line_target, todayTitle, calls, target, connected, talk)
+        } else {
+            context.getString(R.string.ittc_l3_today_line, todayTitle, calls, connected, talk)
+        }
         b.ittcLeadsStatCalls.text = calls.toString()
         b.ittcLeadsStatConnected.text = connected.toString()
         b.ittcLeadsStatTalk.text = IttcToday.duration(talkSec)
@@ -429,6 +457,48 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         b.ittcLeadsTodayStats.beVisibleIf(!extra.isNullOrEmpty())
         b.ittcLeadsTeam.beVisibleIf(team)
         IttcUi.fadeIn(b.ittcLeadsToday)
+    }
+
+    /** 📊 The Today card folded to one line (the person's choice, kept) */
+    private var todayCollapsed = false
+
+    private fun toggleToday() {
+        todayCollapsed = !todayCollapsed
+        prefs.edit().putBoolean(KEY_TODAY_COLLAPSED, todayCollapsed).apply()
+        // (the card and what is under it move smoothly; the list's rows are left alone)
+        if (binding.ittcLeadsToday.visibility == VISIBLE && isAttachedToWindow) {
+            try {
+                TransitionManager.beginDelayedTransition(
+                    this,
+                    AutoTransition().setDuration(TODAY_FOLD_MS).excludeChildren(binding.ittcLeadsList, true),
+                )
+            } catch (_: Throwable) {
+            }
+        }
+        applyTodayCollapsed(animate = true)
+    }
+
+    /** Folded: the one line (+ ⌄); open: the ring and the numbers (+ ⌃ in the corner). Never shows the card itself */
+    private fun applyTodayCollapsed(animate: Boolean) {
+        val b = binding
+        val folded = todayCollapsed
+        b.ittcLeadsTodayFull.visibility = if (folded) GONE else VISIBLE
+        b.ittcLeadsTodayLine.visibility = if (folded) VISIBLE else GONE
+        val side = IttcTheme.dp(context, 18f)
+        val vertical = IttcTheme.dp(context, if (folded) 8f else 18f)
+        b.ittcLeadsToday.setPadding(side, vertical, side, vertical)
+        val toggle = b.ittcLeadsTodayToggle
+        (toggle.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            lp.gravity = if (folded) Gravity.CENTER_VERTICAL or Gravity.END else Gravity.TOP or Gravity.END
+            lp.topMargin = if (folded) 0 else -IttcTheme.dp(context, 10f)
+            lp.marginEnd = -IttcTheme.dp(context, 10f)
+            toggle.layoutParams = lp
+        }
+        // (⌃ open → turned half way round: ⌄ folded)
+        val turn = if (folded) 180f else 0f
+        toggle.animate().cancel()
+        if (animate) toggle.animate().rotation(turn).setDuration(TODAY_FOLD_MS).start() else toggle.rotation = turn
+        toggle.contentDescription = context.getString(if (folded) R.string.ittc_l3_today_show else R.string.ittc_l3_today_hide)
     }
 
     // ------------------------------------------------------------- ▶ power dialer
@@ -647,44 +717,104 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         binding.ittcLeadsHint.beVisibleIf(placeholder == null && !swipeLearned())
     }
 
-    /** The chip looks: a dark pill when chosen, an outlined one otherwise; "Overdue" red */
+    /**
+     * 🎨 3.8 chips: one height (36 dp), 8 dp apart. The filter row is segmented: the chosen one filled
+     * with the accent, the rest soft; "Overdue" red while there are any; a super admin's "whose" chip
+     * soft blue. Stages: a dot in the stage's colour, the name and the count; chosen: the stage's colours
+     * with a thin border.
+     */
     private enum class ChipKind { NORMAL, DANGER, SCOPE }
 
-    private fun chipView(label: String, on: Boolean, kind: ChipKind = ChipKind.NORMAL, color: Int? = null, onClick: (android.view.View) -> Unit): TextView =
+    private fun baseChip(label: CharSequence, bold: Boolean, onClick: (View) -> Unit): TextView =
         TextView(context).apply {
             text = label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = if (on || kind != ChipKind.NORMAL) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             maxLines = 1
-            gravity = android.view.Gravity.CENTER
-            minHeight = IttcTheme.dp(context, 40f)
+            gravity = Gravity.CENTER
+            includeFontPadding = false
             val pad = IttcTheme.dp(context, 14f)
             setPadding(pad, 0, pad, 0)
-            val p = pal()
-            when {
-                on && color != null -> IttcTheme.pill(this, color, color.getContrastColor())
-                on && kind == ChipKind.DANGER -> IttcTheme.pill(this, p.danger, p.surface)
-                on -> IttcTheme.pill(this, p.text, p.surface)
-                kind == ChipKind.DANGER -> IttcTheme.pill(this, p.dangerSoft, p.danger, p.danger.adjustAlpha(0.3f))
-                kind == ChipKind.SCOPE -> IttcTheme.pill(this, p.primarySoft, p.primary)
-                else -> IttcTheme.pill(this, p.surface, p.text, p.outline)
-            }
-            IttcUi.ripple(this)
             setOnClickListener { onClick(it) }
         }
+
+    private fun chipView(label: String, on: Boolean, kind: ChipKind = ChipKind.NORMAL, onClick: (View) -> Unit): TextView =
+        baseChip(label, on || kind != ChipKind.NORMAL, onClick).apply {
+            val p = pal()
+            when {
+                on && kind == ChipKind.DANGER -> IttcTheme.pill(this, p.danger, p.surface)
+                on -> IttcTheme.pill(this, p.primary, p.onPrimary)
+                kind == ChipKind.DANGER -> IttcTheme.pill(this, p.dangerSoft, p.danger, p.danger.adjustAlpha(0.3f))
+                kind == ChipKind.SCOPE -> IttcTheme.pill(this, p.primarySoft, p.primary, p.primary.adjustAlpha(0.3f))
+                else -> IttcTheme.pill(this, p.surfaceAlt, p.text2)
+            }
+            isSelected = on
+            IttcUi.ripple(this)
+        }
+
+    /** A stage chip: ● name count ([colors] null: "All stages", no dot) */
+    private fun stageChip(name: String, count: Int, on: Boolean, colors: Pair<Int, Int>?, onClick: (View) -> Unit): TextView {
+        val p = pal()
+        val (bg, fg) = when {
+            on && colors != null -> colors
+            on -> p.primarySoft to p.primary
+            else -> p.surface to p.text2
+        }
+        val label = SpannableStringBuilder(name).apply {
+            append("  ")
+            val start = length
+            append(count.toString())
+            setSpan(ForegroundColorSpan(fg.adjustAlpha(0.7f)), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return baseChip(label, on, onClick).apply {
+            val stroke = if (on) fg.adjustAlpha(0.45f) else p.outline
+            IttcTheme.pill(this, bg, fg, stroke)
+            if (colors != null) {
+                val size = IttcTheme.dp(context, 8f)
+                val dot = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(colors.second)
+                    setSize(size, size)
+                }
+                setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null)
+                compoundDrawablePadding = IttcTheme.dp(context, 6f)
+            }
+            isSelected = on
+            IttcUi.ripple(this)
+        }
+    }
 
     private fun addChip(row: ViewGroup, chip: TextView) {
         row.addView(
             chip,
-            ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, IttcTheme.dp(context, 36f)).apply {
                 marginEnd = IttcTheme.dp(context, 8f)
             },
         )
     }
 
+    /** The chosen chip scrolled into sight (after it is laid out), when the choice changed */
+    private fun revealChip(scroll: HorizontalScrollView, chip: View?) {
+        chip ?: return
+        chip.doOnLayout {
+            if (chip.parent == null || scroll.width == 0) return@doOnLayout
+            val room = IttcTheme.dp(context, 24f)
+            val left = chip.left - room
+            val right = chip.right + room
+            val x = scroll.scrollX
+            when {
+                left < x -> scroll.smoothScrollTo(left.coerceAtLeast(0), 0)
+                right > x + scroll.width -> scroll.smoothScrollTo(right - scroll.width, 0)
+            }
+        }
+    }
+
     // (the chips as last drawn: the same labels, counts, choice and colours → not made again)
     private var chipsSignature: List<Any?>? = null
     private var stagesSignature: List<Any?>? = null
+    /** the choices last scrolled into sight (another one → scrolled to) */
+    private var chipsRevealed: Any? = Unit
+    private var stagesRevealed: Any? = Unit
 
     private val chipFilters = listOf(
         Filter.TODAY to R.string.ittc_chip_today,
@@ -704,17 +834,21 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         row.removeAllViews()
         // (a super admin: whose leads, one choice in one chip)
         if (scopeText != null) addChip(row, chipView(scopeText, false, ChipKind.SCOPE) { pickScope(it) })
+        var chosen: View? = null
         chipFilters.forEachIndexed { i, (f, label) ->
             val n = counts[i]
             // (overdue is red while there are any)
             val kind = if (f == Filter.OVERDUE && n > 0) ChipKind.DANGER else ChipKind.NORMAL
-            addChip(
-                row,
-                chipView(context.getString(label, n), f == filter, kind) {
-                    filter = f
-                    render()
-                },
-            )
+            val chip = chipView(context.getString(label, n), f == filter, kind) {
+                filter = f
+                render()
+            }
+            if (f == filter) chosen = chip
+            addChip(row, chip)
+        }
+        if (chipsRevealed != filter) {
+            chipsRevealed = filter
+            revealChip(binding.ittcLeadsChipsScroll, chosen)
         }
     }
 
@@ -728,26 +862,28 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         stagesSignature = signature
         row.removeAllViews()
         if (stages.isEmpty()) return
-        addChip(
-            row,
-            chipView(context.getString(R.string.ittc_stage_all, list.size), stageId == null) {
-                stageId = null
-                saveChoice()
-                render()
-            },
-        )
+        val all = stageChip(context.getString(R.string.ittc_l3_stage_all), list.size, stageId == null, null) {
+            stageId = null
+            saveChoice()
+            render()
+        }
+        addChip(row, all)
+        var chosen: View? = if (stageId == null) all else null
         stages.forEach { st ->
             val n = counts[st.id] ?: 0
             // (a stage with nobody in it stays out of the way, unless it is the chosen one)
             if (n == 0 && st.id != stageId) return@forEach
-            addChip(
-                row,
-                chipView("${st.name} $n", st.id == stageId, color = st.color) {
-                    stageId = if (stageId == st.id) null else st.id
-                    saveChoice()
-                    render()
-                },
-            )
+            val chip = stageChip(st.name, n, st.id == stageId, IttcTheme.stageColors(context, st.name)) {
+                stageId = if (stageId == st.id) null else st.id
+                saveChoice()
+                render()
+            }
+            if (st.id == stageId) chosen = chip
+            addChip(row, chip)
+        }
+        if (stagesRevealed != stageId) {
+            stagesRevealed = stageId
+            revealChip(binding.ittcLeadsStagesScroll, chosen)
         }
     }
 
@@ -830,29 +966,16 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         activity?.startCallWithConfirmationCheck(number, l.name.ifEmpty { number })
     }
 
+    /**
+     * 3.8: the lead's actions in a bottom sheet — call / the other number / WhatsApp / SMS, in direct
+     * mode the lead page's own actions (it opens and runs the chosen one), and open the lead
+     */
     private fun showOptions(l: IttcBridge.PhoneLead) {
         val act = activity ?: return
-        val items = ArrayList<Pair<String, () -> Unit>>()
-        l.callNumber?.let { n -> items += "${context.getString(R.string.ittc_lead_call)}  $n" to { call(n) } }
-        l.altPhone?.takeIf { it != l.callNumber }?.let { n -> items += "${context.getString(R.string.ittc_lead_call_alt)}  $n" to { call(n) } }
-        (l.whatsapp ?: l.phone)?.let { n ->
-            items += context.getString(R.string.ittc_whatsapp) to {
-                val d = n.filter(Char::isDigit).let { if (it.startsWith("0") && it.length == 11) "88$it" else it }
-                tryStart(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$d")))
-            }
-        }
-        l.callNumber?.let { n -> items += context.getString(R.string.ittc_sms) to { tryStart(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$n"))) } }
-        items += context.getString(if (direct) R.string.ittc_l2_open_lead else R.string.ittc_lead_open) to { IttcBridge.openLead(act, l.leadId) }
-        AlertDialog.Builder(act)
-            .setTitle(l.name.ifEmpty { l.callNumber ?: "" })
-            .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
-            .show()
-    }
-
-    private fun tryStart(intent: Intent) {
         try {
-            activity?.startActivity(intent)
-        } catch (_: Throwable) {
+            IttcLeadSheet.show(act, l, direct, canHandOver = isSuper)
+        } catch (e: Throwable) {
+            IttcCrash.record(context, e, "Leads tab: lead sheet")
         }
     }
 
@@ -1073,15 +1196,18 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             val avatar = GradientDrawable().apply { shape = GradientDrawable.OVAL }
             val pill = GradientDrawable().apply { cornerRadius = IttcTheme.dp(context, 999f).toFloat() }
             val callBg = GradientDrawable().apply { shape = GradientDrawable.OVAL }
+            val waBg = GradientDrawable().apply { shape = GradientDrawable.OVAL }
 
             init {
                 b.ittcLeadHolder.background = card
                 b.ittcLeadAvatar.background = avatar
                 b.ittcLeadStage.background = pill
                 b.ittcLeadCall.background = callBg
+                b.ittcLeadWhatsapp.background = waBg
                 // (the pressed ripples keep to the card's rounded corners and the round 📞)
                 b.ittcLeadHolder.clipToOutline = true
                 IttcUi.ripple(b.ittcLeadCall)
+                IttcUi.ripple(b.ittcLeadWhatsapp)
             }
         }
 
@@ -1129,6 +1255,18 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 ittcLeadCall.setColorFilter(p.call)
                 ittcLeadCall.setOnClickListener { call(l.callNumber) }
                 ittcLeadCall.beVisibleIf(l.callNumber != null)
+                // 💬 WhatsApp beside 📞 (when there is a number to write to)
+                val wa = IttcLeadSheet.whatsAppNumber(l)
+                ittcLeadWhatsapp.beVisibleIf(wa != null)
+                if (wa != null) {
+                    val (waBack, waFore) = IttcLeadSheet.whatsAppColors(p)
+                    holder.waBg.setColor(waBack)
+                    ittcLeadWhatsapp.setColorFilter(waFore)
+                    ittcLeadWhatsapp.contentDescription = context.getString(R.string.ittc_l3_whatsapp_lead, title)
+                    ittcLeadWhatsapp.setOnClickListener { activity?.let { IttcLeadSheet.openWhatsApp(it, wa) } }
+                } else {
+                    ittcLeadWhatsapp.setOnClickListener(null)
+                }
                 // (direct mode: the lead's own screen; long press: the quick choices)
                 ittcLeadHolder.setOnClickListener {
                     val act = activity
