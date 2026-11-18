@@ -35,12 +35,12 @@ a phone (see 3).
 | Item | Answer |
 |---|---|
 | Privacy policy | https://lead.ittc.edu.bd/privacy-ittc-phone |
-| App access | Most of the app (calls, contacts, recents) needs no sign-in. The lead features need ITTC Admission Tracker signed in: give reviewers a demo staff account of the Tracker in the instructions (never a real one). |
+| App access | Calls, contacts and recents need no sign-in. The lead features (Leads tab, lead names, after-call screen, lead page, add lead) need a sign-in: **menu → ITTC account** with an ITTC staff e-mail and password (or ITTC Admission Tracker signed in on the same phone). Give reviewers a **demo staff account** made only for them (a caller with a few sample leads, no real students), in "All or some functionality is restricted" → add the e-mail and password and these steps: open ITTC Phone → agree → menu (⋮) → ITTC account → sign in → Leads tab. Never give a real account. |
 | Ads | No ads |
 | Content rating | Questionnaire: Communication app, no violence/sex/gambling, users do not interact with each other through the app → Everyone / 3+ |
 | Target audience | 18 and over (institute staff) |
 | News app / Health / Financial / Government | No |
-| Data safety | **No data collected or shared** — ITTC Phone sends nothing off the phone (Google counts only data sent off the device). Lead-call details are handed, on the same phone, to the institute's own ITTC Admission Tracker app, which declares its own uploads; say this plainly in the Call log declaration and the video. *(Change this when ITTC Phone gets its own sign-in.)* |
+| Data safety (3.2.0+) | **Data is collected** (only when the person signs in to their ITTC account in ITTC Phone). Declare: **Personal info → Name, Email address** (the staff member's own account; App functionality, Account management) · **Personal info → Phone number** (the leads' numbers on lead calls; App functionality) · **App activity → Other actions** / **Calls → Call logs** (calls with leads only: time, length, direction, SIM name; App functionality) · **App info and performance → Other** none. For each: collected, **not shared**, **processed ephemerally: no**, **required: no (optional sign-in)**, purpose **App functionality**. Security: **data is encrypted in transit: yes** · **users can request deletion: yes** (lead.ittc.edu.bd/delete-account). Without a sign-in nothing leaves the phone, and lead calls handed to ITTC Admission Tracker are declared by that app. |
 | **Sensitive permissions → Call log** | Core use: **Default Phone handler**. ITTC Phone asks to be the default phone app on start (Android's dialer role). Attach a short video: open the app → the disclosure → "Set as default" → a call → Recents. |
 | Full-screen intent (Android 14+) | Used for incoming calls (a calling app) |
 
@@ -58,6 +58,14 @@ a phone (see 3).
   `alpha` (Closed testing) with the staff as testers, then apply for production access.
 
 ## 5. The order to roll out
+**3.2.0 (own sign-in):** 1) database update (App update → Database only) · 2) Tracker 2.11.0 (it
+stops sending lead calls when ITTC Phone sends them itself, so nothing is saved twice) · 3) the
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` secrets in this repository (the build reads them; without
+them the sign-in is hidden) · 4) ITTC Phone 3.2.0 → Internal testing · 5) Data safety and App access
+updated as in 2 **before** the release is sent for review (the INTERNET permission and the sign-in
+are new).
+
+**Earlier (2.0.0):**
 1. **Tracker 2.10.7 first** (it trusts ITTC Phone from Google Play and knows its new app id; an
    older Tracker shows no leads with the Play ITTC Phone).
 2. Then ITTC Phone on Internal / Closed testing, with staff added as testers.
