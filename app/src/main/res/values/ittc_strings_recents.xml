@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.8: Recents — the icon-only filter chips' missed badge and the row avatar's action -->
+<resources>
+    <!-- the Missed chip's name for TalkBack / its tooltip with today's count -->
+    <string name="ittc_rf_missed_today" translatable="false">Missed (%d today)</string>
+    <!-- a row's avatar: a lead → its page; else the number's call history -->
+    <string name="ittc_rf_open_lead" translatable="false">Open lead</string>
+</resources>

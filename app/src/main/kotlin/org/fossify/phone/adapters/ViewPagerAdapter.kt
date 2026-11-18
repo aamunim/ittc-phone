@@ -10,9 +10,18 @@ import org.fossify.phone.R
 import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.extensions.config
 import org.fossify.phone.fragments.MyViewPagerFragment
-import org.fossify.phone.helpers.tabsList
+import org.fossify.phone.helpers.ITTC_TAB_LEADS
+import org.fossify.phone.helpers.ittcVisibleTabs
 
-class ViewPagerAdapter(val activity: SimpleActivity) : PagerAdapter() {
+/**
+ * The main screen's pages, one per tab kind in [kinds] (🎓 ITTC 3.8: Call History, Leads, Contacts,
+ * Favorites — see ittcVisibleTabs). The kinds are fixed for the adapter's life, so the page count
+ * never changes under the pager when the tabs shown are changed in Settings.
+ */
+class ViewPagerAdapter(
+    val activity: SimpleActivity,
+    private val kinds: List<Int> = ittcVisibleTabs(activity.config.showTabs),
+) : PagerAdapter() {
 
     override fun instantiateItem(container: ViewGroup, position: Int): Any {
         val layout = getFragment(position)
@@ -32,28 +41,15 @@ class ViewPagerAdapter(val activity: SimpleActivity) : PagerAdapter() {
         container.removeView(item as View)
     }
 
-    // (+1: 🎓 ITTC's "Leads" tab, always the last one)
-    override fun getCount() = tabsList.filter { it and activity.config.showTabs != 0 }.size + 1
+    override fun getCount() = kinds.size
 
     override fun isViewFromObject(view: View, item: Any) = view == item
 
-    private fun getFragment(position: Int): Int {
-        val showTabs = activity.config.showTabs
-        val fragments = arrayListOf<Int>()
-        if (showTabs and TAB_CONTACTS > 0) {
-            fragments.add(R.layout.fragment_contacts)
-        }
-
-        if (showTabs and TAB_FAVORITES > 0) {
-            fragments.add(R.layout.fragment_favorites)
-        }
-
-        if (showTabs and TAB_CALL_HISTORY > 0) {
-            fragments.add(R.layout.fragment_recents)
-        }
-
-        fragments.add(R.layout.ittc_fragment_leads)
-
-        return if (position < fragments.size) fragments[position] else fragments.last()
+    private fun getFragment(position: Int): Int = when (kinds.getOrNull(position) ?: kinds.last()) {
+        TAB_CONTACTS -> R.layout.fragment_contacts
+        TAB_FAVORITES -> R.layout.fragment_favorites
+        TAB_CALL_HISTORY -> R.layout.fragment_recents
+        ITTC_TAB_LEADS -> R.layout.ittc_fragment_leads
+        else -> R.layout.ittc_fragment_leads
     }
 }

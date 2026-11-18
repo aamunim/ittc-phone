@@ -1,10 +1,9 @@
 package org.fossify.phone.fragments
 
 import android.content.Context
-import android.graphics.Typeface
 import android.util.AttributeSet
-import android.widget.TextView
-import org.fossify.commons.extensions.adjustAlpha
+import android.provider.CallLog.Calls
+import android.widget.ImageView
 import org.fossify.commons.extensions.baseConfig
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beGoneIf
@@ -32,9 +31,7 @@ import org.fossify.phone.databinding.FragmentRecentsBinding
 import org.fossify.phone.extensions.config
 import org.fossify.phone.extensions.getDayCode
 import org.fossify.phone.extensions.runAfterAnimations
-import org.fossify.phone.extensions.startAddContactIntent
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
-import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.IttcRecentsCache
 import org.fossify.phone.helpers.IttcBridge
@@ -111,6 +108,9 @@ class RecentsFragment(
         // 🎓 ITTC: the system's pressed ripple over the pills
         kindChips().forEach { (_, chip) -> IttcUi.ripple(chip) }
         IttcUi.ripple(binding.ittcRecentsLeadsOnly)
+        // (🎓 3.8: today's missed calls on the Missed chip, from the list already read)
+        binding.ittcRecentsMissedBadge.background = missedBadgeBg
+        renderMissedBadge()
         // (the list fills the page whatever it holds: a change in the rows never re-measures the page)
         binding.recentsList.setHasFixedSize(true)
 
@@ -161,7 +161,9 @@ class RecentsFragment(
                 val cached = IttcRecentsCache.load(context)
                 if (cached.isNotEmpty()) {
                     val shown = ittcFilter(groupCallsByDate(cached))
+                    val missed = countMissedToday(cached)
                     activity?.runOnUiThread {
+                        if (allRecentCalls.isEmpty()) setMissedToday(missed)
                         if (allRecentCalls.isEmpty() && searchQuery.isNullOrEmpty()) gotRecents(shown)
                     }
                 }
@@ -303,15 +305,7 @@ class RecentsFragment(
                             name = recentCall.name.takeIf { name -> name != recentCall.phoneNumber }
                         )
                     },
-                    profileIconClick = {
-                        val recentCall = it as RecentCall
-                        val contact = findContactByCall(recentCall)
-                        if (contact != null) {
-                            activity?.startContactDetailsIntent(contact)
-                        } else {
-                            activity?.startAddContactIntent(recentCall.phoneNumber)
-                        }
-                    }
+                    // 🎓 ITTC 3.8: the avatar opens the lead (a lead's number) or this history
                 )
 
                 binding.recentsList.adapter = recentsAdapter
@@ -329,6 +323,9 @@ class RecentsFragment(
             allRecentCalls = it
             // 🎓 ITTC: kept for the next opening
             if (!loadAll) IttcRecentsCache.save(context, it.filterIsInstance<RecentCall>())
+            // 🎓 ITTC 3.8: today's missed calls for the Missed chip's badge (counted here, off the main thread)
+            val missed = countMissedToday(it)
+            activity?.runOnUiThread { setMissedToday(missed) }
             if (searchQuery.isNullOrEmpty()) {
                 val shown = ittcFilter(it)
                 activity?.runOnUiThread { gotRecents(shown) }
@@ -459,8 +456,11 @@ class RecentsFragment(
         }
     }
 
-    /** 🎓 ITTC */
-    private fun kindChips(): List<Pair<Int, TextView>> = listOf(
+    /**
+     * 🎓 ITTC (3.8: shown All · Leads · Missed · Incoming · Outgoing; the chosen kind is kept by its
+     * KIND_ value, not its place, so the new order changes nobody's filter)
+     */
+    private fun kindChips(): List<Pair<Int, ImageView>> = listOf(
         IttcCallHistory.KIND_ALL to binding.ittcRecentsKindAll,
         IttcCallHistory.KIND_MISSED to binding.ittcRecentsKindMissed,
         IttcCallHistory.KIND_INCOMING to binding.ittcRecentsKindIncoming,
@@ -468,26 +468,79 @@ class RecentsFragment(
     )
 
     /**
-     * 🎓 ITTC 3.5: pill chips as in the Leads tab — the chosen one dark, the others outlined;
-     * "Missed" red, "Leads" (only the calls with a lead) at the end
+     * 🎓 ITTC 3.8: icon-only pill chips — the chosen one filled in the primary colour, the others soft
+     * and outlined with a muted icon; "Leads" (only the calls with a lead) is on / off with any kind
      */
     private fun renderKindChips() {
         val p = palette ?: IttcTheme.of(context).also { palette = it }
         val kind = recentsKind
         kindChips().forEach { (k, chip) ->
-            styleChip(chip, k == kind, k == IttcCallHistory.KIND_MISSED, p)
+            styleChip(chip, k == kind, p)
         }
-        styleChip(binding.ittcRecentsLeadsOnly, leadsOnly, false, p)
+        styleChip(binding.ittcRecentsLeadsOnly, leadsOnly, p)
+        renderMissedBadge()
     }
 
-    private fun styleChip(chip: TextView, on: Boolean, danger: Boolean, p: IttcTheme.Palette) {
-        when {
-            on && danger -> IttcTheme.pill(chip, p.danger, p.surface)
-            on -> IttcTheme.pill(chip, p.text, p.surface)
-            danger -> IttcTheme.pill(chip, p.dangerSoft, p.danger, p.danger.adjustAlpha(0.3f))
-            else -> IttcTheme.pill(chip, p.surface, p.text, p.outline)
+    private fun styleChip(chip: ImageView, on: Boolean, p: IttcTheme.Palette) {
+        chip.background = if (on) {
+            IttcTheme.rounded(context, p.primary, 999f)
+        } else {
+            IttcTheme.rounded(context, p.surface, 999f, p.outline)
         }
-        chip.setTypeface(null, if (on || danger) Typeface.BOLD else Typeface.NORMAL)
+        chip.imageTintList = IttcTheme.tint(if (on) p.onPrimary else p.muted)
+        // (TalkBack says "selected" for the chosen one)
+        chip.isSelected = on
+    }
+
+    /** 🎓 ITTC 3.8: today's missed calls (-1: not counted yet) and the badge's red pill, made once */
+    private var missedToday = -1
+    private val missedBadgeBg by lazy(LazyThreadSafetyMode.NONE) {
+        android.graphics.drawable.GradientDrawable().apply { cornerRadius = IttcTheme.dp(context, 999f).toFloat() }
+    }
+
+    private fun setMissedToday(count: Int) {
+        if (count == missedToday) return
+        missedToday = count
+        renderMissedBadge()
+    }
+
+    private fun renderMissedBadge() {
+        if (!::binding.isInitialized) return
+        val p = palette ?: IttcTheme.of(context).also { palette = it }
+        val count = missedToday.coerceAtLeast(0)
+        val badge = binding.ittcRecentsMissedBadge
+        badge.beGoneIf(count == 0)
+        val chip = binding.ittcRecentsKindMissed
+        val name = if (count > 0) context.getString(R.string.ittc_rf_missed_today, count) else context.getString(R.string.ittc_hist_missed)
+        chip.contentDescription = name
+        chip.tooltipText = name
+        if (count > 0) {
+            badge.text = if (count > 99) "99+" else count.toString()
+            missedBadgeBg.setColor(p.dangerStrong)
+            badge.setTextColor(p.onPrimary)
+        }
+    }
+
+    /**
+     * 🎓 ITTC 3.8: the missed calls since midnight in the list read (each call of a grouped row
+     * counted once; call off the main thread)
+     */
+    private fun countMissedToday(items: List<CallLogItem>): Int {
+        val todayStart = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val seen = HashSet<Int>()
+        for (item in items) {
+            if (item !is RecentCall) continue
+            val calls = item.groupedCalls ?: listOf(item)
+            for (call in calls) {
+                if (call.type == Calls.MISSED_TYPE && call.startTS >= todayStart) seen += call.id
+            }
+        }
+        return seen.size
     }
 
     private fun groupCallsByDate(recentCalls: List<RecentCall>): MutableList<CallLogItem> {
@@ -512,9 +565,5 @@ class RecentsFragment(
         }
 
         return callLog
-    }
-
-    private fun findContactByCall(recentCall: RecentCall): Contact? {
-        return (activity as MainActivity).cachedContacts.find { it.name == recentCall.name && it.doesHavePhoneNumber(recentCall.phoneNumber) }
     }
 }

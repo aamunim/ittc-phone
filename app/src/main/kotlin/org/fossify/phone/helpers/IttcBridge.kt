@@ -369,7 +369,7 @@ object IttcBridge {
     /** null: no Tracker / an older one (the tab then says to update it); call off the main thread */
     fun myLeads(context: Context): List<PhoneLead>? {
         val app = context.applicationContext
-        if (IttcDirect.isActive(app)) return IttcDirect.leads(app).also { myLeadsCache = it }
+        if (IttcDirect.isActive(app)) return IttcDirect.leads(app).also { myLeadsCache = it; IttcTabBadges.leadsChanged() }
         if (!trackerReady(app)) return null
         return try {
             withTracker(app) { client ->
@@ -405,7 +405,7 @@ object IttcBridge {
             }
         } catch (_: Throwable) {
             null
-        }?.also { myLeadsCache = it }
+        }?.also { myLeadsCache = it; IttcTabBadges.leadsChanged() }
     }
 
     fun parseTimeOf(s: String?): Long? = parseTime(s)
@@ -492,7 +492,7 @@ object IttcBridge {
     /** null: an older Tracker (no stages) or none yet; call off the main thread */
     fun phoneMeta(context: Context): PhoneMeta? {
         val app = context.applicationContext
-        if (IttcDirect.isActive(app)) return IttcDirect.meta(app)?.also { metaCache = it }
+        if (IttcDirect.isActive(app)) return IttcDirect.meta(app)?.also { metaCache = it; IttcTabBadges.leadsChanged() }
         if (!trackerReady(app)) return null
         return try {
             withTracker(app) { client ->
@@ -504,7 +504,7 @@ object IttcBridge {
             }
         } catch (_: Throwable) {
             null
-        }?.also { metaCache = it }
+        }?.also { metaCache = it; IttcTabBadges.leadsChanged() }
     }
 
     fun parseMeta(json: String): PhoneMeta? {
@@ -662,6 +662,7 @@ object IttcBridge {
         myLeadsCache = emptyList()
         metaCache = null
         known.clear()
+        IttcTabBadges.leadsChanged()
     }
 
     /** Forget what Recents knew (a call just ended: its lead may have changed) */

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.8: the Contacts tab — group chips, a lead's pill on a contact, the "nothing here" lines -->
+<resources>
+    <!-- group chips -->
+    <string name="ittc_ct_groups" translatable="false">Contact groups</string>
+    <string name="ittc_ct_all" translatable="false">All %d</string>
+    <string name="ittc_ct_group" translatable="false">%1$s %2$d</string>
+
+    <!-- a contact who is an ITTC lead -->
+    <string name="ittc_ct_lead" translatable="false">Lead</string>
+    <string name="ittc_ct_open_lead" translatable="false">Open the lead %s</string>
+    <string name="ittc_ct_lead_failed" translatable="false">Couldn\'t open this lead</string>
+
+    <!-- a contact with more numbers than the one shown -->
+    <string name="ittc_ct_more_numbers" translatable="false">+%d</string>
+
+    <!-- nothing to show -->
+    <string name="ittc_ct_no_match" translatable="false">No contacts match “%s”</string>
+    <string name="ittc_ct_no_match_in" translatable="false">No contacts in %1$s match “%2$s”</string>
+    <string name="ittc_ct_group_empty" translatable="false">No contacts in %s yet</string>
+    <string name="ittc_ct_show_all" translatable="false">Show all contacts</string>
+</resources>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.8: the Leads tab's folding Today card, WhatsApp on each lead, the lead's actions sheet,
+     the lead page's compact top bar -->
+<resources>
+    <!-- Today card: folded to one line -->
+    <string name="ittc_l3_today_line" translatable="false">%1$s: %2$d calls · %3$d connected · %4$s</string>
+    <string name="ittc_l3_today_line_target" translatable="false">%1$s: %2$d / %3$d calls · %4$d connected · %5$s</string>
+    <string name="ittc_l3_today_hide" translatable="false">Hide today\'s numbers</string>
+    <string name="ittc_l3_today_show" translatable="false">Show today\'s numbers</string>
+
+    <!-- the stage chips: "All stages" (its count is added) -->
+    <string name="ittc_l3_stage_all" translatable="false">All stages</string>
+
+    <!-- WhatsApp -->
+    <string name="ittc_l3_whatsapp_lead" translatable="false">WhatsApp %s</string>
+    <string name="ittc_l3_no_whatsapp" translatable="false">WhatsApp isn\'t installed on this phone.</string>
+
+    <!-- the lead's actions (long press on a lead) -->
+    <string name="ittc_l3_call_alt" translatable="false">Call the other number</string>
+    <string name="ittc_l3_open_lead" translatable="false">Open the lead</string>
+    <string name="ittc_l3_open_tracker" translatable="false">Open in the Tracker</string>
+    <string name="ittc_l3_lead_actions" translatable="false">Lead</string>
+</resources>

@@ -4,6 +4,34 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <include layout="@layout/fragment_letters_layout" />
+    <!-- 🎓 ITTC 3.8: All · each contact group (hidden when there are no groups) -->
+    <HorizontalScrollView
+        android:id="@+id/ittc_contacts_groups_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:contentDescription="@string/ittc_ct_groups"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/ittc_contacts_groups"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/ittc_space_l"
+            android:paddingTop="@dimen/ittc_space_s"
+            android:paddingEnd="@dimen/ittc_space_l"
+            android:paddingBottom="@dimen/ittc_space_xs" />
+    </HorizontalScrollView>
+
+    <RelativeLayout
+        android:id="@+id/ittc_contacts_body"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/ittc_contacts_groups_scroll">
+
+        <include layout="@layout/fragment_letters_layout" />
+    </RelativeLayout>
 
 </org.fossify.phone.fragments.ContactsFragment>

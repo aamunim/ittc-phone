@@ -5,8 +5,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- 🎓 ITTC: All / Missed / Incoming / Outgoing and "Leads" (only the calls with a lead), one
-         scrolling row of pills -->
+    <!-- 🎓 ITTC 3.8: All / Leads (only the calls with a lead) / Missed / Incoming / Outgoing, icon-only
+         pills (the name: long-press tooltip and TalkBack); Missed carries today's missed count -->
     <HorizontalScrollView
         android:id="@+id/ittc_recents_filters_scroll"
         android:layout_width="match_parent"
@@ -17,6 +17,7 @@
             android:id="@+id/ittc_recents_filters"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:clipChildren="false"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="@dimen/ittc_space_l"
@@ -24,71 +25,86 @@
             android:paddingEnd="@dimen/ittc_space_l"
             android:paddingBottom="@dimen/ittc_space_xs">
 
-            <TextView
+            <ImageView
                 android:id="@+id/ittc_recents_kind_all"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
                 android:layout_marginEnd="@dimen/ittc_space_s"
-                android:gravity="center"
-                android:maxLines="1"
-                android:minHeight="40dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="@string/ittc_hist_all"
-                android:textSize="13sp" />
+                android:contentDescription="@string/ittc_hist_all"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ittc_ic_filter_all"
+                android:tooltipText="@string/ittc_hist_all" />
 
-            <TextView
-                android:id="@+id/ittc_recents_kind_missed"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/ittc_space_s"
-                android:gravity="center"
-                android:maxLines="1"
-                android:minHeight="40dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="@string/ittc_hist_missed"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/ittc_recents_kind_incoming"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/ittc_space_s"
-                android:gravity="center"
-                android:maxLines="1"
-                android:minHeight="40dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="@string/ittc_hist_incoming"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/ittc_recents_kind_outgoing"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="@dimen/ittc_space_s"
-                android:gravity="center"
-                android:maxLines="1"
-                android:minHeight="40dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="@string/ittc_hist_outgoing"
-                android:textSize="13sp" />
-
-            <!-- 🎓 ITTC: show only lead calls -->
-            <TextView
+            <!-- 🎓 ITTC: show only lead calls (on / off, with any of the others) -->
+            <ImageView
                 android:id="@+id/ittc_recents_leads_only"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="@dimen/ittc_space_s"
+                android:contentDescription="@string/ittc_a_leads_chip"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ittc_ic_leads"
+                android:tooltipText="@string/ittc_a_leads_chip" />
+
+            <FrameLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="@dimen/ittc_space_s"
-                android:gravity="center"
-                android:maxLines="1"
-                android:minHeight="40dp"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="@string/ittc_a_leads_chip"
-                android:textSize="13sp" />
+                android:clipChildren="false">
+
+                <ImageView
+                    android:id="@+id/ittc_recents_kind_missed"
+                    android:layout_width="48dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="@string/ittc_hist_missed"
+                    android:padding="10dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_call_missed_vector"
+                    android:tooltipText="@string/ittc_hist_missed" />
+
+                <!-- today's missed calls (hidden at 0) -->
+                <TextView
+                    android:id="@+id/ittc_recents_missed_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="16dp"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="-4dp"
+                    android:layout_marginEnd="-4dp"
+                    android:gravity="center"
+                    android:importantForAccessibility="no"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:minWidth="16dp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <ImageView
+                android:id="@+id/ittc_recents_kind_incoming"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="@dimen/ittc_space_s"
+                android:contentDescription="@string/ittc_hist_incoming"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_call_received_vector"
+                android:tooltipText="@string/ittc_hist_incoming" />
+
+            <ImageView
+                android:id="@+id/ittc_recents_kind_outgoing"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="@dimen/ittc_space_s"
+                android:contentDescription="@string/ittc_hist_outgoing"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_call_made_vector"
+                android:tooltipText="@string/ittc_hist_outgoing" />
         </LinearLayout>
     </HorizontalScrollView>
 

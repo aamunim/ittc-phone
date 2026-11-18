@@ -1,6 +1,7 @@
 package org.fossify.phone.adapters
 
 import android.annotation.SuppressLint
+import android.graphics.Outline
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
@@ -13,8 +14,10 @@ import android.view.Gravity
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import androidx.appcompat.widget.PopupMenu
 import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
 import com.bumptech.glide.Glide
 import com.google.i18n.phonenumbers.NumberParseException
@@ -113,6 +116,10 @@ class RecentCallsAdapter(
     private var labelDeclined = ""
     private var labelBlocked = ""
     private var labelLead = ""
+    private var labelOpenLead = ""
+    private var labelHistory = ""
+    /** 🎓 ITTC 3.8: a tap on a row's avatar opens the lead / the number's history (the Recents tab only) */
+    private val avatarOpens = cardMode && historyClick != null
     /** (looked up once per name / stage, not on every bind) */
     private val avatarCache = HashMap<String, Avatar>()
     private val stageCache = HashMap<String, Pair<Int, Int>>()
@@ -276,6 +283,8 @@ class RecentCallsAdapter(
         labelDeclined = activity.getString(R.string.ittc_a_declined)
         labelBlocked = activity.getString(R.string.ittc_a_blocked)
         labelLead = activity.getString(R.string.ittc_a_lead)
+        labelOpenLead = activity.getString(R.string.ittc_rf_open_lead)
+        labelHistory = activity.getString(R.string.ittc_hist_title)
         dayEnd = 0L
         val theme = activity.theme
         missedCallColor = resources.getColor(R.color.color_missed_call, theme)
@@ -644,6 +653,7 @@ class RecentCallsAdapter(
             // (an inset background replaces the view's padding with its insets: the arrow keeps its 18 dp)
             IttcTheme.dp(activity, 13f).let { pad -> binding.itemRecentsHistory.setPadding(pad, pad, pad, pad) }
             IttcUi.ripple(binding.itemRecentsHistory)
+            setupAvatarClicks()
             if (cardMode) {
                 binding.root.background = card
             } else {
@@ -654,6 +664,46 @@ class RecentCallsAdapter(
                 }
                 binding.root.foreground = null
             }
+        }
+
+        /**
+         * 🎓 ITTC 3.8: the avatar / photo — a lead's number → the lead's page, else the number's call
+         * history (the row itself still calls); in selection mode it selects, a long press starts it.
+         * Set once per row: the row is read at the tap (adapterPosition: as the base adapter, no ConcatAdapter).
+         */
+        private fun setupAvatarClicks() {
+            val onAvatar: View.OnClickListener
+            if (avatarOpens) {
+                onAvatar = View.OnClickListener {
+                    val call = callAt(adapterPosition) ?: return@OnClickListener
+                    if (actModeCallback.isSelectable) {
+                        viewClicked(call)
+                    } else if (!call.isUnknownNumber) {
+                        openFromAvatar(call)
+                    }
+                }
+                // (the pressed ripple keeps to the circle: the initials' oval background, the photo's oval outline)
+                binding.itemRecentsImage.outlineProvider = OVAL_OUTLINE
+                IttcUi.ripple(binding.itemRecentsAvatar)
+                IttcUi.ripple(binding.itemRecentsImage)
+                binding.itemRecentsAvatar.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            } else if (profileIconClick != null) {
+                onAvatar = View.OnClickListener {
+                    val call = callAt(adapterPosition) ?: return@OnClickListener
+                    if (!actModeCallback.isSelectable) profileIconClick.invoke(call) else viewClicked(call)
+                }
+            } else {
+                return
+            }
+            val onAvatarLong = View.OnLongClickListener {
+                if (adapterPosition == RecyclerView.NO_POSITION) return@OnLongClickListener false
+                viewLongClicked()
+                true
+            }
+            binding.itemRecentsImage.setOnClickListener(onAvatar)
+            binding.itemRecentsImage.setOnLongClickListener(onAvatarLong)
+            binding.itemRecentsAvatar.setOnClickListener(onAvatar)
+            binding.itemRecentsAvatar.setOnLongClickListener(onAvatarLong)
         }
 
         /** The selected look only (a selection change: no full bind) */
@@ -852,22 +902,11 @@ class RecentCallsAdapter(
                 }
                 hasPhoto = photo
 
-                if (profileIconClick != null) {
-                    val onProfile = View.OnClickListener {
-                        if (!actModeCallback.isSelectable) {
-                            profileIconClick.invoke(call)
-                        } else {
-                            viewClicked(call)
-                        }
-                    }
-                    val onProfileLong = View.OnLongClickListener {
-                        viewLongClicked()
-                        true
-                    }
-                    itemRecentsImage.setOnClickListener(onProfile)
-                    itemRecentsImage.setOnLongClickListener(onProfileLong)
-                    itemRecentsAvatar.setOnClickListener(onProfile)
-                    itemRecentsAvatar.setOnLongClickListener(onProfileLong)
+                // 🎓 ITTC 3.8: what a tap on the avatar does, for TalkBack (the listener is set once)
+                if (avatarOpens) {
+                    val action = if (call.isUnknownNumber) null else if (lead != null) labelOpenLead else labelHistory
+                    itemRecentsAvatar.contentDescription = action
+                    itemRecentsImage.contentDescription = action
                 }
 
                 val drawable = when (call.type) {
@@ -900,6 +939,20 @@ class RecentCallsAdapter(
                 }
             }
         }
+    }
+
+    /** 🎓 ITTC 3.8: the row at [position] (null: gone from the list / a date row) */
+    private fun callAt(position: Int): RecentCall? {
+        if (position == RecyclerView.NO_POSITION) return null
+        return currentList.getOrNull(position) as? RecentCall
+    }
+
+    /** 🎓 ITTC 3.8: a lead's number → the lead (the Tracker, or ITTC Phone's own page); else the history */
+    private fun openFromAvatar(call: RecentCall) {
+        // (the lead the row's stage pill shows: already looked up, no wait)
+        val lead = IttcBridge.recentLead(activity, call.phoneNumber) { ittcRefresh() }
+        if (lead != null && IttcBridge.openLead(activity, lead.leadId)) return
+        historyClick?.invoke(call)
     }
 
     /** 🎓 ITTC: the place of a number from abroad (as the old row showed it), else null */
@@ -969,6 +1022,13 @@ class RecentCallsAdapter(
     companion object {
         private const val VIEW_TYPE_DATE = 0
         private const val VIEW_TYPE_CALL = 1
+
+        /** 🎓 ITTC 3.8: a round outline (the photo's pressed ripple keeps to the circle) */
+        private val OVAL_OUTLINE = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setOval(0, 0, view.width, view.height)
+            }
+        }
 
         /** 🎓 ITTC: "only the corners and dividers" (a bind payload) */
         private val PAYLOAD_CORNERS = Any()

@@ -30,10 +30,12 @@ import org.fossify.commons.models.contacts.Contact
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.phone.R
 import org.fossify.phone.activities.SimpleActivity
+import org.fossify.phone.databinding.IttcItemContactBinding
 import org.fossify.phone.extensions.areMultipleSIMsAvailable
 import org.fossify.phone.extensions.callContactWithSim
 import org.fossify.phone.extensions.config
 import org.fossify.phone.extensions.startContactDetailsIntent
+import org.fossify.phone.helpers.IttcContactRows
 import org.fossify.phone.interfaces.RefreshItemsListener
 import java.util.Collections
 
@@ -48,7 +50,9 @@ class ContactsAdapter(
     private val enableDrag: Boolean = false,
     private val allowLongClick: Boolean = true,
     itemClick: (Any) -> Unit,
-    val profileIconClick: ((Any) -> Unit)? = null
+    val profileIconClick: ((Any) -> Unit)? = null,
+    // 🎓 ITTC 3.8: the Contacts tab's card rows (null: Fossify's rows, as every other list has them)
+    private val ittcRows: IttcContactRows? = null,
 ) : MyRecyclerViewAdapter(activity, recyclerView, itemClick),
     ItemTouchHelperContract, MyRecyclerView.MyZoomListener {
 
@@ -140,18 +144,19 @@ class ContactsAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = Binding.getByItemViewType(viewType).inflate(layoutInflater, parent, false)
+        if (binding is ItemIttcContactBindingAdapter) ittcRows?.onCreateRow(binding.binding)
         return createViewHolder(binding.root)
     }
 
     override fun getItemViewType(position: Int): Int {
-        return viewType
+        return if (ittcRows != null && viewType == VIEW_TYPE_LIST) IttcContactRows.VIEW_TYPE else viewType
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val contact = contacts[position]
         holder.bindView(contact, true, allowLongClick) { itemView, _ ->
             val viewType = getItemViewType(position)
-            setupView(Binding.getByItemViewType(viewType).bind(itemView), contact, holder)
+            setupView(Binding.getByItemViewType(viewType).bind(itemView), contact, holder, position)
         }
         bindViewHolder(holder)
     }
@@ -305,6 +310,12 @@ class ContactsAdapter(
                     finishActMode()
                 } else {
                     removeSelectedItems(positions)
+                    if (ittcRows != null) {
+                        // 🎓 ITTC: the cards' corners around the gap, and the tab's own list (its group chips
+                        // filter that list) without the deleted contacts
+                        notifyItemRangeChanged(0, itemCount)
+                        refreshItemsListener?.refreshItems()
+                    }
                 }
             }
         }
@@ -359,8 +370,85 @@ class ContactsAdapter(
         }
     }
 
+    /** 🎓 ITTC 3.8: a Contacts tab row (see IttcContactRows) */
+    private fun setupIttcView(binding: IttcItemContactBinding, rows: IttcContactRows, contact: Contact, holder: ViewHolder, position: Int) {
+        binding.apply {
+            rows.bindCard(this, contacts, position, selectedKeys.contains(contact.rawId))
+
+            itemContactName.apply {
+                setTextColor(rows.palette.text)
+                if (textSize != fontSize) setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
+                text = highlightedName(contact)
+            }
+            rows.bindNumber(this, contact, textToHighlight, fontSize)
+
+            if (!activity.isDestroyed) rows.bindAvatar(activity, this, contact)
+            if (profileIconClick != null) {
+                val onProfile = View.OnClickListener {
+                    if (!actModeCallback.isSelectable) {
+                        profileIconClick.invoke(contact)
+                    } else {
+                        holder.viewClicked(contact)
+                    }
+                }
+                val onProfileLong = View.OnLongClickListener {
+                    holder.viewLongClicked()
+                    true
+                }
+                itemContactImage.setOnClickListener(onProfile)
+                itemContactImage.setOnLongClickListener(onProfileLong)
+                ittcContactAvatar.setOnClickListener(onProfile)
+                ittcContactAvatar.setOnLongClickListener(onProfileLong)
+            }
+
+            val lead = rows.leadOf(contact)
+            rows.bindLead(this, lead)
+            if (lead != null) {
+                ittcContactLead.setOnClickListener {
+                    if (actModeCallback.isSelectable) {
+                        holder.viewClicked(contact)
+                    } else {
+                        rows.openLead(activity, lead)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun highlightedName(contact: Contact): CharSequence {
+        val name = contact.getNameToDisplay()
+        return if (textToHighlight.isEmpty()) {
+            name
+        } else {
+            val normalizedName = name.normalizeString()
+            val normalizedSearchText = textToHighlight.normalizeString()
+            if (normalizedName.contains(normalizedSearchText, true)) {
+                name.highlightTextPart(normalizedSearchText, properPrimaryColor)
+            } else {
+                var spacedTextToHighlight = textToHighlight
+                val strippedName = name.filterNot { it.isWhitespace() }
+                val strippedDigits = KeypadHelper.convertKeypadLettersToDigits(strippedName)
+                val startIndex = strippedDigits.indexOf(textToHighlight)
+
+                if (strippedDigits.contains(textToHighlight)) {
+                    for (i in spacedTextToHighlight.indices) {
+                        if (startIndex + i < name.length && name[startIndex + i].isWhitespace()) {
+                            spacedTextToHighlight = spacedTextToHighlight.replaceRange(i, i, " ")
+                        }
+                    }
+                }
+
+                name.highlightTextFromNumbers(spacedTextToHighlight, properPrimaryColor)
+            }
+        }
+    }
+
     @SuppressLint("ClickableViewAccessibility")
-    private fun setupView(binding: ItemViewBinding, contact: Contact, holder: ViewHolder) {
+    private fun setupView(binding: ItemViewBinding, contact: Contact, holder: ViewHolder, position: Int) {
+        if (binding is ItemIttcContactBindingAdapter && ittcRows != null) {
+            setupIttcView(binding.binding, ittcRows, contact, holder, position)
+            return
+        }
         binding.apply {
             root.setupViewBackground(activity)
             itemContactFrame.isSelected = selectedKeys.contains(contact.rawId)
@@ -387,31 +475,7 @@ class ContactsAdapter(
                 setTextColor(textColor)
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
 
-                val name = contact.getNameToDisplay()
-                text = if (textToHighlight.isEmpty()) {
-                    name
-                } else {
-                    val normalizedName = name.normalizeString()
-                    val normalizedSearchText = textToHighlight.normalizeString()
-                    if (normalizedName.contains(normalizedSearchText, true)) {
-                        name.highlightTextPart(normalizedSearchText, properPrimaryColor)
-                    } else {
-                        var spacedTextToHighlight = textToHighlight
-                        val strippedName = name.filterNot { it.isWhitespace() }
-                        val strippedDigits = KeypadHelper.convertKeypadLettersToDigits(strippedName)
-                        val startIndex = strippedDigits.indexOf(textToHighlight)
-
-                        if (strippedDigits.contains(textToHighlight)) {
-                            for (i in spacedTextToHighlight.indices) {
-                                if (startIndex + i < name.length && name[startIndex + i].isWhitespace()) {
-                                    spacedTextToHighlight = spacedTextToHighlight.replaceRange(i, i, " ")
-                                }
-                            }
-                        }
-
-                        name.highlightTextFromNumbers(spacedTextToHighlight, properPrimaryColor)
-                    }
-                }
+                text = highlightedName(contact)
             }
 
             if (enableDrag && textToHighlight.isEmpty()) {
@@ -487,6 +551,7 @@ class ContactsAdapter(
             fun getByItemViewType(viewType: Int): Binding {
                 return when (viewType) {
                     VIEW_TYPE_GRID -> ItemContactGrid
+                    IttcContactRows.VIEW_TYPE -> ItemIttcContact
                     else -> ItemContact
                 }
             }
@@ -503,6 +568,16 @@ class ContactsAdapter(
 
             override fun bind(view: View): ItemViewBinding {
                 return ItemContactGridBindingAdapter(ItemContactWithoutNumberGridBinding.bind(view))
+            }
+        }
+
+        data object ItemIttcContact : Binding {
+            override fun inflate(layoutInflater: LayoutInflater, viewGroup: ViewGroup, attachToRoot: Boolean): ItemViewBinding {
+                return ItemIttcContactBindingAdapter(IttcItemContactBinding.inflate(layoutInflater, viewGroup, attachToRoot))
+            }
+
+            override fun bind(view: View): ItemViewBinding {
+                return ItemIttcContactBindingAdapter(IttcItemContactBinding.bind(view))
             }
         }
 
@@ -525,6 +600,15 @@ class ContactsAdapter(
     }
 
     private class ItemContactGridBindingAdapter(val binding: ItemContactWithoutNumberGridBinding) : ItemViewBinding {
+        override val itemContactName = binding.itemContactName
+        override val itemContactImage = binding.itemContactImage
+        override val itemContactFrame = binding.itemContactFrame
+        override val dragHandleIcon = binding.dragHandleIcon
+
+        override fun getRoot(): View = binding.root
+    }
+
+    private class ItemIttcContactBindingAdapter(val binding: IttcItemContactBinding) : ItemViewBinding {
         override val itemContactName = binding.itemContactName
         override val itemContactImage = binding.itemContactImage
         override val itemContactFrame = binding.itemContactFrame
