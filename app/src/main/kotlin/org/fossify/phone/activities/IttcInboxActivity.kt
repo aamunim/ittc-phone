@@ -86,10 +86,11 @@ class IttcInboxActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.ittcCInboxAppbar, NavigationIcon.Arrow)
-        IttcNotify.clearPosted(this)
         notifyHold.resume(this)
-        // (back within 20 s, e.g. from a lead it opened: the list on screen is fresh enough)
+        // (back within 20 s, e.g. from a lead it opened: the list on screen is fresh enough; nothing is
+        // cleared from the shade then, so a notification that came meanwhile isn't lost)
         if (loadedAt > 0 && SystemClock.elapsedRealtime() - loadedAt < 20_000) return
+        IttcNotify.clearPosted(this)
         load()
     }
 

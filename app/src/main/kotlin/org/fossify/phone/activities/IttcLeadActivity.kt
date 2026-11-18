@@ -102,6 +102,8 @@ class IttcLeadActivity : SimpleActivity() {
 
     /** The server's lead as last shown (text): the same answer again draws nothing again */
     private var shownDetail: String? = null
+    /** When it was drawn (the next-call colour and Today/Yesterday move with the clock) */
+    private var shownAt = 0L
     /** The templates are being fetched (a second tap waits for them) */
     private var templatesLoading = false
     /** My name, read once per load (for "You" in the timeline) */
@@ -240,7 +242,8 @@ class IttcLeadActivity : SimpleActivity() {
             runOnUiThread {
                 if (!alive() || seq != loadSeq) return@runOnUiThread
                 loadedOnce = true
-                val same = detail != null && detailText != null && fromServer && detailText == shownDetail && signedIn == inNow && meta == m
+                val same = detail != null && detailText != null && fromServer && detailText == shownDetail && signedIn == inNow && meta == m &&
+                    System.currentTimeMillis() - shownAt < 60_000
                 signedIn = inNow
                 meta = m
                 // (a change made here not sent yet: keep it on screen, say it waits, look again later)
@@ -255,6 +258,7 @@ class IttcLeadActivity : SimpleActivity() {
                         lead = detail
                         fromServer = true
                         shownDetail = detailText
+                        shownAt = System.currentTimeMillis()
                     } else if (lead == null && kept != null) {
                         lead = kept
                     }

@@ -127,7 +127,8 @@ object IttcTheme {
         val src = shape
         val mask = GradientDrawable().apply {
             this.shape = src.shape
-            val radii = src.cornerRadii
+            // (getCornerRadii() throws on Android 8-11 when the shape used setCornerRadius)
+            val radii = try { src.cornerRadii } catch (_: Throwable) { null }
             if (radii != null) cornerRadii = radii else cornerRadius = src.cornerRadius
             setColor(Color.WHITE)
         }
