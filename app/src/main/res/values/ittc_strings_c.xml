@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC Phone 3.4 (part C): campus visit, fee & discount, search, notifications -->
+<resources>
+    <string name="ittc_search_title" translatable="false">Search leads</string>
+    <string name="ittc_inbox_title" translatable="false">Notifications</string>
+
+    <!-- shared -->
+    <string name="ittc_c_loading" translatable="false">Loading…</string>
+    <string name="ittc_c_retry" translatable="false">Try again</string>
+    <string name="ittc_c_save" translatable="false">Save</string>
+    <string name="ittc_c_saved" translatable="false">Saved.</string>
+    <string name="ittc_c_back" translatable="false">Back</string>
+    <string name="ittc_c_keep_it" translatable="false">Keep it</string>
+    <string name="ittc_c_no_internet" translatable="false">No internet connection. Please try again.</string>
+    <string name="ittc_c_failed" translatable="false">Something went wrong. Please try again.</string>
+    <string name="ittc_c_lead_not_found" translatable="false">Lead not found.</string>
+    <string name="ittc_c_extras_error" translatable="false">Could not load the visit and fee: %1$s</string>
+    <string name="ittc_c_signed_out" translatable="false">Sign in to ITTC in ITTC Phone (Account) to use this.</string>
+    <string name="ittc_c_overdue" translatable="false">Overdue</string>
+    <string name="ittc_c_by" translatable="false">by %1$s</string>
+    <string name="ittc_c_someone" translatable="false">someone</string>
+    <string name="ittc_c_moved_to" translatable="false">Moved to %1$s.</string>
+    <string name="ittc_c_next_call" translatable="false">Next call: %1$s.</string>
+    <string name="ittc_c_note_optional" translatable="false">Note (optional)</string>
+    <string name="ittc_c_now" translatable="false">now</string>
+    <string name="ittc_c_min_ago" translatable="false">%1$dm ago</string>
+    <string name="ittc_c_hours_ago" translatable="false">%1$dh ago</string>
+    <string name="ittc_c_yesterday" translatable="false">Yesterday</string>
+
+    <!-- 🏫 campus visit -->
+    <string name="ittc_c_visit_title" translatable="false">🏫 Campus visit</string>
+    <string name="ittc_c_visit_planned" translatable="false">Planned</string>
+    <string name="ittc_c_visit_not_planned" translatable="false">Not planned</string>
+    <string name="ittc_c_visit_visited" translatable="false">✓ Visited</string>
+    <string name="ittc_c_visit_missed" translatable="false">✕ Didn\'t come</string>
+    <string name="ittc_c_visit_cancelled" translatable="false">Cancelled</string>
+    <string name="ittc_c_visit_no_date" translatable="false">Date not set</string>
+    <string name="ittc_c_visit_last" translatable="false">Last: %1$s · %2$s</string>
+    <string name="ittc_c_visit_none_hint" translatable="false">No visit planned yet.</string>
+    <string name="ittc_c_visit_closed_hint" translatable="false">This lead is closed. Reopen it to plan a visit.</string>
+    <string name="ittc_c_visit_off_hint" translatable="false">Campus visits are switched off (Settings → Campus visit).</string>
+    <string name="ittc_c_visit_upcoming" translatable="false">Upcoming visit</string>
+    <string name="ittc_c_visit_book" translatable="false">📅 Book visit</string>
+    <string name="ittc_c_visit_came" translatable="false">✓ Came</string>
+    <string name="ittc_c_visit_not_came" translatable="false">✕ Did not come</string>
+    <string name="ittc_c_visit_came_today" translatable="false">✓ Came today</string>
+    <string name="ittc_c_visit_manage" translatable="false">Manage</string>
+    <string name="ittc_c_visit_history" translatable="false">Visits</string>
+    <string name="ittc_c_visit_reschedule" translatable="false">Reschedule</string>
+    <string name="ittc_c_visit_set_date" translatable="false">Set date</string>
+    <string name="ittc_c_visit_cancel" translatable="false">Cancel visit</string>
+    <string name="ittc_c_visit_cancel_q" translatable="false">Cancel the visit?</string>
+    <string name="ittc_c_visit_cancel_text" translatable="false">The planned visit will be dropped.</string>
+    <string name="ittc_c_visit_cancelled_msg" translatable="false">Visit cancelled.</string>
+    <string name="ittc_c_visit_earlier" translatable="false">Earlier visits</string>
+    <string name="ittc_c_visit_plan_title" translatable="false">Plan a campus visit</string>
+    <string name="ittc_c_visit_change_title" translatable="false">Change the visit date</string>
+    <string name="ittc_c_visit_now" translatable="false">Now: %1$s</string>
+    <string name="ittc_c_visit_when" translatable="false">Visit date &amp; time</string>
+    <string name="ittc_c_visit_q_tomorrow" translatable="false">Tomorrow 11 am</string>
+    <string name="ittc_c_visit_q_2days" translatable="false">In 2 days 11 am</string>
+    <string name="ittc_c_visit_q_week" translatable="false">Next week 11 am</string>
+    <string name="ittc_c_visit_pick" translatable="false">📅 Pick date &amp; time</string>
+    <string name="ittc_c_visit_pick_needed" translatable="false">Please pick the visit date &amp; time.</string>
+    <string name="ittc_c_visit_future" translatable="false">The visit date &amp; time must be in the future.</string>
+    <string name="ittc_c_visit_note_hint" translatable="false">Note (optional), e.g. coming with father</string>
+    <string name="ittc_c_visit_planned_for" translatable="false">🏫 Visit planned for %1$s.</string>
+    <string name="ittc_c_visit_moved_to" translatable="false">🏫 Visit moved to %1$s.</string>
+    <string name="ittc_c_visit_came_title" translatable="false">🏫 The student visited</string>
+    <string name="ittc_c_visit_came_today_title" translatable="false">🏫 Came today</string>
+    <string name="ittc_c_visit_missed_title" translatable="false">🏫 The student didn\'t come</string>
+    <string name="ittc_c_visit_came_hint" translatable="false">Saved with today\'s date and your name.</string>
+    <string name="ittc_c_visit_missed_hint" translatable="false">You can plan a new visit afterwards. A next call may be set (Settings → Campus visit).</string>
+    <string name="ittc_c_visit_came_note_hint" translatable="false">Note (optional), e.g. saw the lab</string>
+    <string name="ittc_c_visit_missed_note_hint" translatable="false">Note (optional), e.g. will come next week</string>
+    <string name="ittc_c_visit_save_visit" translatable="false">✓ Save visit</string>
+    <string name="ittc_c_visit_saved" translatable="false">🏫 Visit saved.</string>
+    <string name="ittc_c_visit_marked_missed" translatable="false">🏫 Marked as didn\'t come.</string>
+
+    <!-- 💰 fee & discount -->
+    <string name="ittc_c_fee_title" translatable="false">💰 Fee &amp; discount</string>
+    <string name="ittc_c_fee_not_started" translatable="false">Not started</string>
+    <string name="ittc_c_fee_negotiating" translatable="false">Negotiating</string>
+    <string name="ittc_c_fee_waiting" translatable="false">⏳ Discount</string>
+    <string name="ittc_c_fee_final" translatable="false">🔒 Final</string>
+    <string name="ittc_c_fee_start_hint" translatable="false">Talking about the fee or a discount? Start here. The lead moves to Interested (if it is New or Contacted).</string>
+    <string name="ittc_c_fee_off_for_you" translatable="false">Fee negotiation is turned off for you. Ask an admin.</string>
+    <string name="ittc_c_fee_closed" translatable="false">This lead is closed. Reopen it to talk about the fee.</string>
+    <string name="ittc_c_fee_final_line" translatable="false">Final fee %1$s</string>
+    <string name="ittc_c_fee_to_pay_line" translatable="false">To pay %1$s</string>
+    <string name="ittc_c_fee_full_short" translatable="false">full %1$s</string>
+    <string name="ittc_c_fee_off_short" translatable="false">−%1$s off</string>
+    <string name="ittc_c_fee_offer_line" translatable="false">🏷 We offered %1$s</string>
+    <string name="ittc_c_fee_asked_line" translatable="false">🙋 Lead asked %1$s</string>
+    <string name="ittc_c_fee_last_request" translatable="false">Discount %1$s: %2$s</string>
+    <string name="ittc_c_fee_start" translatable="false">＋ Start fee talk</string>
+    <string name="ittc_c_fee_another" translatable="false">＋ Another course</string>
+    <string name="ittc_c_fee_ask_discount" translatable="false">％ Ask discount</string>
+    <string name="ittc_c_fee_what_said" translatable="false">💬 What was said</string>
+    <string name="ittc_c_fee_details" translatable="false">Details</string>
+    <string name="ittc_c_fee_full" translatable="false">Full fee</string>
+    <string name="ittc_c_fee_discount_pct" translatable="false">Discount (%1$s%%)</string>
+    <string name="ittc_c_fee_to_pay" translatable="false">To pay</string>
+    <string name="ittc_c_fee_final_admitted" translatable="false">🔒 Final fee (admitted)</string>
+    <string name="ittc_c_fee_pending_more" translatable="false">⏳ %1$s more discount waiting for approval</string>
+    <string name="ittc_c_fee_discounts" translatable="false">Discounts</string>
+    <string name="ittc_c_fee_said" translatable="false">What was said</string>
+    <string name="ittc_c_fee_whole" translatable="false">the fee</string>
+    <string name="ittc_c_fee_off_on" translatable="false">%1$s off %2$s</string>
+    <string name="ittc_c_fee_pick_course" translatable="false">Which course?</string>
+    <string name="ittc_c_fee_pick_hint" translatable="false">Only courses with a fee list are shown. ★ the lead\'s own.</string>
+    <string name="ittc_c_fee_no_courses" translatable="false">No other course with a fee list.</string>
+    <string name="ittc_c_fee_starting" translatable="false">Starting for %1$s…</string>
+    <string name="ittc_c_fee_started" translatable="false">💰 Fee negotiation started.</string>
+
+    <string name="ittc_c_disc_title" translatable="false">Discount · %1$s</string>
+    <string name="ittc_c_disc_on" translatable="false">On</string>
+    <string name="ittc_c_disc_whole" translatable="false">Whole fee · %1$s</string>
+    <string name="ittc_c_disc_taka" translatable="false">৳ Taka</string>
+    <string name="ittc_c_disc_percent" translatable="false">％ Percent</string>
+    <string name="ittc_c_disc_preview" translatable="false">%1$s off · to pay %2$s · all discounts %3$s%% of the fee</string>
+    <string name="ittc_c_disc_auto" translatable="false">✓ Within your limit: approved at once.</string>
+    <string name="ittc_c_disc_needs" translatable="false">⏳ Needs approval (you may give up to %1$s%%).</string>
+    <string name="ittc_c_disc_reason" translatable="false">Reason</string>
+    <string name="ittc_c_disc_reason_req" translatable="false">Reason *</string>
+    <string name="ittc_c_disc_send" translatable="false">Send request</string>
+    <string name="ittc_c_disc_type" translatable="false">Please type the discount.</string>
+    <string name="ittc_c_disc_too_much" translatable="false">The discount is more than the fee (%1$s).</string>
+    <string name="ittc_c_disc_reason_needed" translatable="false">Please choose a reason.</string>
+    <string name="ittc_c_disc_done_approved" translatable="false">✓ %1$s discount approved.</string>
+    <string name="ittc_c_disc_done_sent" translatable="false">⏳ %1$s discount sent for approval.</string>
+    <string name="ittc_c_disc_approved" translatable="false">✓ Approved</string>
+    <string name="ittc_c_disc_pending" translatable="false">⏳ Waiting</string>
+    <string name="ittc_c_disc_rejected" translatable="false">✕ Not approved</string>
+    <string name="ittc_c_disc_cancelled" translatable="false">Taken back</string>
+    <string name="ittc_c_disc_expired" translatable="false">⌛ Ran out</string>
+    <string name="ittc_c_disc_by_approved" translatable="false">Approved by %1$s</string>
+    <string name="ittc_c_disc_by_answered" translatable="false">Answered by %1$s</string>
+    <string name="ittc_c_disc_by_taken" translatable="false">Taken back by %1$s</string>
+    <string name="ittc_c_disc_valid_till" translatable="false">Valid till %1$s</string>
+    <string name="ittc_c_disc_take_back" translatable="false">Take back</string>
+    <string name="ittc_c_disc_take_back_q" translatable="false">Take back this discount?</string>
+    <string name="ittc_c_disc_take_back_text" translatable="false">%1$s off %2$s will be dropped.</string>
+    <string name="ittc_c_disc_taken_back" translatable="false">Discount taken back.</string>
+
+    <string name="ittc_c_said_title" translatable="false">What was said about the fee?</string>
+    <string name="ittc_c_said_quoted" translatable="false">We told the fee</string>
+    <string name="ittc_c_said_asked" translatable="false">Lead asked for</string>
+    <string name="ittc_c_said_offer" translatable="false">We offered</string>
+    <string name="ittc_c_said_note_kind" translatable="false">Note</string>
+    <string name="ittc_c_said_amount" translatable="false">Amount (৳)</string>
+    <string name="ittc_c_said_note" translatable="false">Note</string>
+    <string name="ittc_c_said_note_optional" translatable="false">Note (optional), e.g. can pay in 2 parts</string>
+    <string name="ittc_c_said_amount_needed" translatable="false">Please type the amount.</string>
+    <string name="ittc_c_said_note_needed" translatable="false">Please write the note.</string>
+
+    <!-- 🔎 search -->
+    <string name="ittc_c_search_hint" translatable="false">Name, phone, student ID…</string>
+    <string name="ittc_c_search_recent" translatable="false">🕘 Recent</string>
+    <string name="ittc_c_search_starred" translatable="false">⭐ Starred</string>
+    <string name="ittc_c_search_none" translatable="false">No lead matches “%1$s”.</string>
+    <string name="ittc_c_search_no_recent" translatable="false">Leads you worked on in the last 7 days show here.</string>
+    <string name="ittc_c_search_no_starred" translatable="false">No starred leads yet (star them in the Tracker).</string>
+    <string name="ittc_c_search_type_more" translatable="false">Type a little more…</string>
+    <string name="ittc_c_search_unassigned" translatable="false">Not given to anyone</string>
+
+    <!-- 🔔 notifications -->
+    <string name="ittc_c_inbox_mark_all" translatable="false">Mark all read</string>
+    <string name="ittc_c_inbox_empty" translatable="false">No notifications yet.</string>
+    <string name="ittc_c_inbox_all_read" translatable="false">All read</string>
+    <string name="ittc_c_inbox_in_tracker" translatable="false">Open this one in the Tracker app.</string>
+    <plurals name="ittc_c_inbox_unread" translatable="false">
+        <item quantity="one">%d unread</item>
+        <item quantity="other">%d unread</item>
+    </plurals>
+</resources>

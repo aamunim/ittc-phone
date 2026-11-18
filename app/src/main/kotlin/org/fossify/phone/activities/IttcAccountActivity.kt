@@ -26,12 +26,14 @@ import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcReminders
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcTheme
 import org.json.JSONObject
 
 /**
  * 🎓 ITTC Phone 3.2: the ITTC account. Signed out: email + password (then ITTC Phone works without
  * the Tracker). Signed in: who, how it works now, last update, calls waiting to be sent, the
  * switches, sign out.
+ * 3.5: the card look (a blue hero for who is signed in, cards, pills).
  */
 class IttcAccountActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityAccountBinding::inflate)
@@ -40,6 +42,7 @@ class IttcAccountActivity : SimpleActivity() {
     private var updating = false
     private var observer: ContentObserver? = null
     private val main = Handler(Looper.getMainLooper())
+    private lateinit var p: IttcTheme.Palette
 
     /** What the screen shows (read off the main thread: files, prefs, the Tracker) */
     private class State(
@@ -61,10 +64,11 @@ class IttcAccountActivity : SimpleActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        p = IttcTheme.of(this)
         setContentView(binding.root)
         binding.apply {
             setupEdgeToEdge(padBottomImeAndSystem = listOf(ittcAccountScrollview))
-            setupMaterialScrollListener(ittcAccountScrollview, ittcAccountAppbar)
+            // (no colour change on scroll: the bar keeps the page's soft background)
 
             ittcAccountSignIn.setOnClickListener { trySignIn() }
             ittcAccountPassword.setOnEditorActionListener { _, actionId, _ ->
@@ -107,6 +111,7 @@ class IttcAccountActivity : SimpleActivity() {
             ittcAccountSignOut.setOnClickListener { askSignOut() }
         }
         updateTextColors(binding.ittcAccountScrollview)
+        styleCards()
 
         observer = object : ContentObserver(main) {
             override fun onChange(selfChange: Boolean) {
@@ -118,7 +123,7 @@ class IttcAccountActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.ittcAccountAppbar, NavigationIcon.Arrow)
+        setupTopAppBar(binding.ittcAccountAppbar, NavigationIcon.Arrow, topBarColor = p.bg)
         refreshUi()
     }
 
@@ -130,6 +135,33 @@ class IttcAccountActivity : SimpleActivity() {
     }
 
     // ================================================================== showing
+    /** 🎨 Cards on the soft background, the blue hero, pills */
+    private fun styleCards() {
+        binding.apply {
+            ittcAccountCoordinator.setBackgroundColor(p.bg)
+            listOf(ittcAccountNotConfigured, ittcAccountSignedOutBox, ittcAccountStatusCard, ittcAccountSettingsCard)
+                .forEach { IttcTheme.card(it, p) }
+            ittcAccountHero.background = IttcTheme.rounded(this@IttcAccountActivity, p.primary, 20f)
+            ittcAccountName.setTextColor(p.onPrimary)
+            ittcAccountEmailText.setTextColor(p.onPrimaryMuted)
+            IttcTheme.pill(ittcAccountRole, p.onPrimaryMuted, p.primary)
+
+            ittcAccountMessage.background = IttcTheme.rounded(this@IttcAccountActivity, p.dangerSoft, 16f)
+            ittcAccountMessage.setTextColor(p.danger)
+            ittcAccountUpdateBox.background = IttcTheme.rounded(this@IttcAccountActivity, p.dangerSoft, 16f)
+            ittcAccountUpdateTitle.setTextColor(p.danger)
+            ittcAccountUpdateNote.setTextColor(p.text2)
+            IttcTheme.button(ittcAccountOpenPlay, p.dangerStrong, android.graphics.Color.WHITE)
+
+            IttcTheme.button(ittcAccountSignIn, p.primary, p.onPrimary)
+            ittcAccountError.setTextColor(p.danger)
+            ittcAccountRefreshError.setTextColor(p.danger)
+            IttcTheme.pill(ittcAccountSendNow, p.surface, p.primary, p.outline)
+            IttcTheme.pill(ittcAccountUpdateNow, p.surface, p.primary, p.outline)
+            IttcTheme.pill(ittcAccountSignOut, p.surface, p.danger, p.outline)
+        }
+    }
+
     private fun refreshUi() {
         val app = applicationContext
         ensureBackgroundThread {
@@ -185,6 +217,13 @@ class IttcAccountActivity : SimpleActivity() {
                 val me = s.me
                 val name = me?.optString("name")?.takeIf { it.isNotBlank() && it != "null" }
                 ittcAccountName.text = name ?: s.email ?: getString(R.string.ittc_account_signed_in)
+                val (avBg, avFg) = IttcTheme.avatarColors(this@IttcAccountActivity, name ?: s.email)
+                ittcAccountAvatar.text = IttcTheme.initials(name ?: s.email)
+                ittcAccountAvatar.setTextColor(avFg)
+                ittcAccountAvatar.background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(avBg)
+                }
                 ittcAccountEmailText.text = s.email.orEmpty()
                 ittcAccountEmailText.beVisibleIf(!s.email.isNullOrBlank() && name != null)
                 val role = roleText(me)
@@ -281,6 +320,7 @@ class IttcAccountActivity : SimpleActivity() {
         working = on
         binding.apply {
             ittcAccountSignIn.isEnabled = !on
+            ittcAccountSignIn.alpha = if (on) 0.6f else 1f
             ittcAccountEmail.isEnabled = !on
             ittcAccountPassword.isEnabled = !on
             ittcAccountProgress.beVisibleIf(on)

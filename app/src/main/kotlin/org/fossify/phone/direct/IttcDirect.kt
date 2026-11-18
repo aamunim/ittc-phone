@@ -186,6 +186,7 @@ object IttcDirect {
         if (!ok) {
             IttcAuth.clear(app)
             val msg = lastMessage(app) ?: "Could not check your sign-in. Please try again."
+            clearMessage(app)
             throw IllegalStateException(msg)
         }
         prefs(app).edit().putBoolean("allowed", true).apply()
@@ -234,12 +235,21 @@ object IttcDirect {
         lastLeadsText = null
         IttcBridge.clearCaches()
         IttcLeadApi.forget()
+        IttcAdmitApi.forget()
+        IttcVisitFeeApi.forget()
         IttcToday.clear(app)
+        org.fossify.phone.helpers.IttcNoteDraft.clear(app)
+        // (receipt pictures with students' names and amounts)
+        try {
+            File(app.cacheDir, "ittc_receipts").deleteRecursively()
+        } catch (_: Throwable) {
+        }
         org.fossify.phone.helpers.IttcDialer.stop(app)
         prefs(app).edit().remove("me").remove("settings").remove("last_refresh").remove("last_check")
             .remove("last_directory").remove("refresh_error").remove("tracker_device_id").apply()
         if (message != null) prefs(app).edit().putString("message", message).apply()
         IttcRealtime.stop()
+        IttcNotify.stop()
         IttcReminders.cancelAll(app, notifications = true)
         modeAt = 0
         modeActive = false
@@ -259,6 +269,18 @@ object IttcDirect {
         val answer = try {
             JSONObject(IttcApi.rpc(app, "ittc_phone_session", JSONObject().put("p_device_id", deviceId(app)).put("p_info", info).put("p_fresh", fresh)))
         } catch (e: IttcApi.ApiError) {
+            // (a fresh sign-in: say why it could not be checked)
+            if (fresh) {
+                prefs(app).edit().putString(
+                    "message",
+                    when {
+                        e.status == 404 -> "The ITTC server is not updated for ITTC Phone yet. Ask your admin to run the database update (App update → Database only)."
+                        e.status == 0 -> "No internet. Please try again."
+                        else -> "Could not check your sign-in (${e.status}: ${e.message}). Please try again."
+                    },
+                ).apply()
+                return false
+            }
             // (no internet / the server busy: keep working with what is kept)
             return e.status == 0 || e.status >= 500
         } catch (_: Throwable) {

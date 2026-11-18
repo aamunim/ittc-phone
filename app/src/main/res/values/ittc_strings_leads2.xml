@@ -46,4 +46,6 @@
     <string name="ittc_l2_team_loading" translatable="false">⟳ Loading…</string>
     <string name="ittc_l2_team_updated" translatable="false">⟳ Updated %s · tap to refresh</string>
     <string name="ittc_l2_team_signed_out" translatable="false">Sign in to ITTC in ITTC Phone to see your team.</string>
+    <string name="ittc_l2_sign_in_here" translatable="false">🔑 Tap here to sign in with your ITTC account (the same e-mail and password as ITTC Admission Tracker).\n\nYour leads then show here — the Tracker app is not needed.</string>
+    <string name="ittc_l2_signed_in_not_direct" translatable="false">You are signed in, but ITTC Admission Tracker on this phone is signed in too and older than 2.11.\n\nUpdate the Tracker, or tap here → ITTC account to check.</string>
 </resources>

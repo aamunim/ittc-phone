@@ -38,6 +38,9 @@ object IttcDialer {
 
     val currentLead: Item? get() = if (active) current else null
 
+    /** The lead called after the one now (null: none / not calling) — for "next: …" */
+    val nextLead: Item? get() = synchronized(queue) { if (active) queue.firstOrNull() else null }
+
     /** Read the queue kept in the prefs (once; cheap) */
     fun load(context: Context) {
         if (loaded) return

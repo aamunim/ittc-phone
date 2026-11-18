@@ -70,6 +70,11 @@ class CallActivity : SimpleActivity() {
     // screen can open over it)
     private var ittcLeadShown = false
 
+    // 🎓 ITTC 3.5: "Write a note now" — the number the draft note is kept for, and its dialog
+    private var ittcNoteNumber: String? = null
+    private var ittcNoteDialog: androidx.appcompat.app.AlertDialog? = null
+    private var ittcNoteInput: org.fossify.commons.views.MyEditText? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
@@ -110,6 +115,7 @@ class CallActivity : SimpleActivity() {
     }
 
     override fun onDestroy() {
+        ittcCloseNoteDialog()
         super.onDestroy()
         CallManager.removeListener(callCallback)
         disableProximitySensor()
@@ -600,18 +606,22 @@ class CallActivity : SimpleActivity() {
                 callerNumber.beGone()
             }
 
-            // 🎓 ITTC: a lead's number → the lead on the call screen
-            ittcLeadInfo.beGone()
+            // 🎓 ITTC: a lead's number → the lead card on the call screen (looked up off the main thread)
+            ittcLeadCard.beGone()
             ittcLeadShown = false
+            ittcNoteNumber = null
             val shown = callContact
             IttcBridge.lookup(this@CallActivity, number) { lead ->
                 if (lead == null || shown != callContact || isFinishing || isDestroyed) return@lookup
-                // (not in the phone's contacts: the number stays the title, the lead's name small below)
-                val unsaved = name.isEmpty() || name == number
-                val badge = if (unsaved && lead.name.isNotEmpty()) "🎓 ${lead.name}" else getString(R.string.ittc_lead_badge)
-                ittcLeadInfo.text = lead.summary(badge)
-                ittcLeadInfo.beVisible()
-                ittcLeadShown = true
+                try {
+                    // (not in the phone's contacts: the number stays the title, the lead's name in the card)
+                    val unsaved = name.isEmpty() || name == number
+                    ittcShowLeadCard(lead, number, if (unsaved) lead.name.takeIf { it.isNotEmpty() } else null)
+                    ittcLeadShown = true
+                } catch (e: Throwable) {
+                    // (never the call screen over the lead card)
+                    IttcCrash.record(this@CallActivity, e, "Call screen: lead card")
+                }
             }
 
             callerAvatar.apply {
@@ -632,6 +642,128 @@ class CallActivity : SimpleActivity() {
                 }
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 🎓 ITTC 3.5: the lead card and "Write a note now"
+    // ------------------------------------------------------------------
+    private fun ittcShowLeadCard(lead: IttcBridge.Lead, number: String, leadName: String?) {
+        val p = IttcTheme.of(this)
+        binding.apply {
+            ittcLeadCard.background = IttcTheme.rounded(this@CallActivity, p.surfaceAlt, 18f)
+            IttcTheme.pill(ittcLeadBadge, p.callSoft, p.call)
+            ittcLeadBadge.text = getString(R.string.ittc_b_incall_badge)
+            val stage = lead.stage
+            ittcLeadStage.beVisibleIf(!stage.isNullOrBlank())
+            if (!stage.isNullOrBlank()) {
+                val (bg, fg) = IttcTheme.stageColors(this@CallActivity, stage)
+                IttcTheme.pill(ittcLeadStage, bg, fg)
+                ittcLeadStage.text = stage
+            }
+            val course = listOfNotNull(lead.course, lead.rating?.let { "★ " + it.replaceFirstChar { c -> c.uppercase() } })
+                .joinToString(" · ")
+            ittcLeadCourse.beVisibleIf(course.isNotEmpty())
+            if (course.isNotEmpty()) {
+                IttcTheme.pill(ittcLeadCourse, p.surface, p.text, p.outline)
+                ittcLeadCourse.text = course
+            }
+            val lines = listOfNotNull(
+                leadName,
+                lead.lastNote?.takeIf { it.isNotBlank() }?.let { getString(R.string.ittc_b_last_note, it.take(160)) },
+            )
+            ittcLeadInfo.text = lines.joinToString("\n")
+            ittcLeadInfo.setTextColor(p.text2)
+            ittcLeadInfo.maxLines = if (leadName != null) 3 else 2
+            ittcLeadInfo.beVisibleIf(lines.isNotEmpty())
+
+            ittcNoteNumber = number
+            ittcLeadWriteNote.background = IttcTheme.rounded(this@CallActivity, p.surface, 999f, p.outline)
+            ittcLeadWriteNote.setTextColor(p.primary)
+            ittcLeadWriteNote.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                resources.getColoredDrawableWithColor(R.drawable.ic_edit_vector, p.primary), null, null, null,
+            )
+            ittcUpdateNoteButton()
+            ittcLeadWriteNote.setOnClickListener { ittcWriteNote() }
+            ittcLeadCard.alpha = 0f
+            ittcLeadCard.beVisible()
+            ittcLeadCard.animate().alpha(1f).setDuration(150L).start()
+        }
+    }
+
+    /** "Write a note now", or "Note kept · edit" once one is written */
+    private fun ittcUpdateNoteButton() {
+        val has = IttcNoteDraft.peek(this, ittcNoteNumber) != null
+        binding.ittcLeadWriteNote.setText(if (has) R.string.ittc_b_note_kept else R.string.ittc_b_write_note_now)
+    }
+
+    private fun ittcWriteNote() {
+        // (never a crash on the in-call screen for a note)
+        try {
+            ittcWriteNoteNow()
+        } catch (_: Throwable) {
+            ittcNoteDialog = null
+            ittcNoteInput = null
+        }
+    }
+
+    private fun ittcWriteNoteNow() {
+        val number = ittcNoteNumber ?: return
+        if (ittcNoteDialog?.isShowing == true || isFinishing || isDestroyed) return
+        val pad = resources.getDimensionPixelSize(R.dimen.activity_margin)
+        val holder = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        holder.addView(org.fossify.commons.views.MyTextView(this).apply {
+            setText(R.string.ittc_b_note_now_explain)
+            alpha = 0.8f
+        })
+        val input = org.fossify.commons.views.MyEditText(this).apply {
+            setHint(R.string.ittc_lp_note_hint)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            minLines = 2
+            maxLines = 6
+            val draft = IttcNoteDraft.peek(this@CallActivity, number).orEmpty()
+            setText(draft)
+            setSelection(draft.length)
+            // (kept as it is typed: the call may end with the dialog open)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    IttcNoteDraft.set(this@CallActivity, number, s?.toString())
+                }
+            })
+        }
+        holder.addView(input)
+        ittcNoteInput = input
+        getAlertDialogBuilder()
+            .setPositiveButton(R.string.ittc_b_keep_note) { _, _ -> ittcCloseNoteDialog() }
+            .setOnDismissListener {
+                ittcNoteDialog = null
+                ittcNoteInput = null
+                if (!isFinishing && !isDestroyed) ittcUpdateNoteButton()
+            }
+            .apply {
+                setupDialogStuff(holder, this, titleText = getString(R.string.ittc_b_note_now_title)) { dialog ->
+                    ittcNoteDialog = dialog
+                    input.requestFocus()
+                    dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+                }
+            }
+    }
+
+    /** Keep what was written and close the note dialog (call ended / screen gone) */
+    private fun ittcCloseNoteDialog() {
+        try {
+            val number = ittcNoteNumber
+            ittcNoteInput?.let { input -> if (number != null) IttcNoteDraft.set(this, number, input.text?.toString()) }
+            ittcNoteInput = null
+            ittcNoteDialog?.takeIf { it.isShowing }?.dismiss()
+        } catch (_: Throwable) {
+        }
+        ittcNoteDialog = null
     }
 
     private fun getContactNameOrNumber(contact: CallContact): String {
@@ -786,6 +918,8 @@ class CallActivity : SimpleActivity() {
         CallManager.reject()
         disableProximitySensor()
         audioRouteChooserDialog?.dismissAllowingStateLoss()
+        // 🎓 ITTC: the note being written is kept (the after-call screen fills it in)
+        ittcCloseNoteDialog()
 
         if (isCallEnded) {
             safeFinishAndRemoveTask()

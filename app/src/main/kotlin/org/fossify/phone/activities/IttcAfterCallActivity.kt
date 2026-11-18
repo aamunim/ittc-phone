@@ -10,8 +10,6 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
-import org.fossify.commons.extensions.applyColorFilter
-import android.content.res.ColorStateList
 import android.provider.CallLog
 import java.util.Calendar
 import org.fossify.commons.extensions.beVisible
@@ -21,10 +19,7 @@ import android.os.Handler
 import android.os.Looper
 import org.fossify.commons.extensions.beGoneIf
 import org.fossify.commons.extensions.getContrastColor
-import org.fossify.commons.extensions.getProperPrimaryColor
-import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.toast
-import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.extensions.hasPermission
 import org.fossify.commons.helpers.PERMISSION_READ_CONTACTS
@@ -33,6 +28,13 @@ import org.fossify.phone.databinding.IttcActivityAfterCallBinding
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDialer
+import org.fossify.phone.helpers.IttcNoteDraft
+import org.fossify.phone.helpers.IttcTheme
+import android.graphics.Color
+import android.view.View
+import android.widget.ImageView
+import org.fossify.commons.extensions.setNavigationBarAppearance
+import org.fossify.commons.extensions.setStatusBarAppearance
 
 /**
  * 🎓 ITTC: right after a lead call that was not started from the Tracker (an incoming call, or one
@@ -41,15 +43,20 @@ import org.fossify.phone.helpers.IttcDialer
  * Calls started from the Tracker skip this: the Tracker shows its popup when the call ends.
  * 3.2: the admin's quick notes, the next call a result suggests, the power dialer ("Save & call
  * next"), and a number that is no lead (direct mode): "Add as a lead".
+ * 3.5: the new look (a dark top, a white sheet with big result tiles, stage chips, the list being
+ * called) and the note written on the call screen ("Write a note now") filled in.
  */
 class IttcAfterCallActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityAfterCallBinding::inflate)
     private val main = Handler(Looper.getMainLooper())
+    private lateinit var p: IttcTheme.Palette
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        p = IttcTheme.of(this)
         setContentView(binding.root)
-        setupEdgeToEdge(padTopSystem = listOf(binding.ittcAcHolder), padBottomSystem = listOf(binding.ittcAcHolder))
+        setupEdgeToEdge(padTopSystem = listOf(binding.ittcAcHolder), padBottomImeAndSystem = listOf(binding.ittcAcSheet))
+        styleStatic()
         // (a stage that needs a note: its hint goes once one is written)
         binding.ittcAcNoteInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -60,6 +67,55 @@ class IttcAfterCallActivity : SimpleActivity() {
         })
         show(intent)
     }
+
+    override fun onResume() {
+        super.onResume()
+        // (light icons on the dark top, dark ones on the white sheet)
+        try {
+            window.setStatusBarAppearance(p.inCallBg)
+            window.setNavigationBarAppearance(p.surface)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** 🎨 The parts that do not change with the call */
+    private fun styleStatic() {
+        val white = Color.WHITE
+        binding.apply {
+            ittcAcRoot.setBackgroundColor(p.inCallBg)
+            ittcAcClose.setTextColor(white)
+            ittcAcBadge.setTextColor(white.withAlpha(0.75f))
+            ittcAcName.setTextColor(white)
+            ittcAcNumber.setTextColor(white.withAlpha(0.75f))
+            ittcAcNote.setTextColor(white.withAlpha(0.85f))
+            ittcAcToday.setTextColor(white.withAlpha(0.7f))
+            // (rounded on top only)
+            ittcAcSheet.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(p.surface)
+                val r = IttcTheme.dp(this@IttcAfterCallActivity, 24f).toFloat()
+                cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+            }
+            ittcAcHandle.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.outline, 2f)
+            listOf(ittcAcOutcomeLabel, ittcAcStageLabel, ittcAcNoteLabel, ittcAcNextLabel).forEach { it.setTextColor(p.text) }
+            ittcAcStageHint.setTextColor(p.text2)
+            ittcAcNoteInput.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.surface, 14f, p.outline)
+            ittcAcNoteInput.setTextColor(p.text)
+            ittcAcNoteInput.setHintTextColor(p.muted)
+            ittcAcDialer.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.bg, 14f)
+            ittcAcDialerIcon.setColorFilter(p.call)
+            ittcAcDialerText.setTextColor(p.text2)
+            ittcAcStop.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.surface, 999f, p.outline)
+            ittcAcStop.setTextColor(p.danger)
+            ittcAcSave.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.call, 999f)
+            ittcAcSave.setTextColor(Color.WHITE)
+            ittcAcAddLead.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.primary, 999f)
+            ittcAcAddLead.setTextColor(p.onPrimary)
+            ittcAcCloseButton.setTextColor(p.text2)
+            listOf<View>(ittcAcSave, ittcAcAddLead, ittcAcStop).forEach { touchFeedback(it) }
+        }
+    }
+
+    private fun Int.withAlpha(a: Float): Int = Color.argb((a * 255).toInt(), Color.red(this), Color.green(this), Color.blue(this))
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -119,18 +175,35 @@ class IttcAfterCallActivity : SimpleActivity() {
         val key = "${leadId.orEmpty()}|$number|${intent.getLongExtra(STARTED_AT, 0L)}"
         if (key != shownKey) {
             shownKey = key
-            binding.ittcAcNoteInput.setText("")
+            // (a note written on the call screen for this number: filled in)
+            val draft = if (unknown) null else try {
+                IttcNoteDraft.take(this, number)
+            } catch (_: Throwable) {
+                null
+            }
+            binding.ittcAcNoteInput.setText(draft.orEmpty())
+            draft?.let { binding.ittcAcNoteInput.setSelection(it.length) }
         }
 
-        updateTextColors(binding.ittcAcHolder)
-        val primary = getProperPrimaryColor()
         binding.apply {
-            ittcAcBadge.text = getString(if (unknown) R.string.ittc_l2_unknown_badge else R.string.ittc_after_call_badge)
+            ittcAcBadge.text = getString(
+                when {
+                    unknown -> R.string.ittc_b_ended_unknown
+                    outgoing -> R.string.ittc_b_ended_out
+                    else -> R.string.ittc_b_ended_in
+                },
+            )
             ittcAcName.text = name.ifEmpty { number }
             ittcAcNumber.text = number
             ittcAcNumber.beGoneIf(name.isEmpty())
-            ittcAcResult.text = result(talked, outgoing, reason)
-            ittcAcResult.setTextColor(if (talked > 0) primary else getProperTextColor())
+            val line = listOfNotNull(
+                result(talked, outgoing, reason),
+                if (unknown) null else intent.getStringExtra(COURSE)?.takeIf { it.isNotBlank() },
+                if (unknown) null else intent.getStringExtra(STAGE)?.takeIf { it.isNotBlank() },
+                if (unknown) null else intent.getStringExtra(RATING)?.takeIf { it.isNotBlank() }?.let { "★ " + it.replaceFirstChar { c -> c.uppercase() } },
+            ).joinToString(" · ")
+            ittcAcResult.text = line
+            ittcAcResult.setTextColor(if (talked > 0) p.ring else Color.WHITE.withAlpha(0.85f))
         }
         showLeadSections(!unknown)
         if (unknown) {
@@ -143,10 +216,10 @@ class IttcAfterCallActivity : SimpleActivity() {
     /** The result / stage / note / next call parts: only for a lead */
     private fun showLeadSections(show: Boolean) {
         binding.apply {
-            listOf(ittcAcOutcomeLabel, ittcAcOutcomes, ittcAcNoteInput, ittcAcNextLabel, ittcAcNextScroll, ittcAcSave)
+            listOf<View>(ittcAcOutcomeLabel, ittcAcOutcomes, ittcAcNoteLabel, ittcAcNoteInput, ittcAcNextLabel, ittcAcNextScroll, ittcAcSave)
                 .forEach { it.beGoneIf(!show) }
             if (!show) {
-                listOf(ittcAcInfo, ittcAcNote, ittcAcStageLabel, ittcAcStages, ittcAcStageHint, ittcAcPresetsScroll, ittcAcStop)
+                listOf<View>(ittcAcNote, ittcAcStageLabel, ittcAcStagesScroll, ittcAcStageHint, ittcAcPresetsScroll, ittcAcDialer)
                     .forEach { it.beGoneIf(true) }
             }
             ittcAcAddLead.beGoneIf(show)
@@ -160,7 +233,6 @@ class IttcAfterCallActivity : SimpleActivity() {
     private var contactName: String? = null
 
     private fun showUnknown(number: String) {
-        val primary = getProperPrimaryColor()
         val startedAt = intent.getLongExtra(STARTED_AT, 0L)
         contactName = null
         outcome = null
@@ -168,8 +240,6 @@ class IttcAfterCallActivity : SimpleActivity() {
         stageChoice = null
         currentStageId = null
         binding.apply {
-            ittcAcAddLead.backgroundTintList = ColorStateList.valueOf(primary)
-            ittcAcAddLead.setTextColor(primary.getContrastColor())
             ittcAcAddLead.setOnClickListener {
                 try {
                     IttcAddLeadActivity.open(this@IttcAfterCallActivity, number, contactName, startedAt)
@@ -178,7 +248,6 @@ class IttcAfterCallActivity : SimpleActivity() {
                 }
                 finish()
             }
-            ittcAcCloseButton.setTextColor(getProperTextColor())
             ittcAcCloseButton.setOnClickListener { finish() }
             ittcAcClose.setOnClickListener { finish() }
         }
@@ -216,21 +285,11 @@ class IttcAfterCallActivity : SimpleActivity() {
     // 🎓 A lead
     // ------------------------------------------------------------------
     private fun showLead(intent: Intent, leadId: String, number: String, talked: Int, outgoing: Boolean, reason: String?) {
-        val primary = getProperPrimaryColor()
         binding.apply {
-            val info = listOfNotNull(
-                intent.getStringExtra(COURSE),
-                intent.getStringExtra(STAGE),
-                intent.getStringExtra(RATING)?.let { "★ $it" },
-            ).joinToString(" · ")
-            ittcAcInfo.text = info
-            ittcAcInfo.beGoneIf(info.isEmpty())
             val note = intent.getStringExtra(LAST_NOTE)
-            ittcAcNote.text = note?.let { "“${it.take(300)}”" }
+            ittcAcNote.text = note?.let { getString(R.string.ittc_b_last_note, it.take(300)) }
             ittcAcNote.beGoneIf(note.isNullOrBlank())
 
-            ittcAcSave.backgroundTintList = ColorStateList.valueOf(primary)
-            ittcAcSave.setTextColor(primary.getContrastColor())
             ittcAcSave.setOnClickListener { save(leadId, number) }
             ittcAcClose.setOnClickListener {
                 // (✕ on the lead the list is calling: the list stops)
@@ -240,7 +299,6 @@ class IttcAfterCallActivity : SimpleActivity() {
                 }
                 finish()
             }
-            ittcAcStop.setTextColor(getProperTextColor())
             ittcAcStop.setOnClickListener {
                 IttcDialer.stop(this@IttcAfterCallActivity)
                 toast(R.string.ittc_l2_calling_stopped)
@@ -265,6 +323,7 @@ class IttcAfterCallActivity : SimpleActivity() {
         applyAutoNext()
         renderChoices()
         renderStages()
+        renderNextLabel()
         renderPresets()
         IttcDialer.load(this)
         renderDialer()
@@ -277,12 +336,29 @@ class IttcAfterCallActivity : SimpleActivity() {
     // ------------------------------------------------------------------
     private fun renderDialer() {
         val on = dialerHere()
+        val left = IttcDialer.remaining
         binding.ittcAcSave.text = when {
-            !on -> getString(R.string.ittc_save)
-            IttcDialer.remaining > 0 -> getString(R.string.ittc_l2_save_next, IttcDialer.remaining)
-            else -> getString(R.string.ittc_l2_save_last)
+            !on -> getString(R.string.ittc_b_save)
+            left > 0 -> getString(R.string.ittc_b_save_next)
+            else -> getString(R.string.ittc_b_save_last)
         }
-        binding.ittcAcStop.beGoneIf(!on)
+        binding.ittcAcDialer.beGoneIf(!on)
+        if (on) {
+            val next = IttcDialer.nextLead
+            binding.ittcAcDialerText.text = if (next != null && left > 0) {
+                val who = next.name.ifBlank { next.number }
+                android.text.SpannableStringBuilder(getString(R.string.ittc_b_dialer_next_prefix)).apply {
+                    val start = length
+                    append(who)
+                    setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    setSpan(android.text.style.ForegroundColorSpan(p.text), start, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    append(" · ")
+                    append(getString(R.string.ittc_b_dialer_left, left))
+                }
+            } else {
+                getString(R.string.ittc_b_dialer_last)
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -301,7 +377,7 @@ class IttcAfterCallActivity : SimpleActivity() {
         val m = (resources.displayMetrics.density * 6).toInt()
         presets.forEach { preset ->
             binding.ittcAcPresets.addView(
-                chip(preset, false) { addPreset(preset) }.apply { maxLines = 1 },
+                softChip(preset) { addPreset(preset) },
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, m, 0) },
             )
         }
@@ -397,35 +473,30 @@ class IttcAfterCallActivity : SimpleActivity() {
             org.fossify.phone.helpers.IttcCrash.record(this, e, "After-call stages")
             stages = emptyList()
             binding.ittcAcStageLabel.beGoneIf(true)
-            binding.ittcAcStages.beGoneIf(true)
+            binding.ittcAcStagesScroll.beGoneIf(true)
         }
     }
 
     private fun renderStagesNow() {
         val show = stages.isNotEmpty()
         binding.ittcAcStageLabel.beGoneIf(!show)
-        binding.ittcAcStages.beGoneIf(!show)
+        binding.ittcAcStagesScroll.beGoneIf(!show)
         binding.ittcAcStages.removeAllViews()
-        val m = (resources.displayMetrics.density * 6).toInt()
-        val selectedId = stageChoice?.id ?: currentStageId
-        stages.chunked(3).forEach { row ->
-            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            row.forEach { st ->
-                val isCurrent = st.id == currentStageId
-                line.addView(
-                    chip(if (isCurrent) "• ${st.name}" else st.name, st.id == selectedId, st.color) {
-                        // (the current stage again: no change)
-                        stageChoice = if (isCurrent || stageChoice?.id == st.id) null else st
-                        renderStages()
-                    },
-                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(m, m, m, 0) },
-                )
-            }
-            // (a short last row keeps the same chip width)
-            repeat(3 - row.size) {
-                line.addView(android.view.View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(m, m, m, 0) })
-            }
-            binding.ittcAcStages.addView(line)
+        val m = (resources.displayMetrics.density * 8).toInt()
+        val selectedId = stageChoice?.id
+        // (the current stage first, then the others in the pipeline's order)
+        val ordered = stages.filter { it.id == currentStageId } + stages.filter { it.id != currentStageId }
+        ordered.forEach { st ->
+            val isCurrent = st.id == currentStageId
+            binding.ittcAcStages.addView(
+                stageChip(st, isCurrent, st.id == selectedId) {
+                    // (the current stage again: no change)
+                    stageChoice = if (isCurrent || stageChoice?.id == st.id) null else st
+                    renderStages()
+                    renderNextLabel()
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, IttcTheme.dp(this, 36f)).apply { setMargins(0, 0, m, 0) },
+            )
         }
         val st = stageChoice
         val hint = when {
@@ -439,6 +510,16 @@ class IttcAfterCallActivity : SimpleActivity() {
         binding.ittcAcStageHint.beGoneIf(hint == null)
     }
 
+    /** "Next call", or the stage's own date name ("Visit date") when the chosen stage asks for one */
+    private fun renderNextLabel() {
+        val st = stageChoice
+        binding.ittcAcNextLabel.text = if (st != null && st.askDate) {
+            (st.dateLabel ?: getString(R.string.ittc_next_call)).replaceFirstChar { it.uppercase() }
+        } else {
+            getString(R.string.ittc_next_call)
+        }
+    }
+
     // ------------------------------------------------------------------
     // 📝 The result, a note and the next call (saved through the Tracker)
     // ------------------------------------------------------------------
@@ -447,49 +528,120 @@ class IttcAfterCallActivity : SimpleActivity() {
     private var nextKey = "none"
     private var saving = false
 
+    /** value, label, icon */
     private val outcomes = listOf(
-        "connected" to "✅ Connected",
-        "no_answer" to "📵 No answer",
-        "busy" to "⏳ Busy",
-        "switched_off" to "📴 Off",
-        "wrong_number" to "❌ Wrong no.",
-        "call_back" to "🔁 Call back",
+        Triple("connected", R.string.ittc_b_out_connected, R.drawable.ic_check_vector),
+        Triple("no_answer", R.string.ittc_b_out_no_answer, R.drawable.ic_clear_vector),
+        Triple("busy", R.string.ittc_b_out_busy, R.drawable.ic_clock_vector),
+        Triple("switched_off", R.string.ittc_b_out_switched_off, R.drawable.ic_phone_down_vector),
+        Triple("call_back", R.string.ittc_b_out_call_back, R.drawable.ic_restart_alt_vector),
+        Triple("wrong_number", R.string.ittc_b_out_wrong_number, R.drawable.ic_block_vector),
     )
 
-    private fun chip(label: String, on: Boolean, color: Int? = null, onClick: () -> Unit): TextView = TextView(this).apply {
+    private fun dp(v: Float) = IttcTheme.dp(this, v)
+
+    /** The system's touch ripple over a view with its own background (Android 6+) */
+    private fun touchFeedback(view: View) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return
+        try {
+            val tv = TypedValue()
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            view.foreground = androidx.core.content.ContextCompat.getDrawable(this, tv.resourceId)
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** A pill: on = filled [fill] (text [onText]); off = outlined */
+    private fun chip(label: String, on: Boolean, fill: Int? = null, onText: Int? = null, onClick: () -> Unit): TextView = TextView(this).apply {
         text = label
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-        val pad = (resources.displayMetrics.density * 10).toInt()
-        setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        setPadding(dp(14f), 0, dp(14f), 0)
         gravity = Gravity.CENTER
-        setBackgroundResource(R.drawable.ittc_chip_background)
-        val primary = color ?: getProperPrimaryColor()
-        val text = getProperTextColor()
-        background.mutate().applyColorFilter(if (on) primary else (text and 0x00FFFFFF) or 0x22000000)
-        setTextColor(if (on) primary.getContrastColor() else text)
-        maxLines = 2
+        maxLines = 1
+        val f = fill ?: p.primary
+        if (on) IttcTheme.pill(this, f, onText ?: f.getContrastColor()) else IttcTheme.pill(this, p.surface, p.text, p.outline)
+        if (on) setTypeface(typeface, android.graphics.Typeface.BOLD)
+        touchFeedback(this)
+        setOnClickListener { onClick() }
+    }
+
+    /** A soft quick-note pill (a tap adds it to the note) */
+    private fun softChip(label: String, onClick: () -> Unit): TextView = TextView(this).apply {
+        text = label
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        setPadding(dp(12f), dp(7f), dp(12f), dp(7f))
+        gravity = Gravity.CENTER
+        maxLines = 1
+        IttcTheme.pill(this, p.surfaceAlt, p.text)
+        setOnClickListener { onClick() }
+    }
+
+    /** A stage pill: the current one soft in its colour ("• Interested (now)"), the chosen one filled */
+    private fun stageChip(st: IttcBridge.Stage, isCurrent: Boolean, chosen: Boolean, onClick: () -> Unit): TextView {
+        val (soft, strong) = IttcTheme.stageColors(this, st.name)
+        val fill = st.color ?: strong
+        return TextView(this).apply {
+            text = if (isCurrent) getString(R.string.ittc_b_stage_now, st.name) else st.name
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setPadding(dp(14f), 0, dp(14f), 0)
+            gravity = Gravity.CENTER
+            maxLines = 1
+            when {
+                chosen -> IttcTheme.pill(this, fill, fill.getContrastColor())
+                isCurrent -> IttcTheme.pill(this, soft, strong, strong)
+                else -> IttcTheme.pill(this, p.surface, p.text, p.outline)
+            }
+            if (chosen || isCurrent) setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setOnClickListener { onClick() }
+        }
+    }
+
+    /** A big result tile: icon over the label; chosen = teal border on a soft teal */
+    private fun outcomeTile(label: String, icon: Int, on: Boolean, onClick: () -> Unit): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        background = if (on) IttcTheme.rounded(context, p.callSoft, 14f, p.call, 2f) else IttcTheme.rounded(context, p.surface, 14f, p.outline)
+        isClickable = true
+        isFocusable = true
+        touchFeedback(this)
+        contentDescription = label
+        addView(ImageView(context).apply {
+            setImageResource(icon)
+            setColorFilter(if (on) p.call else p.muted)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(20f), dp(20f)))
+        addView(TextView(context).apply {
+            text = label
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextColor(if (on) p.call else p.text)
+            if (on) setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            maxLines = 1
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(3f) })
         setOnClickListener { onClick() }
     }
 
     private fun renderChoices() {
-        val m = (resources.displayMetrics.density * 6).toInt()
+        val m = (resources.displayMetrics.density * 4).toInt()
         binding.ittcAcOutcomes.removeAllViews()
-        outcomes.chunked(3).forEach { row ->
+        outcomes.chunked(3).forEachIndexed { r, row ->
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            row.forEach { (value, label) ->
+            row.forEach { (value, label, icon) ->
                 line.addView(
-                    chip(label, outcome == value) {
+                    outcomeTile(getString(label), icon, outcome == value) {
                         outcome = if (outcome == value) null else value
                         // (the admin's rule for this result, unless the person chose a time)
                         applyAutoNext()
                         renderChoices()
                         renderStages()
                     },
-                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(m, m, m, 0) },
+                    LinearLayout.LayoutParams(0, dp(56f), 1f).apply { setMargins(m, if (r == 0) 0 else m * 2, m, 0) },
                 )
             }
             binding.ittcAcOutcomes.addView(line)
         }
+        val chipHeight = dp(36f)
 
         binding.ittcAcNext.removeAllViews()
         val now = System.currentTimeMillis()
@@ -508,14 +660,14 @@ class IttcAfterCallActivity : SimpleActivity() {
                     nextKey = "pick"
                     renderChoices()
                 },
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, 0, 0) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, chipHeight).apply { setMargins(0, 0, m * 2, 0) },
             )
         }
         val options = listOf(
-            Triple("none", "No", null),
-            Triple("1h", "In 1 hour", now + 60 * 60 * 1000L),
-            Triple("tomorrow", "Tomorrow 10 AM", tomorrow10),
-            Triple("2d", "In 2 days", tomorrow10 + 24 * 60 * 60 * 1000L),
+            Triple("none", getString(R.string.ittc_b_next_none), null),
+            Triple("1h", getString(R.string.ittc_b_next_1h), now + 60 * 60 * 1000L),
+            Triple("tomorrow", getString(R.string.ittc_b_next_tomorrow), tomorrow10),
+            Triple("2d", getString(R.string.ittc_b_next_2d), tomorrow10 + 24 * 60 * 60 * 1000L),
         )
         options.forEach { (key, label, at) ->
             binding.ittcAcNext.addView(
@@ -526,17 +678,17 @@ class IttcAfterCallActivity : SimpleActivity() {
                     renderChoices()
                     renderStages()
                 },
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, 0, 0) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, chipHeight).apply { setMargins(0, 0, m * 2, 0) },
             )
         }
         val pickedLabel = if (nextKey == "pick" && nextAt != null) {
-            "📅 " + DateUtils.formatDateTime(this, nextAt!!, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_TIME)
+            DateUtils.formatDateTime(this, nextAt!!, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY)
         } else {
-            "📅 Pick…"
+            getString(R.string.ittc_b_next_pick)
         }
         binding.ittcAcNext.addView(
             chip(pickedLabel, nextKey == "pick") { pickDate() },
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, m, 0) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, chipHeight).apply { setMargins(0, 0, m * 2, 0) },
         )
     }
 
@@ -660,11 +812,11 @@ class IttcAfterCallActivity : SimpleActivity() {
     }
 
     private fun result(talked: Int, outgoing: Boolean, reason: String?): String = when {
-        talked > 0 -> getString(R.string.ittc_talked, duration(talked))
-        reason == "busy" -> getString(R.string.ittc_busy)
-        outgoing -> getString(R.string.ittc_no_answer)
-        reason == "declined" -> getString(R.string.ittc_declined)
-        else -> getString(R.string.ittc_missed)
+        talked > 0 -> getString(R.string.ittc_b_talked, duration(talked))
+        reason == "busy" -> getString(R.string.ittc_b_busy)
+        outgoing -> getString(R.string.ittc_b_no_answer)
+        reason == "declined" -> getString(R.string.ittc_b_declined)
+        else -> getString(R.string.ittc_b_missed)
     }
 
     private fun duration(sec: Int): String = when {

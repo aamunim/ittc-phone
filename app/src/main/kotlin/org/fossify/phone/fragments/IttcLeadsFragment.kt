@@ -1,8 +1,15 @@
 package org.fossify.phone.fragments
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.text.format.DateUtils
 import android.util.AttributeSet
@@ -11,11 +18,12 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
-import org.fossify.commons.extensions.applyColorFilter
+import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.beVisibleIf
+import org.fossify.commons.extensions.getColoredDrawableWithColor
 import org.fossify.commons.extensions.getContrastColor
-import org.fossify.commons.extensions.getTextSize
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.views.MyRecyclerView
@@ -29,9 +37,12 @@ import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcRealtime
 import org.fossify.phone.direct.IttcReminders
 import org.fossify.phone.extensions.startCallIntent
+import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDialer
+import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcToday
 import org.json.JSONObject
 import java.util.Calendar
@@ -48,6 +59,8 @@ import java.util.concurrent.Executors
  * Tracker. The toolbar search filters by name or number.
  * 3.2: a "Today" card (+ the day's target, and the team for team leads / super admins), "＋ Add
  * lead" and live updates when signed in to ITTC directly, and "▶ Call all" (the power dialer).
+ * 3.5: the 3.3 look — a blue "Today" card with the target ring, pill chips, lead cards (avatar,
+ * stage pill, course · next call, the last note); swipe right calls, swipe left sets the next call.
  */
 class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     MyViewPagerFragment<IttcLeadsFragment.LeadsInnerBinding>(context, attributeSet) {
@@ -92,6 +105,12 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private var todayAsking = false
     /** live updates held by this tab (touched on [liveExec] only) */
     @Volatile private var liveHeld = false
+    /** 🎨 the 3.3 palette (follows the app's light / dark theme) */
+    private var palette: IttcTheme.Palette? = null
+    private var heroColor = 0
+    private var actionsPalette: IttcTheme.Palette? = null
+
+    private fun pal(): IttcTheme.Palette = palette ?: IttcTheme.of(context).also { palette = it }
 
     companion object {
         /** start / release in order, never two at once (the refcount stays right) */
@@ -122,6 +141,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             render()
         }
         binding.ittcLeadsTeam.setOnClickListener { IttcTeamActivity.open(context) }
+        setupSwipes()
         // (the last list at once, then the Tracker's)
         all = IttcBridge.myLeadsCache
         meta = IttcBridge.metaCache
@@ -194,7 +214,15 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     override fun setupColors(textColor: Int, primaryColor: Int, properPrimaryColor: Int) {
         this.textColor = textColor
         this.primaryColor = properPrimaryColor
-        binding.ittcLeadsPlaceholder.setTextColor(textColor)
+        // (the app's theme may have changed: the palette again)
+        val p = IttcTheme.of(context)
+        palette = p
+        heroColor = 0
+        actionsPalette = null
+        swipePainter = null
+        setBackgroundColor(p.bg)
+        binding.ittcLeadsPlaceholder.setTextColor(p.text2)
+        binding.ittcLeadsHint.setTextColor(p.muted)
         render()
     }
 
@@ -329,55 +357,67 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private fun renderTodayNow() {
         val b = binding
         val t = today
-        val p = phoneToday
+        val ph = phoneToday
         val calls: Int
-        val stats: String
+        val connected: Int
+        val talkSec: Int
+        var extra: String? = null
         var target = meta?.dailyTarget ?: 0
         var team = false
         if (t != null) {
             val me = t.optJSONObject("me") ?: JSONObject()
             calls = me.optInt("calls")
-            stats = context.getString(
-                R.string.ittc_l2_today_direct,
-                calls,
-                me.optInt("connected"),
-                IttcToday.duration(me.optInt("talk_sec")),
-                me.optInt("stage_changes"),
-                me.optInt("new_leads"),
-            )
+            connected = me.optInt("connected")
+            talkSec = me.optInt("talk_sec")
+            extra = context.getString(R.string.ittc_a_today_extra, me.optInt("stage_changes"), me.optInt("new_leads"))
             t.optInt("target", 0).takeIf { it > 0 }?.let { target = it }
             team = t.optJSONArray("team") != null
-        } else if (p != null) {
-            calls = p[0]
-            stats = context.getString(R.string.ittc_l2_today_phone, p[0], p[1], IttcToday.duration(p[2]))
+        } else if (ph != null) {
+            calls = ph[0]
+            connected = ph[1]
+            talkSec = ph[2]
         } else {
             b.ittcLeadsToday.beVisibleIf(false)
             return
         }
-        b.ittcLeadsToday.background.mutate().applyColorFilter((textColor and 0x00FFFFFF) or 0x14000000)
-        b.ittcLeadsTodayTitle.text = context.getString(R.string.ittc_l2_today) +
-            if (t != null && todayOffline) " · " + context.getString(R.string.ittc_l2_offline) else ""
-        b.ittcLeadsTodayTitle.setTextColor(textColor)
-        b.ittcLeadsTodayStats.text = stats
-        b.ittcLeadsTodayStats.setTextColor(textColor)
-        b.ittcLeadsTodayProgress.beVisibleIf(target > 0)
-        b.ittcLeadsTodayTarget.beVisibleIf(target > 0)
-        if (target > 0) {
-            b.ittcLeadsTodayProgress.max = target
-            b.ittcLeadsTodayProgress.progress = calls.coerceAtMost(target)
-            b.ittcLeadsTodayProgress.progressTintList = ColorStateList.valueOf(primaryColor)
-            b.ittcLeadsTodayTarget.text = context.getString(
-                if (calls >= target) R.string.ittc_l2_target_done else R.string.ittc_l2_target,
-                calls,
-                target,
-            )
-            b.ittcLeadsTodayTarget.setTextColor(textColor)
+        if (target > 0 && calls >= target) {
+            extra = listOfNotNull(context.getString(R.string.ittc_a_target_done), extra).joinToString(" · ")
         }
+
+        // 🎨 light: the blue card with white text; dark: a deep blue card with the light text
+        val p = pal()
+        val heroBg = if (p.dark) p.primarySoft else p.primary
+        val strong = if (p.dark) p.text else p.onPrimary
+        val soft = if (p.dark) p.muted else p.onPrimaryMuted
+        if (heroColor != heroBg) {
+            heroColor = heroBg
+            b.ittcLeadsToday.background = IttcTheme.rounded(context, heroBg, 20f)
+            b.ittcLeadsRing.setColors(if (p.dark) p.outline else p.onPrimary.adjustAlpha(0.22f), p.ring, strong, soft)
+            listOf(b.ittcLeadsTodayTitle, b.ittcLeadsStatCalls, b.ittcLeadsStatConnected, b.ittcLeadsStatTalk).forEach { it.setTextColor(strong) }
+            listOf(b.ittcLeadsStatCallsLabel, b.ittcLeadsStatConnectedLabel, b.ittcLeadsStatTalkLabel, b.ittcLeadsTodayStats).forEach { it.setTextColor(soft) }
+            b.ittcLeadsTeam.background = IttcTheme.rounded(context, if (p.dark) p.surfaceAlt else p.onPrimary.adjustAlpha(0.16f), 999f)
+            b.ittcLeadsTeam.setTextColor(strong)
+        }
+
+        b.ittcLeadsRing.set(
+            calls,
+            target,
+            calls.toString(),
+            if (target > 0) context.getString(R.string.ittc_a_of_target, target) else context.getString(R.string.ittc_a_calls),
+        )
+        b.ittcLeadsRing.contentDescription = if (target > 0) {
+            context.getString(R.string.ittc_a_ring_target, calls, target)
+        } else {
+            context.getString(R.string.ittc_a_ring_calls, calls)
+        }
+        b.ittcLeadsTodayTitle.text = context.getString(R.string.ittc_a_today) +
+            if (t != null && todayOffline) " · " + context.getString(R.string.ittc_a_offline) else ""
+        b.ittcLeadsStatCalls.text = calls.toString()
+        b.ittcLeadsStatConnected.text = connected.toString()
+        b.ittcLeadsStatTalk.text = IttcToday.duration(talkSec)
+        b.ittcLeadsTodayStats.text = extra
+        b.ittcLeadsTodayStats.beVisibleIf(!extra.isNullOrEmpty())
         b.ittcLeadsTeam.beVisibleIf(team)
-        if (team) {
-            b.ittcLeadsTeam.background.mutate().applyColorFilter(primaryColor)
-            b.ittcLeadsTeam.setTextColor(primaryColor.getContrastColor())
-        }
         b.ittcLeadsToday.beVisibleIf(true)
     }
 
@@ -415,16 +455,25 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         val n = callable().size
         b.ittcLeadsAdd.beVisibleIf(direct)
         b.ittcLeadsCallAll.text = if (dialing) {
-            context.getString(R.string.ittc_l2_call_next, IttcDialer.remaining)
+            context.getString(R.string.ittc_a_call_next, IttcDialer.remaining)
         } else {
-            context.getString(R.string.ittc_l2_call_all, n)
+            context.getString(R.string.ittc_a_call_all, n)
         }
         b.ittcLeadsCallAll.beVisibleIf(dialing && IttcDialer.remaining > 0 || !dialing && n > 0)
         b.ittcLeadsStop.beVisibleIf(dialing)
-        listOf(b.ittcLeadsAdd, b.ittcLeadsCallAll, b.ittcLeadsStop).forEach { v ->
-            val on = v == b.ittcLeadsCallAll
-            v.background.mutate().applyColorFilter(if (on) primaryColor else (textColor and 0x00FFFFFF) or 0x22000000)
-            v.setTextColor(if (on) primaryColor.getContrastColor() else textColor)
+        // 🎨 teal "Call all", outlined "+ Add lead" and "Stop" (made again only when the theme changes)
+        val p = pal()
+        if (actionsPalette !== p) {
+            actionsPalette = p
+            b.ittcLeadsCallAll.background = IttcTheme.rounded(context, p.call, 999f)
+            b.ittcLeadsCallAll.setTextColor(p.onPrimary)
+            b.ittcLeadsCallAll.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                resources.getColoredDrawableWithColor(R.drawable.ic_play_vector, p.onPrimary), null, null, null,
+            )
+            b.ittcLeadsAdd.background = IttcTheme.rounded(context, p.surface, 999f, p.primary)
+            b.ittcLeadsAdd.setTextColor(p.primary)
+            b.ittcLeadsStop.background = IttcTheme.rounded(context, p.surface, 999f, p.danger)
+            b.ittcLeadsStop.setTextColor(p.danger)
         }
         b.ittcLeadsActions.beVisibleIf(b.ittcLeadsAdd.visibility == VISIBLE || b.ittcLeadsCallAll.visibility == VISIBLE || dialing)
     }
@@ -563,25 +612,53 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         renderToday()
         val placeholder = when {
             !loadedOnce && all.isEmpty() -> context.getString(R.string.ittc_leads_loading)
-            noTracker -> context.getString(R.string.ittc_leads_no_tracker)
+            noTracker -> context.getString(
+                when {
+                    !org.fossify.phone.direct.IttcDirect.configured -> R.string.ittc_leads_no_tracker
+                    org.fossify.phone.direct.IttcDirect.isSignedIn(context) -> R.string.ittc_l2_signed_in_not_direct
+                    else -> R.string.ittc_l2_sign_in_here
+                },
+            )
             shown.isEmpty() -> context.getString(if (direct) R.string.ittc_l2_leads_none_direct else R.string.ittc_leads_none)
             else -> null
         }
         binding.ittcLeadsPlaceholder.text = placeholder
         binding.ittcLeadsPlaceholder.beVisibleIf(placeholder != null)
+        // (no leads from anywhere yet: a tap opens the ITTC sign-in)
+        if (noTracker && org.fossify.phone.direct.IttcDirect.configured) {
+            binding.ittcLeadsPlaceholder.setOnClickListener {
+                context.startActivity(android.content.Intent(context, org.fossify.phone.activities.IttcAccountActivity::class.java))
+            }
+        } else {
+            binding.ittcLeadsPlaceholder.setOnClickListener(null)
+            binding.ittcLeadsPlaceholder.isClickable = false
+        }
         binding.ittcLeadsList.beVisibleIf(placeholder == null)
+        binding.ittcLeadsHint.beVisibleIf(placeholder == null && !swipeLearned())
     }
 
-    private fun chipView(label: String, on: Boolean, color: Int? = null, onClick: (android.view.View) -> Unit): TextView =
+    /** The chip looks: a dark pill when chosen, an outlined one otherwise; "Overdue" red */
+    private enum class ChipKind { NORMAL, DANGER, SCOPE }
+
+    private fun chipView(label: String, on: Boolean, kind: ChipKind = ChipKind.NORMAL, color: Int? = null, onClick: (android.view.View) -> Unit): TextView =
         TextView(context).apply {
             text = label
-            setTextSize(TypedValue.COMPLEX_UNIT_PX, context.getTextSize() * 0.9f)
-            val pad = (resources.displayMetrics.density * 12).toInt()
-            setPadding(pad, pad / 2, pad, pad / 2)
-            setBackgroundResource(R.drawable.ittc_chip_background)
-            val fill = color ?: primaryColor
-            background.mutate().applyColorFilter(if (on) fill else (textColor and 0x00FFFFFF) or 0x22000000)
-            setTextColor(if (on) fill.getContrastColor() else textColor)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = if (on || kind != ChipKind.NORMAL) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            maxLines = 1
+            gravity = android.view.Gravity.CENTER
+            minHeight = IttcTheme.dp(context, 36f)
+            val pad = IttcTheme.dp(context, 14f)
+            setPadding(pad, 0, pad, 0)
+            val p = pal()
+            when {
+                on && color != null -> IttcTheme.pill(this, color, color.getContrastColor())
+                on && kind == ChipKind.DANGER -> IttcTheme.pill(this, p.danger, p.surface)
+                on -> IttcTheme.pill(this, p.text, p.surface)
+                kind == ChipKind.DANGER -> IttcTheme.pill(this, p.dangerSoft, p.danger, p.danger.adjustAlpha(0.3f))
+                kind == ChipKind.SCOPE -> IttcTheme.pill(this, p.primarySoft, p.primary)
+                else -> IttcTheme.pill(this, p.surface, p.text, p.outline)
+            }
             setOnClickListener { onClick(it) }
         }
 
@@ -589,7 +666,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         row.addView(
             chip,
             ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                marginEnd = (resources.displayMetrics.density * 8).toInt()
+                marginEnd = IttcTheme.dp(context, 8f)
             },
         )
     }
@@ -598,7 +675,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         val row = binding.ittcLeadsChips
         row.removeAllViews()
         // (a super admin: whose leads, one choice in one chip)
-        if (isSuper) addChip(row, chipView(scopeLabel(), true) { pickScope(it) })
+        if (isSuper) addChip(row, chipView(scopeLabel(), false, ChipKind.SCOPE) { pickScope(it) })
         listOf(
             Filter.TODAY to R.string.ittc_chip_today,
             Filter.OVERDUE to R.string.ittc_chip_overdue,
@@ -607,9 +684,11 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             Filter.ALL to R.string.ittc_chip_all,
         ).forEach { (f, label) ->
             val n = list.count { matches(f, it, today) }
+            // (overdue is red while there are any)
+            val kind = if (f == Filter.OVERDUE && n > 0) ChipKind.DANGER else ChipKind.NORMAL
             addChip(
                 row,
-                chipView(context.getString(label, n), f == filter) {
+                chipView(context.getString(label, n), f == filter, kind) {
                     filter = f
                     render()
                 },
@@ -638,7 +717,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             if (n == 0 && st.id != stageId) return@forEach
             addChip(
                 row,
-                chipView("${st.name} $n", st.id == stageId, st.color) {
+                chipView("${st.name} $n", st.id == stageId, color = st.color) {
                     stageId = if (stageId == st.id) null else st.id
                     saveChoice()
                     render()
@@ -662,31 +741,37 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             else -> null
         }
         binding.ittcLeadsStatus.text = text
-        binding.ittcLeadsStatus.setTextColor(if (trackerClosed) 0xFFE53935.toInt() else textColor)
+        binding.ittcLeadsStatus.setTextColor(if (trackerClosed) pal().danger else pal().muted)
         binding.ittcLeadsStatus.beVisibleIf(text != null)
     }
 
     // ------------------------------------------------------------- rows
-    private fun whenText(l: IttcBridge.PhoneLead): String? {
-        val next = l.nextCall ?: return l.lastContacted?.let {
-            "last call " + DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
-        } ?: "never called"
-        val today = startOfToday()
+    /** "in 20 min" / "2 h" / "3 d" (how far a time is from now) */
+    private fun span(ms: Long): String {
+        val min = (Math.abs(ms) / 60_000L).coerceAtLeast(1)
         return when {
-            next < today -> "⚠ was due " + DateUtils.getRelativeTimeSpanString(next, System.currentTimeMillis(), DateUtils.DAY_IN_MILLIS)
-            next < today + DateUtils.DAY_IN_MILLIS -> "today " + DateUtils.formatDateTime(context, next, DateUtils.FORMAT_SHOW_TIME)
-            else -> DateUtils.formatDateTime(context, next, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_TIME)
+            min < 60 -> context.getString(R.string.ittc_a_min, min)
+            min < 24 * 60 -> context.getString(R.string.ittc_a_hours, min / 60)
+            else -> context.getString(R.string.ittc_a_days, min / (24 * 60))
         }
     }
 
-    private fun dotColor(l: IttcBridge.PhoneLead): Int {
-        val today = startOfToday()
-        val next = l.nextCall
+    /** "Next call 10:30 AM · in 20 min" / "Overdue 2 h" (red) / "Last call 3 days ago" / "Never called" */
+    private fun whenText(l: IttcBridge.PhoneLead, now: Long, today: Long): String {
+        val next = l.nextCall ?: return l.lastContacted?.let {
+            context.getString(R.string.ittc_a_last_call, DateUtils.getRelativeTimeSpanString(it, now, DateUtils.MINUTE_IN_MILLIS))
+        } ?: context.getString(R.string.ittc_a_never_called)
         return when {
-            next != null && next < today -> 0xFFE53935.toInt()
-            next != null && next < today + DateUtils.DAY_IN_MILLIS -> 0xFFFB8C00.toInt()
-            l.attempts == 0 && l.lastContacted == null -> 0xFF1E88E5.toInt()
-            else -> 0xFF43A047.toInt()
+            next < now -> context.getString(R.string.ittc_a_overdue, span(now - next))
+            next < today + DateUtils.DAY_IN_MILLIS -> context.getString(
+                R.string.ittc_a_next_today,
+                DateUtils.formatDateTime(context, next, DateUtils.FORMAT_SHOW_TIME),
+                span(next - now),
+            )
+            else -> context.getString(
+                R.string.ittc_a_next_at,
+                DateUtils.formatDateTime(context, next, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_TIME),
+            )
         }
     }
 
@@ -702,6 +787,22 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private fun call(number: String?) {
         if (number.isNullOrBlank()) return
         activity?.startCallIntent(number)
+    }
+
+    /** IttcTheme.initials without a regex per row (lists bind many rows) */
+    private fun initialsOf(name: String?): String {
+        val words = name.orEmpty().split(' ', '\t', '\n', '\u00A0').filter { w -> w.firstOrNull()?.isLetter() == true }
+        return when {
+            words.isEmpty() -> "#"
+            words.size == 1 -> words[0].take(2).uppercase()
+            else -> (words[0].take(1) + words[1].take(1)).uppercase()
+        }
+    }
+
+    /** A swipe's call: asks first when "confirm before calling" is on (as Recents) */
+    private fun callConfirmed(l: IttcBridge.PhoneLead) {
+        val number = l.callNumber?.takeIf { it.isNotBlank() } ?: return
+        activity?.startCallWithConfirmationCheck(number, l.name.ifEmpty { number })
     }
 
     private fun showOptions(l: IttcBridge.PhoneLead) {
@@ -730,6 +831,181 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         }
     }
 
+    // ------------------------------------------------------------- 👉 swipes
+    /** Swipe right: call; swipe left: the next call (direct) / the lead (Tracker) */
+    private fun setupSwipes() {
+        val list = binding.ittcLeadsList
+        ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT) {
+            override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder) = false
+
+            override fun getSwipeDirs(rv: RecyclerView, vh: RecyclerView.ViewHolder): Int {
+                @Suppress("DEPRECATION")
+                val l = adapter.at(vh.adapterPosition) ?: return 0
+                return if (l.callNumber.isNullOrBlank()) ItemTouchHelper.LEFT else ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT
+            }
+
+            override fun getSwipeThreshold(vh: RecyclerView.ViewHolder) = 0.35f
+
+            // (once a row is really being swiped, the tabs' pager must not take the move; until then it may)
+            override fun onSelectedChanged(vh: RecyclerView.ViewHolder?, actionState: Int) {
+                super.onSelectedChanged(vh, actionState)
+                if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE) list.parent?.requestDisallowInterceptTouchEvent(true)
+            }
+
+            // (a quick flick is not enough: no call by accident)
+            override fun getSwipeEscapeVelocity(defaultValue: Float) = defaultValue * 4
+
+            override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {
+                @Suppress("DEPRECATION")
+                val pos = vh.adapterPosition
+                val l = adapter.at(pos)
+                // (the card comes back: the swipe only starts the action)
+                if (pos != RecyclerView.NO_POSITION) adapter.notifyItemChanged(pos)
+                if (l == null) return
+                learnSwipe()
+                if (direction == ItemTouchHelper.RIGHT) callConfirmed(l) else nextCallFor(l)
+            }
+
+            override fun onChildDraw(
+                c: Canvas, rv: RecyclerView, vh: RecyclerView.ViewHolder, dX: Float, dY: Float, actionState: Int, isCurrentlyActive: Boolean,
+            ) {
+                if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE && dX != 0f) {
+                    try {
+                        painter().draw(c, vh.itemView, dX)
+                    } catch (_: Throwable) {
+                    }
+                }
+                super.onChildDraw(c, rv, vh, dX, dY, actionState, isCurrentlyActive)
+            }
+        }).attachToRecyclerView(list)
+    }
+
+    private fun swipeLearned() = prefs.getBoolean("leads_swipe_learned", false)
+
+    private fun learnSwipe() {
+        if (swipeLearned()) return
+        prefs.edit().putBoolean("leads_swipe_learned", true).apply()
+        binding.ittcLeadsHint.beVisibleIf(false)
+    }
+
+    private var swipePainter: SwipePainter? = null
+
+    private fun painter(): SwipePainter = swipePainter ?: SwipePainter(pal()).also { swipePainter = it }
+
+    /** What shows under a card while it is swiped (paints made once per theme) */
+    private inner class SwipePainter(p: IttcTheme.Palette) {
+        private val callPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.call }
+        private val nextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.primary }
+        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = p.onPrimary
+            textSize = IttcTheme.dp(context, 13f).toFloat()
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        private val callIcon: Drawable = resources.getColoredDrawableWithColor(R.drawable.ic_phone_vector, p.onPrimary)
+        private val nextIcon: Drawable = resources.getColoredDrawableWithColor(R.drawable.ic_clock_vector, p.onPrimary)
+        private val callLabel = context.getString(R.string.ittc_a_swipe_call)
+        private val nextLabel = context.getString(R.string.ittc_a_swipe_next)
+        private val rect = RectF()
+        private val radius = IttcTheme.dp(context, 16f).toFloat()
+        private val icon = IttcTheme.dp(context, 18f)
+        private val gap = IttcTheme.dp(context, 20f)
+
+        fun draw(c: Canvas, item: android.view.View, dX: Float) {
+            // (the card's place: the row minus its padding)
+            rect.set(
+                (item.left + item.paddingLeft).toFloat(), (item.top + item.paddingTop).toFloat(),
+                (item.right - item.paddingRight).toFloat(), (item.bottom - item.paddingBottom).toFloat(),
+            )
+            val right = dX > 0
+            c.drawRoundRect(rect, radius, radius, if (right) callPaint else nextPaint)
+            val d = if (right) callIcon else nextIcon
+            val label = if (right) callLabel else nextLabel
+            val cy = rect.centerY()
+            val textW = textPaint.measureText(label)
+            val iconLeft = if (right) (rect.left + gap).toInt() else (rect.right - gap - textW - icon - gap / 3).toInt()
+            d.setBounds(iconLeft, (cy - icon / 2).toInt(), iconLeft + icon, (cy + icon / 2).toInt())
+            d.draw(c)
+            c.drawText(label, iconLeft + icon + gap / 3f, cy - (textPaint.descent() + textPaint.ascent()) / 2f, textPaint)
+        }
+    }
+
+    // ------------------------------------------------------------- ⏰ next call (swipe left)
+    private fun nextCallFor(l: IttcBridge.PhoneLead) {
+        val act = activity ?: return
+        // (Tracker mode: the lead in the Tracker, as a tap does)
+        if (!direct) {
+            if (!IttcBridge.openLead(act, l.leadId)) showOptions(l)
+            return
+        }
+        val now = Calendar.getInstance()
+        fun at(daysAhead: Int, hour: Int): Long = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, daysAhead)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val choices = ArrayList<Pair<String, (() -> Unit)>>()
+        choices += context.getString(R.string.ittc_a_in_1h) to { saveNext(l, System.currentTimeMillis() + 3600_000L) }
+        if (now.get(Calendar.HOUR_OF_DAY) < 17) choices += context.getString(R.string.ittc_a_this_evening) to { saveNext(l, at(0, 18)) }
+        choices += context.getString(R.string.ittc_a_tomorrow) to { saveNext(l, at(1, 10)) }
+        choices += context.getString(R.string.ittc_a_in_2_days) to { saveNext(l, at(2, 10)) }
+        choices += context.getString(R.string.ittc_a_pick) to { pickDateTime(l) }
+        AlertDialog.Builder(act)
+            .setTitle(context.getString(R.string.ittc_a_next_title, l.name.ifEmpty { l.callNumber.orEmpty() }))
+            .setItems(choices.map { it.first }.toTypedArray()) { _, i -> choices[i].second() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun pickDateTime(l: IttcBridge.PhoneLead) {
+        val act = activity ?: return
+        val c = Calendar.getInstance().apply { l.nextCall?.takeIf { it > System.currentTimeMillis() }?.let { timeInMillis = it } }
+        DatePickerDialog(act, { _, y, mo, d ->
+            TimePickerDialog(act, { _, h, mi ->
+                val at = Calendar.getInstance().apply {
+                    set(y, mo, d, h, mi, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                if (at > System.currentTimeMillis()) saveNext(l, at) else context.toast(R.string.ittc_a_in_past)
+            }, 10, 0, android.text.format.DateFormat.is24HourFormat(act)).show()
+        }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).apply {
+            datePicker.minDate = System.currentTimeMillis() - 1000
+        }.show()
+    }
+
+    /** {"kind":"next"} into the outbox (sent at once with internet); the row moves at once */
+    private fun saveNext(l: IttcBridge.PhoneLead, at: Long) {
+        val act = activity ?: return
+        IttcDisclosure.showOnce(act) {
+            val app = act.applicationContext
+            ensureBackgroundThread {
+                val ok = try {
+                    IttcDirect.enqueue(app, JSONObject().put("kind", "next").put("lead_id", l.leadId).put("due_at", at))
+                    true
+                } catch (e: Throwable) {
+                    IttcCrash.record(app, e, "Leads tab: next call")
+                    false
+                }
+                post {
+                    if (!ok) {
+                        context.toast(R.string.ittc_a_next_failed)
+                        return@post
+                    }
+                    // (shown at once; the server's list confirms it in a moment)
+                    all = all.map { if (it.leadId == l.leadId) it.copy(nextCall = at) else it }
+                    render()
+                    context.toast(
+                        context.getString(
+                            R.string.ittc_a_next_set,
+                            DateUtils.formatDateTime(context, at, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_TIME),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     private inner class LeadsAdapter : RecyclerView.Adapter<LeadsAdapter.Holder>() {
         private var items: List<IttcBridge.PhoneLead> = emptyList()
 
@@ -738,7 +1014,22 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             notifyDataSetChanged()
         }
 
-        inner class Holder(val b: IttcItemLeadBinding) : RecyclerView.ViewHolder(b.root)
+        fun at(position: Int): IttcBridge.PhoneLead? = items.getOrNull(position)
+
+        /** (each card's shapes made once; only their colours change on bind) */
+        inner class Holder(val b: IttcItemLeadBinding) : RecyclerView.ViewHolder(b.root) {
+            val card = GradientDrawable().apply { cornerRadius = IttcTheme.dp(context, 16f).toFloat() }
+            val avatar = GradientDrawable().apply { shape = GradientDrawable.OVAL }
+            val pill = GradientDrawable().apply { cornerRadius = IttcTheme.dp(context, 999f).toFloat() }
+            val callBg = GradientDrawable().apply { shape = GradientDrawable.OVAL }
+
+            init {
+                b.ittcLeadHolder.background = card
+                b.ittcLeadAvatar.background = avatar
+                b.ittcLeadStage.background = pill
+                b.ittcLeadCall.background = callBg
+            }
+        }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
             Holder(IttcItemLeadBinding.inflate(LayoutInflater.from(parent.context), parent, false))
@@ -747,21 +1038,41 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val l = items[position]
+            val p = pal()
+            val now = System.currentTimeMillis()
+            val today = startOfToday()
+            holder.card.setColor(p.surface)
             holder.b.apply {
-                val size = context.getTextSize()
-                ittcLeadName.text = listOfNotNull(l.name.ifEmpty { l.callNumber }, if (l.rating.equals("hot", true)) "🔥" else null).joinToString(" ")
-                ittcLeadName.setTextColor(textColor)
-                ittcLeadName.setTextSize(TypedValue.COMPLEX_UNIT_PX, size)
+                val title = l.name.ifEmpty { l.callNumber.orEmpty() }
+                val (avBg, avFg) = IttcTheme.avatarColors(context, title)
+                holder.avatar.setColor(avBg)
+                ittcLeadAvatar.setTextColor(avFg)
+                ittcLeadAvatar.text = initialsOf(l.name)
+
+                ittcLeadName.text = if (l.rating.equals("hot", true)) "$title 🔥" else title
+                ittcLeadName.setTextColor(p.text)
+
+                val stage = l.stage?.takeIf { it.isNotBlank() }
+                ittcLeadStage.beVisibleIf(stage != null)
+                if (stage != null) {
+                    val (sBg, sFg) = IttcTheme.stageColors(context, stage)
+                    holder.pill.setColor(sBg)
+                    ittcLeadStage.setTextColor(sFg)
+                    ittcLeadStage.text = stage
+                }
+
                 val owner = if (isSuper && scope != Scope.MY && person == null) ownerName(l) else null
-                ittcLeadLine.text = listOfNotNull(owner, l.course, l.batch, l.stage, whenText(l)).joinToString(" · ")
-                ittcLeadLine.setTextColor(IttcBridge.stageColor(l.stage, primaryColor, textColor))
-                ittcLeadLine.setTextSize(TypedValue.COMPLEX_UNIT_PX, size * 0.8f)
+                val overdue = l.nextCall != null && l.nextCall < now
+                ittcLeadLine.text = listOfNotNull(owner, l.course, l.batch, whenText(l, now, today)).joinToString(" · ")
+                ittcLeadLine.setTextColor(if (overdue) p.danger else p.muted)
+                ittcLeadLine.setTypeface(null, if (overdue) Typeface.BOLD else Typeface.NORMAL)
+
                 ittcLeadNote.text = l.lastNote?.let { "“$it”" }
-                ittcLeadNote.setTextColor(textColor)
-                ittcLeadNote.setTextSize(TypedValue.COMPLEX_UNIT_PX, size * 0.8f)
+                ittcLeadNote.setTextColor(p.text2)
                 ittcLeadNote.beVisibleIf(!l.lastNote.isNullOrBlank())
-                ittcLeadDot.background.mutate().applyColorFilter(dotColor(l))
-                ittcLeadCall.applyColorFilter(primaryColor)
+
+                holder.callBg.setColor(p.callSoft)
+                ittcLeadCall.setColorFilter(p.call)
                 ittcLeadCall.setOnClickListener { call(l.callNumber) }
                 ittcLeadCall.beVisibleIf(l.callNumber != null)
                 // (direct mode: the lead's own screen; long press: the quick choices)

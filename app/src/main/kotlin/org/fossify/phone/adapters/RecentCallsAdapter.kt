@@ -2,6 +2,7 @@ package org.fossify.phone.adapters
 
 import android.annotation.SuppressLint
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.provider.CallLog.Calls
 import android.text.SpannableString
 import android.text.TextUtils
@@ -46,6 +47,7 @@ import org.fossify.commons.helpers.PERMISSION_WRITE_CALL_LOG
 import org.fossify.commons.helpers.SimpleContactsHelper
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isNougatPlus
+import org.fossify.commons.models.RecyclerSelectionPayload
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.phone.R
@@ -54,6 +56,7 @@ import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.databinding.ItemRecentCallBinding
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
+import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.databinding.ItemRecentsDateBinding
 import org.fossify.phone.dialogs.ShowGroupedCallsDialog
 import org.fossify.phone.extensions.areMultipleSIMsAvailable
@@ -77,7 +80,9 @@ class RecentCallsAdapter(
     private val showOverflowMenu: Boolean,
     private val itemDelete: (List<RecentCall>) -> Unit = {},
     itemClick: (Any) -> Unit,
-    val profileIconClick: ((Any) -> Unit)? = null
+    val profileIconClick: ((Any) -> Unit)? = null,
+    // 🎓 ITTC 3.5: the row's → button: the number's call history (a tap on the row calls)
+    private val historyClick: ((RecentCall) -> Unit)? = null,
 ) : MyRecyclerViewListAdapter<CallLogItem>(activity, recyclerView, RecentCallsDiffCallback(), itemClick) {
 
     private lateinit var outgoingCallIcon: Drawable
@@ -88,7 +93,6 @@ class RecentCallsAdapter(
     private var missedCallColor = resources.getColor(R.color.color_missed_call)
     private var secondaryTextColor = textColor.adjustAlpha(0.6f)
     private var textToHighlight = ""
-    private var durationPadding = resources.getDimension(R.dimen.normal_margin).toInt()
     private var phoneNumberUtilInstance: PhoneNumberUtil = PhoneNumberUtil.getInstance()
     private var phoneNumberOfflineGeocoderInstance: PhoneNumberOfflineGeocoder = PhoneNumberOfflineGeocoder.getInstance()
     private val cachedSimColors = HashMap<Pair<Int,Int>, Int>()
@@ -96,6 +100,24 @@ class RecentCallsAdapter(
     // 🎓 ITTC: Recents shows one row per number (not in "Show call details", which has no listener)
     private val ittcPerNumber: Boolean
         get() = refreshItemsListener != null && IttcCallHistory.onePerNumber(activity)
+
+    // 🎓 ITTC 3.5: the Recents tab's cards (the "Show call details" dialog keeps plain rows)
+    private val cardMode = refreshItemsListener != null
+    private var palette = IttcTheme.of(activity)
+    private var labelOutgoing = ""
+    private var labelIncoming = ""
+    private var labelMissed = ""
+    private var labelDeclined = ""
+    private var labelBlocked = ""
+    private var labelLead = ""
+    /** (looked up once per name / stage, not on every bind) */
+    private val avatarCache = HashMap<String, Avatar>()
+    private val stageCache = HashMap<String, Pair<Int, Int>>()
+    /** before this: "Earlier" — the row shows the date instead of the time */
+    private var yesterdayStart = 0L
+    private var dayEnd = 0L
+
+    private class Avatar(val initials: String, val bg: Int, val fg: Int)
 
     init {
         initDrawables()
@@ -187,10 +209,24 @@ class RecentCallsAdapter(
         val callRecord = currentList[position]
         when (holder) {
             is RecentCallDateViewHolder -> holder.bind(callRecord as CallLogItem.Date)
-            is RecentCallViewHolder -> holder.bind(callRecord as RecentCall)
+            is RecentCallViewHolder -> holder.bind(callRecord as RecentCall, position)
         }
 
         bindViewHolder(holder)
+    }
+
+    // 🎓 ITTC: after a new list only the corners / dividers of the rows on screen are drawn again (no full rebind, no flicker)
+    override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: MutableList<Any>) {
+        // (and a selection change only redraws the row's selected background: the base's payload)
+        if (payloads.isNotEmpty() && holder is RecentCallViewHolder && payloads.all { it === PAYLOAD_CORNERS || it is RecyclerSelectionPayload }) {
+            if (position in 0 until itemCount) {
+                if (payloads.any { it === PAYLOAD_CORNERS }) holder.bindCorners(position)
+                (payloads.lastOrNull { it is RecyclerSelectionPayload } as? RecyclerSelectionPayload)?.let { holder.bindSelected(it.selected) }
+            }
+            return
+        }
+        if (payloads.isNotEmpty() && payloads.all { it === PAYLOAD_CORNERS }) return
+        super.onBindViewHolder(holder, position, payloads)
     }
 
     override fun onViewRecycled(holder: ViewHolder) {
@@ -207,10 +243,23 @@ class RecentCallsAdapter(
         val recyclerViewState = layoutManager.onSaveInstanceState()
         super.submitList(list) {
             layoutManager.onRestoreInstanceState(recyclerViewState)
+            // 🎓 ITTC: a row's card corners depend on its neighbours: the rows on screen again
+            if (cardMode && !activity.isFinishing && !activity.isDestroyed) notifyItemRangeChanged(0, itemCount, PAYLOAD_CORNERS)
         }
     }
 
     fun initDrawables() {
+        // 🎓 ITTC 3.5: the palette, labels and day limits again (the theme may have changed)
+        palette = IttcTheme.of(activity)
+        avatarCache.clear()
+        stageCache.clear()
+        labelOutgoing = activity.getString(R.string.ittc_hist_outgoing)
+        labelIncoming = activity.getString(R.string.ittc_hist_incoming)
+        labelMissed = activity.getString(R.string.ittc_hist_missed)
+        labelDeclined = activity.getString(R.string.ittc_a_declined)
+        labelBlocked = activity.getString(R.string.ittc_a_blocked)
+        labelLead = activity.getString(R.string.ittc_a_lead)
+        dayEnd = 0L
         val theme = activity.theme
         missedCallColor = resources.getColor(R.color.color_missed_call, theme)
         secondaryTextColor = textColor.adjustAlpha(0.6f)
@@ -498,17 +547,131 @@ class RecentCallsAdapter(
         if (!activity.isFinishing && !activity.isDestroyed) notifyItemRangeChanged(0, itemCount)
     }
 
+    /** 🎓 ITTC: today's / yesterday's limits, worked out again once a day (not on every bind) */
+    private fun checkDay() {
+        val now = System.currentTimeMillis()
+        if (now < dayEnd) return
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+        dayEnd = cal.timeInMillis
+        cal.add(java.util.Calendar.DAY_OF_YEAR, -2)
+        yesterdayStart = cal.timeInMillis
+    }
+
+    /** 🎓 ITTC: a cheap "Rahim Hasan" → "RH" (no regex: Recents may bind thousands of rows) */
+    private fun avatarFor(name: String): Avatar = avatarCache.getOrPut(name) {
+        var first = ' '
+        var second = ' '
+        var atWordStart = true
+        for (ch in name) {
+            if (ch.isWhitespace()) {
+                atWordStart = true
+                continue
+            }
+            if (atWordStart && ch.isLetter()) {
+                if (first == ' ') {
+                    first = ch
+                } else if (second == ' ') {
+                    second = ch
+                    break
+                }
+            }
+            atWordStart = false
+        }
+        val initials = when {
+            first == ' ' -> "#"
+            second == ' ' -> name.trim().takeWhile { !it.isWhitespace() }.take(2).uppercase()
+            else -> "$first$second".uppercase()
+        }
+        val (bg, fg) = IttcTheme.avatarColors(activity, name)
+        Avatar(initials, bg, fg)
+    }
+
+    private fun stageColorsFor(stage: String): Pair<Int, Int> = stageCache.getOrPut(stage) { IttcTheme.stageColors(activity, stage) }
+
     private inner class RecentCallViewHolder(val binding: ItemRecentCallBinding) : ViewHolder(binding.root) {
-        fun bind(call: RecentCall) = bindView(
+        // 🎓 ITTC 3.5: this row's shapes, made once; a bind only changes their colours and corners
+        private val card = GradientDrawable()
+        private val avatarBg = GradientDrawable().apply { shape = GradientDrawable.OVAL }
+        private val pillBg = GradientDrawable().apply { cornerRadius = IttcTheme.dp(activity, 999f).toFloat() }
+        private val barBg = GradientDrawable().apply { cornerRadius = IttcTheme.dp(activity, 2f).toFloat() }
+        private val historyBg = GradientDrawable().apply { shape = GradientDrawable.OVAL }
+        private val photoPlaceholder = GradientDrawable().apply { shape = GradientDrawable.OVAL }
+        private var corners: FloatArray? = null
+        private var cardColor = 0
+        private var hasPhoto = false
+
+        init {
+            binding.itemRecentsAvatar.background = avatarBg
+            binding.itemRecentsPill.background = pillBg
+            binding.itemRecentsBar.background = barBg
+            binding.itemRecentsHistory.background = historyBg
+            if (cardMode) {
+                binding.root.background = card
+            } else {
+                // (the dialog: plain rows edge to edge, as before)
+                (binding.root.layoutParams as? ViewGroup.MarginLayoutParams)?.apply {
+                    marginStart = 0
+                    marginEnd = 0
+                }
+                binding.root.foreground = null
+            }
+        }
+
+        /** The selected look only (a selection change: no full bind) */
+        fun bindSelected(selected: Boolean) {
+            binding.itemRecentsHolder.isSelected = selected
+            if (cardMode) {
+                val fill = if (selected) palette.primarySoft else palette.surface
+                if (cardColor != fill) {
+                    cardColor = fill
+                    card.setColor(fill)
+                }
+            }
+        }
+
+        /** (one card per day: the first row rounded on top, the last at the bottom; a divider between) */
+        fun bindCorners(position: Int) {
+            if (!cardMode) return
+            val list = currentList
+            val first = list.getOrNull(position - 1) !is RecentCall
+            val last = list.getOrNull(position + 1) !is RecentCall
+            val want = cardCorners(first, last)
+            if (corners !== want) {
+                corners = want
+                card.cornerRadii = want
+            }
+            binding.itemRecentsDivider.beVisibleIf(!first)
+            if (!first) binding.itemRecentsDivider.setBackgroundColor(palette.divider)
+        }
+
+        fun bind(call: RecentCall, position: Int) = bindView(
             item = call,
             allowSingleClick = refreshItemsListener != null && !call.isUnknownNumber,
             allowLongClick = refreshItemsListener != null && !call.isUnknownNumber
         ) { _, _ ->
             binding.apply {
-                root.setupViewBackground(activity)
+                val p = palette
+                val selected = selectedKeys.contains(call.id)
+                itemRecentsHolder.isSelected = selected
+                if (cardMode) {
+                    bindCorners(position)
+                    val fill = if (selected) p.primarySoft else p.surface
+                    if (cardColor != fill) {
+                        cardColor = fill
+                        card.setColor(fill)
+                    }
+                } else {
+                    root.setupViewBackground(activity)
+                    itemRecentsDivider.beVisibleIf(false)
+                }
 
                 val currentFontSize = fontSize
-                itemRecentsHolder.isSelected = selectedKeys.contains(call.id)
                 val matchingContact = findContactByCall(call)
                 val name = matchingContact?.getNameToDisplay() ?: call.name
                 val formatPhoneNumbers = activity.config.formatPhoneNumbers
@@ -535,95 +698,99 @@ class RecentCallsAdapter(
                     nameToShow = SpannableString("$name - ${call.specificType}")
                 }
 
-                if (call.groupedCalls != null) {
-                    nameToShow = SpannableString("$nameToShow (${call.groupedCalls.size})")
-                }
-
                 if (textToHighlight.isNotEmpty() && nameToShow.contains(textToHighlight, true)) {
                     nameToShow = SpannableString(nameToShow.toString().highlightTextPart(textToHighlight, properPrimaryColor))
                 }
 
-                // 🎓 ITTC: a lead's number → the lead's name (when no contact has it) and course · stage
-                val lead = if (call.isUnknownNumber) null else IttcBridge.recentLead(activity, call.phoneNumber) {
+                // 🎓 ITTC: a lead's number → its stage pill, a coloured bar and "· Rahim · CSE"
+                val lead = if (call.isUnknownNumber || !cardMode) null else IttcBridge.recentLead(activity, call.phoneNumber) {
                     ittcRefresh()
                 }
                 // (not in the phone's contacts: the number stays the title, the lead's name goes
-                // small on the line below: "🎓 Rahim · CSE · Interested")
+                // on the line below)
                 val unsaved = matchingContact == null && name == call.phoneNumber
-                itemRecentsIttc.apply {
-                    beVisibleIf(lead != null && refreshItemsListener != null)
-                    if (lead != null) {
-                        val who = if (unsaved && lead.name.isNotEmpty()) "🎓 ${lead.name}" else activity.getString(R.string.ittc_lead_badge)
-                        text = listOfNotNull(who, lead.course, lead.stage).joinToString(" · ")
-                        setTextColor(IttcBridge.stageColor(lead.stage, properPrimaryColor, secondaryTextColor))
-                        setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
-                    }
-                }
+
+                // 🎓 ITTC: one row per number: "2 missed" (missed since the last answered / outgoing call)
+                val newMissed = if (ittcPerNumber) IttcCallHistory.newMissed(call) else 0
+                val missed = call.type == Calls.MISSED_TYPE || newMissed > 0
 
                 itemRecentsName.apply {
                     text = nameToShow
-                    setTextColor(textColor)
+                    setTextColor(if (missed) p.danger else p.text)
                     setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize)
-                    isSelected = true
                 }
 
-                // 🎓 ITTC: one row per number: "10:42 · 3 missed" (missed since the last answered / outgoing call)
-                val newMissed = if (ittcPerNumber && call.groupedCalls != null) IttcCallHistory.newMissed(call) else 0
+                itemRecentsCount.apply {
+                    val n = call.groupedCalls?.size ?: 0
+                    beVisibleIf(n > 1)
+                    if (n > 1) {
+                        text = "($n)"
+                        setTextColor(p.muted)
+                    }
+                }
+
+                val stage = lead?.stage?.takeIf { it.isNotBlank() }
+                itemRecentsPill.apply {
+                    when {
+                        newMissed > 0 -> {
+                            text = activity.getString(R.string.ittc_hist_missed_count, newMissed)
+                            pillBg.setColor(p.dangerStrong)
+                            setTextColor(p.dangerStrong.getContrastColor())
+                            beVisibleIf(true)
+                        }
+
+                        lead != null -> {
+                            val (bg, fg) = stageColorsFor(stage ?: "")
+                            text = stage ?: labelLead
+                            pillBg.setColor(bg)
+                            setTextColor(fg)
+                            beVisibleIf(true)
+                        }
+
+                        else -> beVisibleIf(false)
+                    }
+                }
+
+                itemRecentsBar.beVisibleIf(lead != null)
+                if (lead != null) barBg.setColor(stageColorsFor(stage ?: "").second)
+
+                // "Outgoing · 4m 12s · Rahim · CSE · Australia"
+                itemRecentsInfo.apply {
+                    val line = StringBuilder(48)
+                    line.append(
+                        when (call.type) {
+                            Calls.OUTGOING_TYPE -> labelOutgoing
+                            Calls.MISSED_TYPE -> labelMissed
+                            Calls.REJECTED_TYPE -> labelDeclined
+                            Calls.BLOCKED_TYPE -> labelBlocked
+                            else -> labelIncoming
+                        }
+                    )
+                    if (shouldShowDuration) line.append(" · ").append(context.formatSecondsToShortTimeString(call.duration))
+                    if (lead != null) {
+                        if (unsaved && lead.name.isNotEmpty()) line.append(" · ").append(lead.name)
+                        if (!lead.course.isNullOrBlank()) line.append(" · ").append(lead.course)
+                    }
+                    ittcLocation(call, matchingContact != null)?.let { line.append(" · ").append(it) }
+                    text = line
+                    setTextColor(p.muted)
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
+                }
+
                 itemRecentsDateTime.apply {
                     text = if (refreshItemsListener == null) {
                         call.startTS.formatDateOrTime(context, hideTimeOnOtherDays = false, showCurrentYear = false, hideTodaysDate = false)
-                    } else if (newMissed > 0) {
-                        "${call.startTS.formatTime(activity)} · ${activity.getString(R.string.ittc_hist_missed_count, newMissed)}"
                     } else {
-                        call.startTS.formatTime(activity)
+                        checkDay()
+                        // ("Earlier": the date; today / yesterday: the time)
+                        if (call.startTS >= yesterdayStart) {
+                            call.startTS.formatTime(activity)
+                        } else {
+                            call.startTS.formatDateOrTime(context, hideTimeOnOtherDays = true, showCurrentYear = false)
+                        }
                     }
-
-                    setTextColor(if (call.type == Calls.MISSED_TYPE || newMissed > 0) missedCallColor else secondaryTextColor)
+                    setTextColor(p.muted)
                     setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
-                }
-
-                itemRecentsDateTimeDurationSeparator.apply {
-                    text = "•"
-                    setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
-                    setTextColor(textColor)
-                    beVisibleIf(shouldShowDuration)
-                }
-
-                itemRecentsDuration.apply {
-                    text = context.formatSecondsToShortTimeString(call.duration)
-                    setTextColor(textColor)
-                    beVisibleIf(shouldShowDuration)
-                    setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
-                    if (!showOverflowMenu) {
-                        itemRecentsDuration.setPadding(0, 0, durationPadding, 0)
-                    }
-                }
-
-                itemRecentsLocation.apply {
-                    val locale = Locale.getDefault()
-                    val defaultCountryCode = locale.country
-                    val phoneNumber = try {
-                        phoneNumberUtilInstance
-                            .parse(call.phoneNumber, defaultCountryCode)
-                    } catch (_: NumberParseException) {
-                        null
-                    }
-
-                    val location = if (phoneNumber != null) {
-                        phoneNumberOfflineGeocoderInstance
-                            .getDescriptionForNumber(phoneNumber, locale, defaultCountryCode)
-                    } else {
-                        null
-                    }
-
-                    text = location
-                    setTextColor(textColor)
-                    setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
-                    beVisibleIf(
-                        phoneNumber != null
-                                && phoneNumber.countryCodeSource != Phonenumber.PhoneNumber.CountryCodeSource.FROM_DEFAULT_COUNTRY
-                                && (location != locale.displayCountry || matchingContact == null)
-                    )
                 }
 
                 itemRecentsSimImage.beVisibleIf(areMultipleSIMsAvailable && call.simID != -1)
@@ -635,24 +802,40 @@ class RecentCallsAdapter(
                     itemRecentsSimId.text = call.simID.toString()
                 }
 
-                SimpleContactsHelper(root.context).loadContactImage(call.photoUri, itemRecentsImage, call.name)
+                // 🎓 ITTC 3.5: a contact's photo, else the initials in a soft colour (no bitmap made)
+                val photo = call.photoUri.isNotEmpty()
+                if (photo) {
+                    photoPlaceholder.setColor(p.surfaceAlt)
+                    itemRecentsImage.beVisibleIf(true)
+                    itemRecentsAvatar.beVisibleIf(false)
+                    SimpleContactsHelper(root.context).loadContactImage(call.photoUri, itemRecentsImage, call.name, photoPlaceholder)
+                } else {
+                    if (hasPhoto && !activity.isDestroyed && !activity.isFinishing) Glide.with(activity).clear(itemRecentsImage)
+                    itemRecentsImage.beVisibleIf(false)
+                    itemRecentsAvatar.beVisibleIf(true)
+                    val avatar = avatarFor(if (unsaved && lead != null && lead.name.isNotEmpty()) lead.name else name)
+                    avatarBg.setColor(avatar.bg)
+                    itemRecentsAvatar.setTextColor(avatar.fg)
+                    itemRecentsAvatar.text = avatar.initials
+                }
+                hasPhoto = photo
 
-                itemRecentsImage.apply {
-                    if (profileIconClick != null) {
-                        setBackgroundResource(R.drawable.selector_clickable_circle)
-
-                        setOnClickListener {
-                            if (!actModeCallback.isSelectable) {
-                                profileIconClick.invoke(call)
-                            } else {
-                                viewClicked(call)
-                            }
-                        }
-                        setOnLongClickListener {
-                            viewLongClicked()
-                            true
+                if (profileIconClick != null) {
+                    val onProfile = View.OnClickListener {
+                        if (!actModeCallback.isSelectable) {
+                            profileIconClick.invoke(call)
+                        } else {
+                            viewClicked(call)
                         }
                     }
+                    val onProfileLong = View.OnLongClickListener {
+                        viewLongClicked()
+                        true
+                    }
+                    itemRecentsImage.setOnClickListener(onProfile)
+                    itemRecentsImage.setOnLongClickListener(onProfileLong)
+                    itemRecentsAvatar.setOnClickListener(onProfile)
+                    itemRecentsAvatar.setOnLongClickListener(onProfileLong)
                 }
 
                 val drawable = when (call.type) {
@@ -663,10 +846,21 @@ class RecentCallsAdapter(
 
                 itemRecentsType.setImageDrawable(drawable)
 
+                // 🎓 ITTC 3.5: → the number's call history (a tap on the row calls it)
+                val showHistory = cardMode && historyClick != null && !call.isUnknownNumber
+                itemRecentsHistory.beVisibleIf(showHistory)
+                if (showHistory) {
+                    historyBg.setColor(p.surfaceAlt)
+                    itemRecentsHistory.setColorFilter(p.text2)
+                    itemRecentsHistory.setOnClickListener {
+                        if (actModeCallback.isSelectable) viewClicked(call) else historyClick?.invoke(call)
+                    }
+                }
+
                 overflowMenuIcon.beVisibleIf(showOverflowMenu)
                 overflowMenuIcon.drawable.apply {
                     mutate()
-                    setTint(activity.getProperTextColor())
+                    setTint(if (cardMode) p.muted else activity.getProperTextColor())
                 }
 
                 overflowMenuIcon.setOnClickListener {
@@ -674,6 +868,34 @@ class RecentCallsAdapter(
                 }
             }
         }
+    }
+
+    /** 🎓 ITTC: the place of a number from abroad (as the old row showed it), else null */
+    private fun ittcLocation(call: RecentCall, isContact: Boolean): String? {
+        val locale = Locale.getDefault()
+        val defaultCountryCode = locale.country
+        val phoneNumber = try {
+            phoneNumberUtilInstance.parse(call.phoneNumber, defaultCountryCode)
+        } catch (_: NumberParseException) {
+            null
+        } ?: return null
+        if (phoneNumber.countryCodeSource == Phonenumber.PhoneNumber.CountryCodeSource.FROM_DEFAULT_COUNTRY) return null
+        val location = phoneNumberOfflineGeocoderInstance.getDescriptionForNumber(phoneNumber, locale, defaultCountryCode)
+        return location?.takeIf { it.isNotBlank() && (it != locale.displayCountry || !isContact) }
+    }
+
+    /** 🎓 ITTC: the four card shapes, shared by every row (never changed once made) */
+    private val radius = IttcTheme.dp(activity, 16f).toFloat()
+    private val cornersAll = FloatArray(8) { radius }
+    private val cornersTop = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
+    private val cornersBottom = floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius)
+    private val cornersNone = FloatArray(8)
+
+    private fun cardCorners(first: Boolean, last: Boolean): FloatArray = when {
+        first && last -> cornersAll
+        first -> cornersTop
+        last -> cornersBottom
+        else -> cornersNone
     }
 
     private fun getAdjustedSimColor(simColor: Int): Int {
@@ -685,11 +907,13 @@ class RecentCallsAdapter(
     private inner class RecentCallDateViewHolder(val binding: ItemRecentsDateBinding) : ViewHolder(binding.root) {
         fun bind(date: CallLogItem.Date) {
             binding.dateTextView.apply {
-                setTextColor(secondaryTextColor)
+                setTextColor(if (cardMode) palette.muted else secondaryTextColor)
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize * 0.76f)
 
                 val now = DateTime.now()
                 text = when (date.dayCode) {
+                    // 🎓 ITTC 3.5: every older day in one "Earlier" card
+                    EARLIER_DAY_CODE -> activity.getString(R.string.ittc_a_earlier)
                     now.millis.getDayCode() -> activity.getString(R.string.today)
                     now.minusDays(1).millis.getDayCode() -> activity.getString(R.string.yesterday)
                     else -> date.timestamp.formatDateOrTime(
@@ -705,6 +929,12 @@ class RecentCallsAdapter(
     companion object {
         private const val VIEW_TYPE_DATE = 0
         private const val VIEW_TYPE_CALL = 1
+
+        /** 🎓 ITTC: "only the corners and dividers" (a bind payload) */
+        private val PAYLOAD_CORNERS = Any()
+
+        /** 🎓 ITTC 3.5: the day code of the one "Earlier" group (before yesterday) */
+        const val EARLIER_DAY_CODE = "0000-00-00"
     }
 }
 
