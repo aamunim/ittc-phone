@@ -7,8 +7,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.Telephony.Sms.Intents.SECRET_CODE_ACTION
-import android.telephony.TelephonyManager
 import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -16,7 +14,6 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
-import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +32,6 @@ import org.fossify.commons.extensions.getMyContactsCursor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.isDefaultDialer
-import org.fossify.commons.extensions.normalizeString
 import org.fossify.commons.extensions.onTextChangeListener
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beGone
@@ -44,12 +40,10 @@ import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.value
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.ContactsHelper
-import org.fossify.commons.helpers.KeypadHelper
 import org.fossify.commons.helpers.LOWER_ALPHA_INT
 import org.fossify.commons.helpers.MyContactsContentProvider
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.REQUEST_CODE_SET_DEFAULT_DIALER
-import org.fossify.commons.helpers.isOreoPlus
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.R
@@ -66,6 +60,7 @@ import org.fossify.phone.extensions.startAddContactIntent
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.DIALPAD_TONE_LENGTH_MS
+import org.fossify.phone.helpers.IttcDialSearch
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.ToneGeneratorHelper
 import org.fossify.phone.models.SpeedDial
@@ -77,9 +72,8 @@ class DialpadActivity : SimpleActivity() {
 
     private var allContacts = ArrayList<Contact>()
 
-    // 🎓 ITTC: each contact's name as dial-pad digits, worked out once (not on every key press)
-    @Volatile
-    private var t9Names: Map<Contact, String> = emptyMap()
+    // 🎓 ITTC: what the keys match (names as keys worked out once), shared with the main screen's pad
+    private val dialSearch = IttcDialSearch()
     private var filterJob: Job? = null
     private var speedDialValues = ArrayList<SpeedDial>()
     private var privateCursor: Cursor? = null
@@ -89,18 +83,6 @@ class DialpadActivity : SimpleActivity() {
     private val pressedKeys = mutableSetOf<Char>()
 
     private var hasRussianLocale = false
-    private val russianCharsMap by lazy {
-        hashMapOf(
-            'а' to 2, 'б' to 2, 'в' to 2, 'г' to 2,
-            'д' to 3, 'е' to 3, 'ё' to 3, 'ж' to 3, 'з' to 3,
-            'и' to 4, 'й' to 4, 'к' to 4, 'л' to 4,
-            'м' to 5, 'н' to 5, 'о' to 5, 'п' to 5,
-            'р' to 6, 'с' to 6, 'т' to 6, 'у' to 6,
-            'ф' to 7, 'х' to 7, 'ц' to 7, 'ч' to 7,
-            'ш' to 8, 'щ' to 8, 'ъ' to 8, 'ы' to 8,
-            'ь' to 9, 'э' to 9, 'ю' to 9, 'я' to 9
-        )
-    }
 
     @Suppress("LongMethod")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -306,8 +288,7 @@ class DialpadActivity : SimpleActivity() {
             allContacts.sort()
         }
         // 🎓 ITTC: names as dial-pad digits, once
-        // (by the object itself: a private contact can share an id with a phone contact)
-        t9Names = java.util.IdentityHashMap<Contact, String>().apply { allContacts.forEach { put(it, t9Name(it)) } }
+        dialSearch.prepare(allContacts)
 
         runOnUiThread {
             if (!checkDialIntent() && binding.dialpadInput.value.isEmpty()) {
@@ -317,23 +298,7 @@ class DialpadActivity : SimpleActivity() {
     }
 
     private fun dialpadValueChanged(text: String) {
-        val len = text.length
-        if (len > 8 && text.startsWith("*#*#") && text.endsWith("#*#*")) {
-            val secretCode = text.substring(4, text.length - 4)
-            if (isOreoPlus()) {
-                if (isDefaultDialer()) {
-                    getSystemService(TelephonyManager::class.java)?.sendDialerSpecialCode(secretCode)
-                } else {
-                    // 🎓 ITTC: the disclosure first (Play)
-                    org.fossify.phone.helpers.IttcDisclosure.showOnce(this) { launchSetDefaultDialerIntent() }
-                }
-            } else {
-                val intent =
-                    Intent(SECRET_CODE_ACTION, "android_secret_code://$secretCode".toUri())
-                sendBroadcast(intent)
-            }
-            return
-        }
+        if (IttcDialSearch.secretCode(this, text)) return
 
         (binding.dialpadList.adapter as? ContactsAdapter)?.finishActMode()
 
@@ -341,36 +306,12 @@ class DialpadActivity : SimpleActivity() {
         filterJob?.cancel()
         filterJob = lifecycleScope.launch {
             val contacts = allContacts
-            val names = t9Names
             val filtered = withContext(Dispatchers.Default) {
-                contacts.filter { contact ->
-                    ensureActive()
-                    val convertedName = names[contact] ?: t9Name(contact)
-                    contact.doesContainPhoneNumber(text) || (convertedName.contains(text, true))
-                }.sortedWith(compareBy {
-                    !it.doesContainPhoneNumber(text)
-                }).toMutableList() as ArrayList<Contact>
+                dialSearch.contacts(contacts, text) { ensureActive() }
             }
             if (binding.dialpadInput.value == text) showFiltered(filtered, text)
         }
         ittcShowLead(text)
-    }
-
-    /** A contact's name as dial-pad digits ("Rahim" → "72446") */
-    private fun t9Name(contact: Contact): String {
-        var convertedName = KeypadHelper.convertKeypadLettersToDigits(
-            contact.name.normalizeString()
-        ).filterNot { it.isWhitespace() }
-
-        if (hasRussianLocale) {
-            var currConvertedName = ""
-            convertedName.lowercase(Locale.getDefault()).forEach { char ->
-                val convertedChar = russianCharsMap.getOrElse(char) { char }
-                currConvertedName += convertedChar
-            }
-            convertedName = currConvertedName
-        }
-        return convertedName
     }
 
     private fun showFiltered(filtered: ArrayList<Contact>, text: String) {
@@ -399,14 +340,7 @@ class DialpadActivity : SimpleActivity() {
     private fun ittcShowMatches(text: String) {
         val box = binding.ittcDialpadMatches
         box.removeAllViews()
-        val digits = text.filter { it.isDigit() }
-        if (digits.length < 2) return
-        val leads = IttcBridge.myLeadsCache
-        if (leads.isEmpty()) return
-        val hits = leads.filter { l ->
-            ittcT9(l.name).contains(digits) ||
-                (digits.length >= 4 && listOfNotNull(l.phone, l.altPhone).any { it.filter(Char::isDigit).contains(digits) })
-        }.take(3)
+        val hits = IttcDialSearch.leads(text, 3)
         val primary = getProperPrimaryColor()
         val pad = (resources.displayMetrics.density * 8).toInt()
         hits.forEach { l ->
@@ -423,9 +357,6 @@ class DialpadActivity : SimpleActivity() {
             })
         }
     }
-
-    private fun ittcT9(name: String): String =
-        KeypadHelper.convertKeypadLettersToDigits(name.normalizeString()).filterNot { it.isWhitespace() }
 
     // 🎓 ITTC: a full number that is a lead's → who it is, above the dial pad (tap: the lead)
     private fun ittcShowLead(text: String) {

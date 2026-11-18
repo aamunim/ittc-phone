@@ -21,6 +21,8 @@ class ViewPagerAdapter(val activity: SimpleActivity) : PagerAdapter() {
 
         (view as MyViewPagerFragment<*>).apply {
             setupFragment(activity)
+            // 🎓 ITTC 3.6: dragging its list folds the main screen's dial pad
+            (activity as? org.fossify.phone.activities.MainActivity)?.ittcPageCreated(this)
         }
 
         return view

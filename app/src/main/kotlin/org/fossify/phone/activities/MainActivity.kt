@@ -67,6 +67,17 @@ class MainActivity : SimpleActivity() {
     private var storedStartNameWithSurname = false
     var cachedContacts = ArrayList<Contact>()
 
+    // 🎓 ITTC 3.6: the dial pad on the main screen; the contacts it searches (a list never changed
+    // after it is set, safe to read off the main thread); a tab change counts only after a touch
+    // (the first tab is chosen by code at start)
+    private lateinit var ittcDialpad: IttcMainDialpad
+
+    @Volatile
+    private var ittcDialContacts: List<Contact> = emptyList()
+    private var ittcUserTouched = false
+    private var ittcLastTab = -1
+    private var ittcStoredOpenWithDialpad = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
         org.fossify.phone.helpers.IttcCrash.install(this)
         super.onCreate(savedInstanceState)
@@ -124,6 +135,7 @@ class MainActivity : SimpleActivity() {
 
         setupTabs()
         Contact.sorting = config.sorting
+        setupIttcDialpad(savedInstanceState)
     }
 
     override fun onResume() {
@@ -135,6 +147,12 @@ class MainActivity : SimpleActivity() {
         }
 
         updateMenuColors()
+        // 🎓 ITTC 3.6: the dial pad's colours (the theme may have changed) and its setting
+        ittcDialpad.applyColors()
+        if (ittcStoredOpenWithDialpad != config.ittcOpenWithDialpad) {
+            ittcStoredOpenWithDialpad = config.ittcOpenWithDialpad
+            ittcDialpad.settingChanged()
+        }
         val properPrimaryColor = getProperPrimaryColor()
         val dialpadIcon = resources.getColoredDrawableWithColor(R.drawable.ic_dialpad_vector, properPrimaryColor.getContrastColor())
         binding.mainDialpadButton.setImageDrawable(dialpadIcon)
@@ -215,10 +233,13 @@ class MainActivity : SimpleActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(OPEN_DIAL_PAD_AT_LAUNCH, launchedDialer)
+        ittcDialpad.save(outState)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        // 🎓 ITTC 3.6: the dial pad's keys for the new height (folded when it no longer fits)
+        ittcDialpad.configurationChanged()
         if (IttcDisclosure.agreed(this)) refreshItems()
     }
 
@@ -227,8 +248,33 @@ class MainActivity : SimpleActivity() {
             binding.mainMenu.closeSearch()
             true
         } else {
-            false
+            // 🎓 ITTC 3.6: as on MIUI, Back folds the dial pad first (then clears what it typed), then leaves
+            ittcDialpad.onBack()
         }
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        ittcUserTouched = true
+    }
+
+    // 🎓 ITTC 3.6: the dial pad on the main screen (open on a fresh start with the setting on); the
+    // round button opens it (or, with the setting off, the dial pad screen, as before)
+    private fun setupIttcDialpad(savedInstanceState: Bundle?) {
+        ittcStoredOpenWithDialpad = config.ittcOpenWithDialpad
+        ittcDialpad = IttcMainDialpad(
+            activity = this,
+            main = binding,
+            callLog = { getRecentsFragment()?.ittcCallLog().orEmpty() },
+            contacts = { ittcDialContacts },
+        )
+        binding.mainDialpadButton.setOnClickListener { ittcDialpad.open() }
+        ittcDialpad.restore(savedInstanceState)
+    }
+
+    /** 🎓 ITTC 3.6: a tab's page made: dragging its list folds the dial pad */
+    fun ittcPageCreated(page: MyViewPagerFragment<*>) {
+        page.ittcOnUserScroll { if (::ittcDialpad.isInitialized) ittcDialpad.collapse() }
     }
 
     override fun onDestroy() {
@@ -254,6 +300,11 @@ class MainActivity : SimpleActivity() {
             requireToolbar().inflateMenu(R.menu.menu)
             toggleHideOnScroll(false)
             setupMenu()
+
+            // 🎓 ITTC 3.6: the search takes the place of the dial pad
+            onSearchOpenListener = {
+                if (::ittcDialpad.isInitialized) ittcDialpad.hideAll()
+            }
 
             onSearchClosedListener = {
                 getAllFragments().forEach {
@@ -363,15 +414,39 @@ class MainActivity : SimpleActivity() {
 
     private fun setupTabColors() {
         val activeView = binding.mainTabsHolder.getTabAt(binding.viewPager.currentItem)?.customView
-        updateBottomTabItemColors(activeView, true, getSelectedTabDrawableIds()[binding.viewPager.currentItem])
+        ittcStyleTab(activeView, true, getSelectedTabDrawableIds()[binding.viewPager.currentItem])
 
         getInactiveTabIndexes(binding.viewPager.currentItem).forEach { index ->
             val inactiveView = binding.mainTabsHolder.getTabAt(index)?.customView
-            updateBottomTabItemColors(inactiveView, false, getDeselectedTabDrawableIds()[index])
+            ittcStyleTab(inactiveView, false, getDeselectedTabDrawableIds()[index])
         }
 
-        val bottomBarColor = getBottomNavigationBackgroundColor()
-        binding.mainTabsHolder.setBackgroundColor(bottomBarColor)
+        // 🎓 ITTC 3.6: a flat surface bar with a thin line on top (no shadow)
+        val p = org.fossify.phone.helpers.IttcTheme.of(this)
+        binding.mainTabsHolder.setBackgroundColor(p.surface)
+        binding.ittcTabsDivider.setBackgroundColor(if (p.dark) p.divider else p.outline)
+        binding.ittcTabsDivider.beVisibleIf(binding.mainTabsHolder.isVisible())
+    }
+
+    /**
+     * 🎓 ITTC 3.6: a tab as in Material 3 — chosen: the filled icon on a soft pill and a bold label,
+     * in the app's accent; the others: the outlined icon and label, muted
+     */
+    private fun ittcStyleTab(view: View?, active: Boolean, drawableId: Int) {
+        view ?: return
+        val p = org.fossify.phone.helpers.IttcTheme.of(this)
+        val accent = getProperPrimaryColor()
+        val color = if (active) accent else p.muted
+        view.findViewById<ImageView>(R.id.tab_item_icon)?.apply {
+            setImageResource(drawableId)
+            setColorFilter(color)
+        }
+        view.findViewById<TextView>(R.id.tab_item_label)?.apply {
+            setTextColor(color)
+            setTypeface(null, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        }
+        view.findViewById<View>(R.id.ittc_tab_pill)?.background =
+            if (active) org.fossify.phone.helpers.IttcTheme.rounded(this, accent.adjustAlpha(0.16f), 999f) else null
     }
 
     private fun getInactiveTabIndexes(activeIndex: Int) = (0 until binding.mainTabsHolder.tabCount).filter { it != activeIndex }
@@ -412,7 +487,7 @@ class MainActivity : SimpleActivity() {
             icons.add(R.drawable.ic_clock_vector)
         }
 
-        icons.add(R.drawable.ittc_ic_leads)
+        icons.add(R.drawable.ittc_ic_leads_outline)
         return icons
     }
 
@@ -456,15 +531,12 @@ class MainActivity : SimpleActivity() {
             }, 100L)
         }
 
-        binding.mainDialpadButton.setOnClickListener {
-            launchDialpad()
-        }
-
         binding.viewPager.onGlobalLayout {
             refreshMenuItems()
         }
 
-        if (config.openDialPadAtLaunch && !launchedDialer) {
+        // (🎓 ITTC 3.6: not with the main screen's own dial pad, open already)
+        if (config.openDialPadAtLaunch && !launchedDialer && !config.ittcOpenWithDialpad) {
             launchDialpad()
             launchedDialer = true
         }
@@ -475,7 +547,7 @@ class MainActivity : SimpleActivity() {
         binding.mainTabsHolder.removeAllTabs()
         tabsList.forEachIndexed { index, value ->
             if (config.showTabs and value != 0) {
-                binding.mainTabsHolder.newTab().setCustomView(R.layout.bottom_tablayout_item).apply {
+                binding.mainTabsHolder.newTab().setCustomView(R.layout.ittc_tab_item).apply {
                     customView?.findViewById<ImageView>(R.id.tab_item_icon)?.setImageDrawable(getTabIcon(index))
                     customView?.findViewById<TextView>(R.id.tab_item_label)?.text = getTabLabel(index)
                     AutofitHelper.create(customView?.findViewById(R.id.tab_item_label))
@@ -485,7 +557,7 @@ class MainActivity : SimpleActivity() {
         }
 
         // 🎓 ITTC: the "Leads" tab, always last
-        binding.mainTabsHolder.newTab().setCustomView(R.layout.bottom_tablayout_item).apply {
+        binding.mainTabsHolder.newTab().setCustomView(R.layout.ittc_tab_item).apply {
             customView?.findViewById<ImageView>(R.id.tab_item_icon)?.setImageDrawable(
                 resources.getColoredDrawableWithColor(R.drawable.ittc_ic_leads, getProperTextColor())
             )
@@ -496,12 +568,17 @@ class MainActivity : SimpleActivity() {
 
         binding.mainTabsHolder.onTabSelectionChanged(
             tabUnselectedAction = {
-                updateBottomTabItemColors(it.customView, false, getDeselectedTabDrawableIds()[it.position])
+                ittcStyleTab(it.customView, false, getDeselectedTabDrawableIds()[it.position])
             },
             tabSelectedAction = {
+                // 🎓 ITTC 3.6: another tab (chosen by hand, not the one picked at start) hides the dial pad
+                if (ittcLastTab != -1 && ittcLastTab != it.position && ittcUserTouched && ::ittcDialpad.isInitialized) {
+                    ittcDialpad.hideAll()
+                }
+                ittcLastTab = it.position
                 getCurrentFragment()?.onSearchQueryChanged(binding.mainMenu.getCurrentQuery())
                 binding.viewPager.currentItem = it.position
-                updateBottomTabItemColors(it.customView, true, getSelectedTabDrawableIds()[it.position])
+                ittcStyleTab(it.customView, true, getSelectedTabDrawableIds()[it.position])
 
                 // (Recents is just before the Leads tab)
                 val recentsPosition = binding.mainTabsHolder.tabCount - 2
@@ -515,6 +592,7 @@ class MainActivity : SimpleActivity() {
         )
 
         binding.mainTabsHolder.beGoneIf(binding.mainTabsHolder.tabCount <= 1)
+        binding.ittcTabsDivider.beGoneIf(binding.mainTabsHolder.tabCount <= 1)
         storedShowTabs = config.showTabs
         storedStartNameWithSurname = config.startNameWithSurname
     }
@@ -826,6 +904,9 @@ class MainActivity : SimpleActivity() {
                 cachedContacts.addAll(contacts)
             } catch (ignored: Exception) {
             }
+            // 🎓 ITTC 3.6: for the dial pad's search (its own copy, never changed after)
+            ittcDialContacts = ArrayList(contacts)
+            runOnUiThread { if (!isDestroyed && ::ittcDialpad.isInitialized) ittcDialpad.contactsChanged() }
         }
     }
 

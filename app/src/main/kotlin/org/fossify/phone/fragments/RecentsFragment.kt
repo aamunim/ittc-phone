@@ -167,6 +167,9 @@ class RecentsFragment(
         }
     }
 
+    /** 🎓 ITTC 3.6: the calls read (for the main screen dial pad's matches; filter off the main thread) */
+    fun ittcCallLog(): List<CallLogItem> = allRecentCalls
+
     override fun onSearchClosed() {
         searchQuery = null
         // (🎓 "Leads only" still applies)

@@ -29,4 +29,18 @@
         <item name="android:textSize">12sp</item>
         <item name="android:textStyle">bold</item>
     </style>
+
+    <!-- 🎓 ITTC 3.6: a round key of the main screen's dial pad (the text: the digit and its letters) -->
+    <style name="IttcDialKey">
+        <item name="android:layout_width">@dimen/ittc_dp_key</item>
+        <item name="android:layout_height">@dimen/ittc_dp_key</item>
+        <item name="android:layout_marginStart">@dimen/ittc_dp_key_side</item>
+        <item name="android:layout_marginEnd">@dimen/ittc_dp_key_side</item>
+        <item name="android:gravity">center</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:textSize">26sp</item>
+    </style>
 </resources>

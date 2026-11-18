@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- (a dial pad key's text size before it was scaled to the key) -->
+    <item name="ittc_dp_base_size" type="id" />
+</resources>
