@@ -282,6 +282,8 @@ class IttcLeadActivity : SimpleActivity() {
                     showTemplates()
                 }
                 runPendingAction()
+                // (no lead at all from the list or the server: the asked action is dropped, not run later by surprise)
+                if (lead == null) pendingAction = null
             }
         }
     }
