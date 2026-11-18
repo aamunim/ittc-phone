@@ -46,8 +46,8 @@ jobs:
 
       - name: Version
         env:
-          HAS_URL: ${{ secrets.SUPABASE_URL != '' }}
-          HAS_KEY: ${{ secrets.SUPABASE_ANON_KEY != '' }}
+          HAS_URL: ${{ (secrets.SUPABASE_URL || secrets.EXPO_PUBLIC_SUPABASE_URL || vars.SUPABASE_URL) != '' }}
+          HAS_KEY: ${{ (secrets.SUPABASE_ANON_KEY || secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY) != '' }}
         run: |
           echo "ITTC Phone $(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2), version code $((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_STEP_SUMMARY"
           # (yes / no only — never the values: without both, the build has no ITTC sign-in)
@@ -87,8 +87,9 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.ITTC_KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.ITTC_KEYSTORE_PASSWORD }}
           # (the ITTC server for signing in by itself; empty in forks: the option is hidden)
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # (also under the Tracker's names, or as repository variables: the anon key is a public key)
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.EXPO_PUBLIC_SUPABASE_URL || vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
         run: |
           chmod +x gradlew
           # (Google Play wants a new version code on every upload: 1000 + this run's number)

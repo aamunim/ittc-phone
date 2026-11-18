@@ -36,8 +36,13 @@ android {
         // 🎓 ITTC Phone 3.2: the ITTC server for signing in by itself (repository secrets
         //  SUPABASE_URL / SUPABASE_ANON_KEY; the anon key is a public key, the server's row
         //  security decides what anyone may see). Empty: the sign-in option is hidden.
-        buildConfigField("String", "ITTC_SERVER_URL", "\"${providers.environmentVariable("SUPABASE_URL").orElse("").get().trim().trimEnd('/')}\"")
-        buildConfigField("String", "ITTC_SERVER_KEY", "\"${providers.environmentVariable("SUPABASE_ANON_KEY").orElse("").get().trim()}\"")
+        // (pasted with quotes, spaces or without "https://": cleaned here)
+        val ittcUrl = providers.environmentVariable("SUPABASE_URL").orElse("").get()
+            .trim().trim('"', '\'').trim().trimEnd('/')
+            .let { if (it.isNotEmpty() && !it.startsWith("http")) "https://$it" else it }
+        val ittcKey = providers.environmentVariable("SUPABASE_ANON_KEY").orElse("").get().trim().trim('"', '\'').trim()
+        buildConfigField("String", "ITTC_SERVER_URL", "\"$ittcUrl\"")
+        buildConfigField("String", "ITTC_SERVER_KEY", "\"$ittcKey\"")
     }
 
     signingConfigs {
