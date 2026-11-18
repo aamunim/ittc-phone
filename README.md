@@ -40,9 +40,9 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
   licence, source code, libraries). Fossify's "More apps" menu item and its About screen (its
   links, donation and social pages) are gone. Kept, as the GNU GPL requires: the licence, the
   copyright notices in the source, and a credit line "based on Fossify Phone" in About.
-- App name "ITTC Phone". The app id stays `org.fossify.phone` because Fossify's shared library
-  checks for it (calls, the phone-app role, app icons). So ITTC Phone and the real Fossify Phone
-  cannot be installed together; uninstall Fossify Phone first if it is there.
+- App name "ITTC Phone", app id **`com.abamunim.ittcphone`** (2.0.0, for Google Play; the code stays
+  in `org.fossify.phone`). Fossify Commons is kept in `commons/` with small changes so it works under
+  another app id (see `commons/ITTC_CHANGES.md`). Older GitHub builds used `org.fossify.phone`.
 
 The two apps talk only through the Tracker's provider; each checks the other's signing
 certificate against a fixed list (the Tracker from Google Play carries Google's key). The
@@ -68,7 +68,10 @@ contract is in [docs/ITTC.md](docs/ITTC.md).
 
 ## Build
 
-GitHub Actions builds every push. A tag `v1.2.3` makes a GitHub Release with the APK.
+GitHub Actions builds every push (a test APK and the Play bundle `.aab` as artifacts). To send it
+to Google Play: Actions → Build → Run workflow (`main`) → track `internal` / `alpha` /
+`production`. See `play/README.md` for the Play Console steps and the store listing. GitHub
+Releases with an APK are no longer made.
 Signing uses the repository secrets `ITTC_KEYSTORE_BASE64`, `ITTC_KEYSTORE_PASSWORD`,
 `ITTC_KEY_ALIAS` and `ITTC_KEY_PASSWORD` (the Tracker's key).
 

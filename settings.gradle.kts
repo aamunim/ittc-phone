@@ -14,5 +14,12 @@ dependencyResolutionManagement {
         maven { setUrl("https://www.jitpack.io") }
         mavenLocal()
     }
+    // (Fossify Commons, kept in this repository: its own library versions)
+    versionCatalogs {
+        create("clibs") {
+            from(files("gradle/commons.versions.toml"))
+        }
+    }
 }
 include(":app")
+include(":commons")

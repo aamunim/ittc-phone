@@ -27,10 +27,12 @@ class IttcAboutActivity : SimpleActivity() {
             setupEdgeToEdge(padBottomSystem = listOf(ittcAboutScrollview))
             setupMaterialScrollListener(ittcAboutScrollview, ittcAboutAppbar)
             ittcAboutVersion.text = getString(R.string.ittc_about_version, BuildConfig.VERSION_NAME)
-            ittcAboutUpdate.setOnClickListener { open("$REPO/releases/latest") }
+            // (Google Play updates the app; the store page shows when there is a new version)
+            ittcAboutUpdate.setOnClickListener { open(PLAY) }
             ittcAboutTracker.setOnClickListener {
                 if (!IttcBridge.openTracker(this@IttcAboutActivity)) toast(R.string.ittc_tracker_missing)
             }
+            ittcAboutPolicy.setOnClickListener { open("https://lead.ittc.edu.bd/privacy-ittc-phone") }
             ittcAboutSource.setOnClickListener { open(REPO) }
             ittcAboutLicence.setOnClickListener { open("https://www.gnu.org/licenses/gpl-3.0.html") }
             ittcAboutLibraries.setOnClickListener {
@@ -59,5 +61,6 @@ class IttcAboutActivity : SimpleActivity() {
 
     private companion object {
         const val REPO = "https://github.com/aamunim/ittc-phone"
+        val PLAY get() = "https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID.removeSuffix(".debug")}"
     }
 }

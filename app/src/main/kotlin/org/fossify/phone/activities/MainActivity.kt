@@ -25,6 +25,7 @@ import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import org.fossify.commons.models.RadioItem
 import org.fossify.commons.models.contacts.Contact
+import org.fossify.phone.helpers.IttcDisclosure
 import org.fossify.phone.BuildConfig
 import org.fossify.phone.R
 import org.fossify.phone.adapters.ViewPagerAdapter
@@ -98,7 +99,9 @@ class MainActivity : SimpleActivity() {
                 }
             }
         } else {
-            launchSetDefaultDialerIntent()
+            // 🎓 ITTC: first what the app does with calls and contacts (Google Play's
+            // "prominent disclosure"), then Android's "make it the phone app" question
+            IttcDisclosure.showOnce(this) { launchSetDefaultDialerIntent() }
         }
 
         if (isQPlus() && (config.blockUnknownNumbers || config.blockHiddenNumbers)) {

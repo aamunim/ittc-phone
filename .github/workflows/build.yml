@@ -1,25 +1,28 @@
-# 🎓 ITTC Phone: build the APK, signed with the ITTC Admission Tracker's key
-#  - every push / pull request: build (the signed APK is kept as a workflow artifact)
-#  - a tag "v1.2.3" (must match VERSION_NAME in gradle.properties): the same, then a
-#    GitHub Release with the APK — the Tracker's "Get ITTC Phone" button opens /releases/latest
-#  - 📱 from a phone: Actions → Build → Run workflow (branch main) → "Make a release" ✓ —
-#    makes the release "v<VERSION_NAME>" with the APK, no tag to type, no Releases page needed
+# 🎓 ITTC Phone: build it, and send it to Google Play (app id com.abamunim.ittcphone)
+#  - every push / pull request: build (a test APK and the Play bundle .aab are kept as artifacts)
+#  - 📱 Google Play: Actions → Build → Run workflow (branch main) → "Google Play track":
+#      internal = Internal testing · alpha = Closed testing · production = everyone (later)
+#    The very first bundle of a new app is uploaded by hand in Play Console (Google's rule):
+#    download "ittc-phone-play" from this run's Artifacts and upload the .aab there.
+#  - GitHub Releases with an APK are no longer made (ITTC Phone comes from Google Play).
 name: Build
 
 on:
   push:
     branches: ["**"]
-    tags: ["v*"]
-  # a release published on GitHub's Releases page (its tag is made there): build and attach the APK
-  release:
-    types: [published]
   pull_request:
   workflow_dispatch:
     inputs:
-      release:
-        description: 'Make a release (v + VERSION_NAME in gradle.properties) with the APK'
-        type: boolean
-        default: false
+      play_track:
+        description: 'Google Play track (none = only build)'
+        type: choice
+        options: [none, internal, alpha, production]
+        default: none
+      play_status:
+        description: 'Release status on Play (draft until the app has been reviewed once)'
+        type: choice
+        options: [completed, draft]
+        default: completed
 
 permissions:
   contents: read
@@ -27,9 +30,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    outputs:
-      version: ${{ steps.version.outputs.version }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -40,25 +41,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: The app's version
-        id: version
-        run: echo "version=$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
-
-      - name: A release from the phone is made from main only
-        if: github.event_name == 'workflow_dispatch' && inputs.release
+      - name: To Google Play from main only
+        if: github.event_name == 'workflow_dispatch' && inputs.play_track != 'none'
         run: |
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::Run it on the main branch to make a release (now: $GITHUB_REF_NAME)."
-            exit 1
-          fi
-
-      - name: A release tag matches the app's version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          want="${GITHUB_REF_NAME#v}"
-          have="$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)"
-          if [ "$want" != "$have" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME but VERSION_NAME=$have in gradle.properties (raise VERSION_NAME and VERSION_CODE first)"
+            echo "::error::Run it on the main branch to send it to Google Play (now: $GITHUB_REF_NAME)."
             exit 1
           fi
 
@@ -70,21 +57,21 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/ittc.jks"
             echo "SIGNING_STORE_FILE=$RUNNER_TEMP/ittc.jks" >> "$GITHUB_ENV"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]] || [ "${{ github.event_name == 'workflow_dispatch' && inputs.release }}" = "true" ]; then
-            echo "::error::No signing key: a release must be signed (secret ITTC_KEYSTORE_BASE64)."
+          elif [ "${{ github.event_name == 'workflow_dispatch' && inputs.play_track != 'none' }}" = "true" ]; then
+            echo "::error::No signing key: Google Play needs a signed bundle (secret ITTC_KEYSTORE_BASE64)."
             exit 1
           else
-            echo "::warning::No signing key (secrets not available): the APK will be unsigned."
+            echo "::warning::No signing key (secrets not available): the build will be unsigned."
           fi
 
-      - name: Build the APK
+      - name: Build the APK and the Play bundle
         env:
           SIGNING_KEY_ALIAS: ${{ secrets.ITTC_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.ITTC_KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.ITTC_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleFossRelease
+          ./gradlew --no-daemon assembleFossRelease bundleFossRelease
 
       - name: Remove the key file
         if: always()
@@ -93,52 +80,54 @@ jobs:
       - name: Who signed it
         if: env.SIGNING_STORE_FILE != ''
         run: |
-          ls -la app/build/outputs/apk/foss/release/
           apk="$(ls app/build/outputs/apk/foss/release/*.apk | head -1)"
           # (the newest build-tools: there may be several)
           apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
-          echo "Checking $apk with $apksigner"
           "$apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/sig.txt" 2>&1 || true
-          grep -v "^WARNING" "$RUNNER_TEMP/sig.txt" | head -40
-          # (apksigner writes "Signer #1 certificate …" or "V2 Signer: certificate …" by version)
+          grep -v "^WARNING" "$RUNNER_TEMP/sig.txt" | head -20
           if ! grep -q "^Verifies" "$RUNNER_TEMP/sig.txt" || ! grep -qE "[Ss]igner.*certificate SHA-256 digest" "$RUNNER_TEMP/sig.txt"; then
             echo "::error::The APK is not signed (see above)."
             exit 1
           fi
+          ls -la app/build/outputs/bundle/fossRelease/
 
+      # 🧪 an APK to try on a phone (signed with the upload key: it is not the Play one, so it
+      #   does not update a Play install and the Tracker accepts it as the upload key's)
       - uses: actions/upload-artifact@v4
         with:
           name: ittc-phone-apk
           path: app/build/outputs/apk/foss/release/*.apk
           if-no-files-found: error
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release && github.ref == 'refs/heads/main')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
+      # 📦 the bundle for Google Play, with R8's mapping (to read crash reports)
+      - uses: actions/upload-artifact@v4
         with:
-          name: ittc-phone-apk
-          path: apk
-      - name: GitHub Release
+          name: ittc-phone-play
+          path: |
+            app/build/outputs/bundle/fossRelease/*.aab
+            app/build/outputs/mapping/fossRelease/mapping.txt
+          if-no-files-found: error
+
+      - name: Check the Google Play key
+        id: play
+        if: github.event_name == 'workflow_dispatch' && inputs.play_track != 'none'
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.build.outputs.version }}
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
-          # (a tag push / Releases page: that tag; "Make a release" from Actions: v + VERSION_NAME)
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then TAG="$GITHUB_REF_NAME"; else TAG="v$VERSION"; fi
-          cp apk/*.apk "ITTC-Phone-${TAG}.apk"
-          # made by hand on GitHub's Releases page already: just add the APK to it
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$TAG" "ITTC-Phone-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            gh release create "$TAG" "ITTC-Phone-${TAG}.apk" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "ITTC Phone ${TAG}" \
-              --notes "Install on Android, then open it and make it the phone app. Source: this repository (GPL-3.0), based on Fossify Phone."
+          if [ -z "$PLAY_JSON" ]; then
+            echo "::error::Secret PLAY_SERVICE_ACCOUNT_JSON is missing in this repository (Settings → Secrets → Actions). The .aab is in Artifacts."
+            exit 1
           fi
-          echo "✅ Release $TAG: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          echo "AAB=$(ls app/build/outputs/bundle/fossRelease/*.aab | head -1)" >> "$GITHUB_ENV"
+
+      # 🚀 Google Play (the bundle is already kept above: a failed upload loses nothing)
+      - name: Upload to Google Play (${{ inputs.play_track }})
+        if: steps.play.outcome == 'success'
+        uses: r0adkll/upload-google-play@v1.1.3
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.abamunim.ittcphone
+          releaseFiles: ${{ env.AAB }}
+          mappingFile: app/build/outputs/mapping/fossRelease/mapping.txt
+          track: ${{ inputs.play_track }}
+          status: ${{ inputs.play_status }}

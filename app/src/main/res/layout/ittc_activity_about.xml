@@ -87,6 +87,11 @@
                 android:text="@string/ittc_about_privacy" />
 
             <org.fossify.commons.views.MyTextView
+                android:id="@+id/ittc_about_policy"
+                style="@style/IttcAboutRow"
+                android:text="@string/ittc_about_policy" />
+
+            <org.fossify.commons.views.MyTextView
                 android:id="@+id/ittc_about_source"
                 style="@style/IttcAboutRow"
                 android:text="@string/ittc_about_source" />
