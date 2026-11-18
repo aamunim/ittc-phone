@@ -563,12 +563,27 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         renderToday()
         val placeholder = when {
             !loadedOnce && all.isEmpty() -> context.getString(R.string.ittc_leads_loading)
-            noTracker -> context.getString(R.string.ittc_leads_no_tracker)
+            noTracker -> context.getString(
+                when {
+                    !org.fossify.phone.direct.IttcDirect.configured -> R.string.ittc_leads_no_tracker
+                    org.fossify.phone.direct.IttcDirect.isSignedIn(context) -> R.string.ittc_l2_signed_in_not_direct
+                    else -> R.string.ittc_l2_sign_in_here
+                },
+            )
             shown.isEmpty() -> context.getString(if (direct) R.string.ittc_l2_leads_none_direct else R.string.ittc_leads_none)
             else -> null
         }
         binding.ittcLeadsPlaceholder.text = placeholder
         binding.ittcLeadsPlaceholder.beVisibleIf(placeholder != null)
+        // (no leads from anywhere yet: a tap opens the ITTC sign-in)
+        if (noTracker && org.fossify.phone.direct.IttcDirect.configured) {
+            binding.ittcLeadsPlaceholder.setOnClickListener {
+                context.startActivity(android.content.Intent(context, org.fossify.phone.activities.IttcAccountActivity::class.java))
+            }
+        } else {
+            binding.ittcLeadsPlaceholder.setOnClickListener(null)
+            binding.ittcLeadsPlaceholder.isClickable = false
+        }
         binding.ittcLeadsList.beVisibleIf(placeholder == null)
     }
 

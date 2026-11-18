@@ -45,7 +45,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Version
-        run: echo "ITTC Phone $(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2), version code $((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          HAS_URL: ${{ secrets.SUPABASE_URL != '' }}
+          HAS_KEY: ${{ secrets.SUPABASE_ANON_KEY != '' }}
+        run: |
+          echo "ITTC Phone $(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2), version code $((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_STEP_SUMMARY"
+          # (yes / no only — never the values: without both, the build has no ITTC sign-in)
+          if [ "$HAS_URL" = "true" ] && [ "$HAS_KEY" = "true" ]; then
+            echo "ITTC sign-in: on (SUPABASE_URL and SUPABASE_ANON_KEY are set)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ITTC sign-in: OFF — add the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::ITTC sign-in is off in this build: the SUPABASE_URL / SUPABASE_ANON_KEY secrets are missing"
+          fi
 
       - name: To Google Play from main only
         if: github.event_name == 'workflow_dispatch' && inputs.play_track != 'none'
