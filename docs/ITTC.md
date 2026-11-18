@@ -13,7 +13,7 @@ certificate (SHA-256) against a fixed list, on every request:
 
 | app | certificates it is accepted with |
 |---|---|
-| ITTC Phone (`com.abamunim.ittcphone`; old: `org.fossify.phone`) | upload key `2955a704…0d83` (GitHub Actions), and Google Play's app signing key for ITTC Phone once known (Play Console → App integrity) |
+| ITTC Phone (`com.abamunim.ittcphone`; old: `org.fossify.phone`) | upload key `2955a704…0d83` (GitHub Actions), and Google Play's app signing key for ITTC Phone `88048694…273d` (Tracker 2.10.8+) |
 | Tracker (`com.abamunim.leads`) | Google Play app signing key `d07ea3e9…4e54`, upload key `2955a704…0d83` (APK builds) |
 
 The lists live in `IttcPhone.kt` (here) and `IttcBridge.kt` (ITTC Phone). A new signing key

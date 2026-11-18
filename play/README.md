@@ -23,7 +23,9 @@ a phone (see 3).
      signing → SHA-256 of the app signing key certificate** and send it to the developer; it must go
      into a Tracker release before staff move to the Play version (until then the Play ITTC Phone
      works as a phone app but shows no lead names).
-4. Check **App integrity → App signing**: the app signing key SHA-256 should start `D0:7E:A3:E9`.
+4. Done (18 Nov 2026): Google gave ITTC Phone its own app signing key, SHA-256 `88:04:86:94:…:27:3D`
+   (Play Console → `…/app/<id>/keymanagement`). Tracker **2.10.8** trusts it: staff move only after
+   they have Tracker 2.10.8.
 5. **Users and permissions**: give the Play service account (the one in the
    `PLAY_SERVICE_ACCOUNT_JSON` secret) access to *ITTC Phone* (Release manager), and add the same
    secret to this repository (Settings → Secrets → Actions). From then on: Actions → Build → Run
