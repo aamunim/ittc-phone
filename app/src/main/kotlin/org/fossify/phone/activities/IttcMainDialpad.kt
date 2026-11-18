@@ -119,12 +119,20 @@ class IttcMainDialpad(
     private val fits: Boolean get() = keyDp != null
 
     private fun sizeKeys() {
-        val heightDp = activity.resources.configuration.screenHeightDp
-        // top bar 56 + tab bar 67 + matches 120 + number row 56 + ≡ / call row and padding 84
-        val free = heightDp - (56 + 67 + 120 + 56 + 84)
-        val size = (free / 4 - KEY_GAP_DP).coerceAtMost(KEY_MAX_DP)
+        var heightDp = activity.resources.configuration.screenHeightDp
+        // (Android 15+: the height includes the status and navigation bars)
+        if (android.os.Build.VERSION.SDK_INT >= 35) heightDp -= 72
+        // top bar 56 + tab bar 67 + matches 120 + the pad: number row and paddings 92 + 5 rows of keys
+        // (the ≡ / call row is a key tall too)
+        val size = ((heightDp - 56 - 67 - 120 - 92) / 5).coerceAtMost(KEY_MAX_DP)
         keyDp = size.takeIf { it >= KEY_MIN_DP }
         val px = IttcTheme.dp(activity, (keyDp ?: KEY_MAX_DP).toFloat())
+        // (smaller keys, smaller digits: nothing clipped at large font sizes)
+        val scale = (keyDp ?: KEY_MAX_DP).toFloat() / KEY_MAX_DP
+        keys.forEach { (v, _) ->
+            val base = (v.getTag(R.id.ittc_dp_base_size) as? Float) ?: v.textSize.also { v.setTag(R.id.ittc_dp_base_size, it) }
+            v.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, base * scale)
+        }
         (keys.map { it.first } + listOf(pad.ittcDpMenu, pad.ittcDpCall, pad.ittcDpHide)).forEach { v ->
             val lp = v.layoutParams ?: return@forEach
             if (lp.width != px || lp.height != px) {
@@ -378,7 +386,8 @@ class IttcMainDialpad(
 
     private fun longPress(view: View, char: Char) {
         if (char == '0') {
-            if (number.isNotEmpty()) number = number.dropLast(1)
+            // (the 0 typed on touch down becomes +; a full number had no room for it)
+            if (number.endsWith('0')) number = number.dropLast(1)
             type('+', view)
         } else if (number.length == 1) {
             val speedDial = activity.config.getSpeedDialValues().firstOrNull { it.id == char.digitToInt() }
