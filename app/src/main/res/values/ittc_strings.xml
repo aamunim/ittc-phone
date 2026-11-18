@@ -4,7 +4,7 @@
     <string name="ittc_app_name" translatable="false">ITTC Phone</string>
     <!-- First start: what the app does with calls and contacts (Google Play prominent disclosure) -->
     <string name="ittc_disclosure_title" translatable="false">Before you start</string>
-    <string name="ittc_disclosure_text" translatable="false">ITTC Phone is a phone app. To make and receive calls and show who is calling, it reads your call log and contacts on this phone, and it needs to be your phone app.\n\n• Your calls and contacts stay on this phone. ITTC Phone itself sends nothing over the internet.\n• If ITTC Admission Tracker is installed and you are signed in, only calls with numbers that are your institute\'s leads are handed to it, which saves them to your account. Personal calls are never handed over.\n• The Leads tab and the lead names come from ITTC Admission Tracker on this phone.\n\nPrivacy policy: https://lead.ittc.edu.bd/privacy-ittc-phone</string>
+    <string name="ittc_disclosure_text" translatable="false">ITTC Phone is a phone app. To make and receive calls and show who is calling, it reads your call log and contacts on this phone, and it needs to be your phone app.\n\n• Your calls and contacts stay on this phone.\n• If ITTC Admission Tracker is installed and you are signed in, only calls with numbers that are your institute\'s leads are handed to it, which saves them to your account. Personal calls are never handed over.\n• Or you can sign in to your ITTC account in ITTC Phone itself (menu → ITTC account). Then ITTC Phone sends only calls with your leads, and the results and notes you save, to your institute\'s server, and shows your leads. Without signing in, it sends nothing over the internet.\n\nPrivacy policy: https://lead.ittc.edu.bd/privacy-ittc-phone</string>
     <string name="ittc_no_phone_role" translatable="false">This phone cannot change its phone app here. Make ITTC Phone the phone app in the phone\'s Settings → Apps → Default apps.</string>
     <string name="ittc_disclosure_ok" translatable="false">I agree — continue</string>
     <string name="ittc_disclosure_not_now" translatable="false">Not now</string>
@@ -28,7 +28,7 @@
     <string name="ittc_note_hint" translatable="false">Note (optional)</string>
     <string name="ittc_next_call" translatable="false">Next call</string>
     <string name="ittc_save" translatable="false">✅ Save</string>
-    <string name="ittc_saved" translatable="false">✅ Saved — the Tracker sends it</string>
+    <string name="ittc_saved" translatable="false">✅ Saved</string>
     <string name="ittc_old_tracker" translatable="false">Update ITTC Admission Tracker (2.10.5) to save here — opening it instead</string>
     <string name="ittc_stage" translatable="false">Pipeline stage</string>
     <string name="ittc_stage_needs_note" translatable="false">✍️ “%s” needs a note</string>

@@ -43,6 +43,7 @@ import org.fossify.phone.dialogs.ManageVisibleTabsDialog
 import org.fossify.phone.extensions.canLaunchAccountsConfiguration
 import org.fossify.phone.extensions.config
 import org.fossify.phone.extensions.launchAccountsConfiguration
+import org.fossify.phone.helpers.IttcCallHistory
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.models.RecentCall
 import java.util.Locale
@@ -112,6 +113,8 @@ class SettingsActivity : SimpleActivity() {
         setupOnContactClick()
         setupDialPadOpen()
         setupGroupSubsequentCalls()
+        setupIttcRecents() // 🎓 ITTC
+        setupIttcAccount() // 🎓 ITTC 3.2
         setupStartNameWithSurname()
         setupFormatPhoneNumbers()
         setupDialpadVibrations()
@@ -305,6 +308,31 @@ class SettingsActivity : SimpleActivity() {
             settingsGroupSubsequentCallsHolder.setOnClickListener {
                 settingsGroupSubsequentCalls.toggle()
                 config.groupSubsequentCalls = settingsGroupSubsequentCalls.isChecked
+            }
+        }
+    }
+
+    // 🎓 ITTC 3.2: the ITTC account screen
+    private fun setupIttcAccount() {
+        binding.settingsIttcAccountHolder.setOnClickListener {
+            startActivity(Intent(this, IttcAccountActivity::class.java))
+        }
+    }
+
+    // 🎓 ITTC: Recents — one row per number (default on); a tap calls back instead of the history page
+    private fun setupIttcRecents() {
+        val prefs = IttcCallHistory.prefs(this)
+        binding.apply {
+            settingsIttcOnePerNumber.isChecked = IttcCallHistory.onePerNumber(this@SettingsActivity)
+            settingsIttcOnePerNumberHolder.setOnClickListener {
+                settingsIttcOnePerNumber.toggle()
+                prefs.edit().putBoolean(IttcCallHistory.KEY_ONE_PER_NUMBER, settingsIttcOnePerNumber.isChecked).apply()
+            }
+
+            settingsIttcTapCalls.isChecked = IttcCallHistory.tapCalls(this@SettingsActivity)
+            settingsIttcTapCallsHolder.setOnClickListener {
+                settingsIttcTapCalls.toggle()
+                prefs.edit().putBoolean(IttcCallHistory.KEY_TAP_CALLS, settingsIttcTapCalls.isChecked).apply()
             }
         }
     }

@@ -13,7 +13,7 @@ certificate (SHA-256) against a fixed list, on every request:
 
 | app | certificates it is accepted with |
 |---|---|
-| ITTC Phone (`com.abamunim.ittcphone`; old: `org.fossify.phone`) | upload key `2955a704…0d83` (GitHub Actions), and Google Play's app signing key for ITTC Phone once known (Play Console → App integrity) |
+| ITTC Phone (`com.abamunim.ittcphone`; old: `org.fossify.phone`) | upload key `2955a704…0d83` (GitHub Actions), and Google Play's app signing key for ITTC Phone `88048694…273d` (Tracker 2.10.8+) |
 | Tracker (`com.abamunim.leads`) | Google Play app signing key `d07ea3e9…4e54`, upload key `2955a704…0d83` (APK builds) |
 
 The lists live in `IttcPhone.kt` (here) and `IttcBridge.kt` (ITTC Phone). A new signing key
@@ -127,3 +127,33 @@ and is not the phone app yet.
 
 Not installed, or not the default phone app: nothing changes, calls sync from the call log as
 before.
+
+## 5. ITTC Phone signed in by itself ("direct mode", ITTC Phone 3.2.0 / Tracker 2.11.0)
+
+A person can sign in inside ITTC Phone (menu → **ITTC account**) with their Tracker e-mail and
+password. ITTC Phone then talks to the institute's Supabase server itself (code in
+`app/src/main/kotlin/org/fossify/phone/direct/`), so the Tracker app is not needed.
+
+- **Which way it works**: direct when signed in *and* (the Tracker is not signed in on this phone,
+  or the person turned on **Run without the Tracker**). Otherwise everything goes through the
+  Tracker as in 1–4. `IttcBridge` routes each request (`IttcDirect.isActive`).
+- **No call saved twice**: ITTC Phone tells the Tracker with
+  `call(…, "direct_mode", "1" | "0", null)` → `{ result: "ok" }` (Tracker 2.11.0+, certificate
+  checked as for every call). While it is on, the Tracker's call-log sync drops its pending calls
+  and sends none, and it stops fetching the Leads list for ITTC Phone.
+- **Only lead calls**: the server's `my_lead_directory()` gives SHA-256 codes of the person's lead
+  numbers (as 01XXXXXXXXX); a call is queued only when its number's code is on that list.
+- **Server functions** (migration `20270104063500_ittc_phone_direct.sql`): `ittc_phone_session`
+  (allowed? signed out by an admin? who I am, the admin's settings; the phone's id, model and app
+  version are recorded), `ittc_phone_forget`, `my_phone_data`, `my_lead_directory`,
+  `phone_lead_detail`, `phone_today`, and the Tracker's own `sync_phone_calls`, `save_phone_call`,
+  `add_lead_note`, `move_lead_stage`, `schedule_follow_up`, `hand_over_leads`, `log_template_sent`,
+  `create_lead`. Live updates: Supabase Realtime on `phone_lead_pings`.
+- **Admin** (Tracker → Settings → ITTC Phone): allow / stop signing in per person (default
+  allowed), see each person's phones and sign one out, note presets, next call by result, daily
+  call target, lowest app version.
+- **On the phone**: the session is encrypted with an Android Keystore key; the lists are private
+  files; changes wait in an outbox (sent when online, kept up to 7 days). Signing out (or being
+  signed out by an admin) removes all of it.
+- **Build**: the server URL and the public (anon) key come from the repository secrets
+  `SUPABASE_URL` and `SUPABASE_ANON_KEY` at build time; without them the sign-in is hidden.

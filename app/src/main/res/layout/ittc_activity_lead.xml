@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC direct mode: one lead — who, numbers, quick changes, the timeline -->
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/ittc_lead_coordinator"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <org.fossify.commons.views.MyAppBarLayout
+        android:id="@+id/ittc_lead_appbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/ittc_lead_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@color/color_primary"
+            app:title="@string/ittc_lead_title"
+            app:titleTextAppearance="@style/AppTheme.ActionBar.TitleTextStyle" />
+
+    </org.fossify.commons.views.MyAppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/ittc_lead_scrollview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fillViewport="true"
+        android:scrollbars="none"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:id="@+id/ittc_lead_holder"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/activity_margin">
+
+            <!-- "Offline — showing saved info" / errors -->
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/ittc_lead_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:alpha="0.8"
+                android:paddingStart="@dimen/activity_margin"
+                android:paddingTop="@dimen/small_margin"
+                android:paddingEnd="@dimen/activity_margin"
+                android:text="@string/ittc_lp_loading"
+                android:textSize="@dimen/normal_text_size"
+                android:textStyle="italic" />
+
+            <!-- header -->
+            <LinearLayout
+                android:id="@+id/ittc_lead_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/activity_margin"
+                android:paddingTop="@dimen/medium_margin"
+                android:paddingEnd="@dimen/activity_margin">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_lead_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textIsSelectable="true"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/ittc_lead_info"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/tiny_margin"
+                    android:textSize="@dimen/bigger_text_size" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_lead_meta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/tiny_margin"
+                    android:alpha="0.8"
+                    android:textSize="@dimen/normal_text_size" />
+
+                <!-- one row per number (tap: call) -->
+                <LinearLayout
+                    android:id="@+id/ittc_lead_numbers"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/small_margin"
+                    android:orientation="vertical" />
+            </LinearLayout>
+
+            <!-- call / WhatsApp / SMS / templates -->
+            <LinearLayout
+                android:id="@+id/ittc_lead_actions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/small_margin"
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/small_margin"
+                android:paddingEnd="@dimen/small_margin">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_lead_call"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackground"
+                    android:drawablePadding="@dimen/small_margin"
+                    android:gravity="center_horizontal"
+                    android:maxLines="1"
+                    android:paddingTop="@dimen/medium_margin"
+                    android:paddingBottom="@dimen/medium_margin"
+                    android:text="@string/ittc_lp_call"
+                    android:textSize="@dimen/smaller_text_size" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_lead_whatsapp"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackground"
+                    android:drawablePadding="@dimen/small_margin"
+                    android:gravity="center_horizontal"
+                    android:maxLines="1"
+                    android:paddingTop="@dimen/medium_margin"
+                    android:paddingBottom="@dimen/medium_margin"
+                    android:text="@string/ittc_lp_whatsapp"
+                    android:textSize="@dimen/smaller_text_size" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_lead_sms"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackground"
+                    android:drawablePadding="@dimen/small_margin"
+                    android:gravity="center_horizontal"
+                    android:maxLines="1"
+                    android:paddingTop="@dimen/medium_margin"
+                    android:paddingBottom="@dimen/medium_margin"
+                    android:text="@string/ittc_lp_sms"
+                    android:textSize="@dimen/smaller_text_size" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_lead_templates"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackground"
+                    android:drawablePadding="@dimen/small_margin"
+                    android:gravity="center_horizontal"
+                    android:maxLines="1"
+                    android:paddingTop="@dimen/medium_margin"
+                    android:paddingBottom="@dimen/medium_margin"
+                    android:text="@string/ittc_lp_templates"
+                    android:textSize="@dimen/smaller_text_size" />
+            </LinearLayout>
+
+            <!-- quick changes (chips added in code) -->
+            <LinearLayout
+                android:id="@+id/ittc_lead_quick"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/small_margin"
+                android:paddingEnd="@dimen/small_margin" />
+
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/ittc_lead_notes_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/activity_margin"
+                android:paddingStart="@dimen/activity_margin"
+                android:paddingEnd="@dimen/activity_margin"
+                android:text="@string/ittc_lp_notes"
+                android:textSize="@dimen/normal_text_size"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <!-- the lead's notes (tap: all of them) -->
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/ittc_lead_notes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/tiny_margin"
+                android:alpha="0.9"
+                android:ellipsize="end"
+                android:maxLines="6"
+                android:paddingStart="@dimen/activity_margin"
+                android:paddingEnd="@dimen/activity_margin"
+                android:textSize="@dimen/normal_text_size"
+                android:visibility="gone" />
+
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/ittc_lead_timeline_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/activity_margin"
+                android:paddingStart="@dimen/activity_margin"
+                android:paddingEnd="@dimen/activity_margin"
+                android:text="@string/ittc_lp_timeline"
+                android:textSize="@dimen/normal_text_size"
+                android:textStyle="bold" />
+
+            <!-- calls and changes, newest first (rows added in code) -->
+            <LinearLayout
+                android:id="@+id/ittc_lead_timeline"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="@dimen/activity_margin"
+                android:paddingEnd="@dimen/activity_margin" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

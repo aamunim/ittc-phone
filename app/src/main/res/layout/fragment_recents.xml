@@ -5,27 +5,96 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- 🎓 ITTC: show only lead calls -->
-    <org.fossify.commons.views.MyTextView
-        android:id="@+id/ittc_recents_leads_only"
-        android:layout_width="wrap_content"
+    <!-- 🎓 ITTC: "Leads only" and the All / Missed / Incoming / Outgoing chips, in one scrolling row -->
+    <HorizontalScrollView
+        android:id="@+id/ittc_recents_filters_scroll"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/activity_margin"
-        android:layout_marginTop="@dimen/small_margin"
-        android:layout_marginBottom="@dimen/small_margin"
-        android:background="@drawable/ripple_all_corners"
-        android:paddingStart="@dimen/medium_margin"
-        android:paddingTop="@dimen/small_margin"
-        android:paddingEnd="@dimen/medium_margin"
-        android:paddingBottom="@dimen/small_margin"
-        android:text="@string/ittc_leads_only"
-        android:textSize="@dimen/normal_text_size" />
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/ittc_recents_filters"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingEnd="@dimen/medium_margin">
+
+            <!-- 🎓 ITTC: show only lead calls -->
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/ittc_recents_leads_only"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/activity_margin"
+                android:layout_marginTop="@dimen/small_margin"
+                android:layout_marginBottom="@dimen/small_margin"
+                android:background="@drawable/ripple_all_corners"
+                android:paddingStart="@dimen/medium_margin"
+                android:paddingTop="@dimen/small_margin"
+                android:paddingEnd="@dimen/medium_margin"
+                android:paddingBottom="@dimen/small_margin"
+                android:text="@string/ittc_leads_only"
+                android:textSize="@dimen/normal_text_size" />
+
+            <TextView
+                android:id="@+id/ittc_recents_kind_all"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/small_margin"
+                android:background="@drawable/ittc_chip_background"
+                android:paddingStart="12dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="6dp"
+                android:text="@string/ittc_hist_all"
+                android:textSize="@dimen/smaller_text_size" />
+
+            <TextView
+                android:id="@+id/ittc_recents_kind_missed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/small_margin"
+                android:background="@drawable/ittc_chip_background"
+                android:paddingStart="12dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="6dp"
+                android:text="@string/ittc_hist_missed"
+                android:textSize="@dimen/smaller_text_size" />
+
+            <TextView
+                android:id="@+id/ittc_recents_kind_incoming"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/small_margin"
+                android:background="@drawable/ittc_chip_background"
+                android:paddingStart="12dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="6dp"
+                android:text="@string/ittc_hist_incoming"
+                android:textSize="@dimen/smaller_text_size" />
+
+            <TextView
+                android:id="@+id/ittc_recents_kind_outgoing"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/small_margin"
+                android:background="@drawable/ittc_chip_background"
+                android:paddingStart="12dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="6dp"
+                android:text="@string/ittc_hist_outgoing"
+                android:textSize="@dimen/smaller_text_size" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <org.fossify.commons.views.MyTextView
         android:id="@+id/recents_placeholder"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/ittc_recents_leads_only"
+        android:layout_below="@+id/ittc_recents_filters_scroll"
         android:layout_centerHorizontal="true"
         android:alpha="0.8"
         android:gravity="center"
@@ -54,7 +123,7 @@
         android:id="@+id/recents_list"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@+id/ittc_recents_leads_only"
+        android:layout_below="@+id/ittc_recents_filters_scroll"
         android:clipToPadding="false"
         android:layoutAnimation="@anim/layout_animation"
         android:paddingBottom="@dimen/recyclerview_fab_padding"

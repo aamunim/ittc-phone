@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC direct mode: the lead page, "Add a lead", message templates, the number page's lead box -->
+<resources>
+    <string name="ittc_lead_title" translatable="false">Lead</string>
+    <string name="ittc_add_lead_title" translatable="false">Add lead</string>
+
+    <!-- lead page -->
+    <string name="ittc_lp_loading" translatable="false">Loading…</string>
+    <string name="ittc_lp_offline" translatable="false">Offline — showing saved info</string>
+    <string name="ittc_lp_not_found" translatable="false">This lead is not available to you.</string>
+    <string name="ittc_lp_waiting" translatable="false">Waiting to send (no internet)</string>
+    <string name="ittc_lp_not_signed_in" translatable="false">Sign in to ITTC to see this lead.</string>
+    <string name="ittc_lp_call" translatable="false">Call</string>
+    <string name="ittc_lp_whatsapp" translatable="false">WhatsApp</string>
+    <string name="ittc_lp_sms" translatable="false">SMS</string>
+    <string name="ittc_lp_templates" translatable="false">Templates</string>
+    <string name="ittc_lp_add_note" translatable="false">📝 Add note</string>
+    <string name="ittc_lp_stage" translatable="false">🚩 Stage</string>
+    <string name="ittc_lp_next_call" translatable="false">⏰ Next call</string>
+    <string name="ittc_lp_rating" translatable="false">⭐ Rating</string>
+    <string name="ittc_lp_edit" translatable="false">✏️ Edit</string>
+    <string name="ittc_lp_hand_over" translatable="false">👥 Hand over</string>
+    <string name="ittc_lp_web" translatable="false">🌐 Open on web</string>
+    <string name="ittc_lp_timeline" translatable="false">Timeline</string>
+    <string name="ittc_lp_timeline_none" translatable="false">No calls or changes yet.</string>
+    <string name="ittc_lp_notes" translatable="false">Notes</string>
+    <string name="ittc_lp_saved" translatable="false">Saved</string>
+    <string name="ittc_lp_note_hint" translatable="false">Write a note</string>
+    <string name="ittc_lp_note_empty" translatable="false">Please write a note.</string>
+    <string name="ittc_lp_note_for_stage" translatable="false">A note for “%s”</string>
+    <string name="ittc_lp_date_for_stage" translatable="false">Pick the %s</string>
+    <string name="ittc_lp_tomorrow" translatable="false">Tomorrow 10 AM</string>
+    <string name="ittc_lp_in_2_days" translatable="false">In 2 days</string>
+    <string name="ittc_lp_pick" translatable="false">📅 Pick date &amp; time…</string>
+    <string name="ittc_lp_no_rating" translatable="false">No rating</string>
+    <string name="ittc_lp_hot" translatable="false">🔥 Hot</string>
+    <string name="ittc_lp_warm" translatable="false">🌤 Warm</string>
+    <string name="ittc_lp_cold" translatable="false">❄️ Cold</string>
+    <string name="ittc_lp_name" translatable="false">Name</string>
+    <string name="ittc_lp_alt_phone" translatable="false">Other phone</string>
+    <string name="ittc_lp_whatsapp_number" translatable="false">WhatsApp number</string>
+    <string name="ittc_lp_bad_number" translatable="false">This is not a Bangladeshi mobile number.</string>
+    <string name="ittc_lp_name_needed" translatable="false">Please write a name.</string>
+    <string name="ittc_lp_no_stages" translatable="false">No stages for this lead\'s course.</string>
+    <string name="ittc_lp_no_people" translatable="false">No one to hand over to.</string>
+    <string name="ittc_lp_hand_over_to" translatable="false">Hand over to %s</string>
+    <string name="ittc_lp_note_optional" translatable="false">A note (optional)</string>
+    <string name="ittc_lp_no_number" translatable="false">This lead has no number.</string>
+    <string name="ittc_lp_no_app" translatable="false">No app can do this.</string>
+    <string name="ittc_lp_attempts" translatable="false">%d calls</string>
+    <string name="ittc_lp_next" translatable="false">Next call %s</string>
+    <string name="ittc_lp_owner" translatable="false">👤 %s</string>
+    <string name="ittc_lp_send" translatable="false">Send</string>
+    <string name="ittc_lp_templates_none" translatable="false">No templates for this lead.</string>
+    <string name="ittc_lp_templates_failed" translatable="false">Could not load the templates: %s</string>
+    <string name="ittc_lp_edit_before" translatable="false">Check the message, change it if you like, then send.</string>
+
+    <!-- add a lead -->
+    <string name="ittc_al_name" translatable="false">Name *</string>
+    <string name="ittc_al_phone" translatable="false">Phone *</string>
+    <string name="ittc_al_alt_phone" translatable="false">Other phone</string>
+    <string name="ittc_al_whatsapp" translatable="false">WhatsApp number</string>
+    <string name="ittc_al_same_whatsapp" translatable="false">WhatsApp is the same as the phone</string>
+    <string name="ittc_al_course" translatable="false">Interested course *</string>
+    <string name="ittc_al_note" translatable="false">Note</string>
+    <string name="ittc_al_save" translatable="false">Save lead</string>
+    <string name="ittc_al_saving" translatable="false">Saving…</string>
+    <string name="ittc_al_saved" translatable="false">Lead saved</string>
+    <string name="ittc_al_pick_course" translatable="false">Please choose a course.</string>
+    <string name="ittc_al_courses_failed" translatable="false">Could not load the courses: %s</string>
+    <string name="ittc_al_retry" translatable="false">Try again</string>
+    <string name="ittc_al_no_internet" translatable="false">No internet. A lead can be added only when online.</string>
+    <string name="ittc_al_already" translatable="false">Already a lead: %s</string>
+    <string name="ittc_al_already_other" translatable="false">This number is already a lead (%s). Ask your admin if it should be yours.</string>
+    <string name="ittc_al_open" translatable="false">Open</string>
+    <string name="ittc_al_not_signed_in" translatable="false">Sign in to ITTC in ITTC Phone first.</string>
+
+    <!-- number page's lead box -->
+    <string name="ittc_nl_open" translatable="false">👤 Open lead</string>
+    <string name="ittc_nl_templates" translatable="false">💬 Templates</string>
+    <string name="ittc_nl_add" translatable="false">➕ Add as a lead</string>
+</resources>

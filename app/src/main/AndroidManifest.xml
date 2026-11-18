@@ -22,6 +22,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- 🎓 ITTC: only when signed in to ITTC (direct mode): the lead list and lead calls go to the ITTC server -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- (changes waiting for internet are sent after a restart too: the job is kept across it) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-permission
         android:name="android.permission.USE_FINGERPRINT"
@@ -43,6 +48,8 @@
     <application
         android:name="org.fossify.commons.FossifyApp"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/ittc_data_extraction_rules"
+        android:fullBackupContent="@xml/ittc_backup_rules"
         android:appCategory="productivity"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/ittc_app_name"
@@ -131,6 +138,55 @@
             android:exported="false"
             android:label="@string/about"
             android:parentActivityName=".activities.MainActivity" />
+
+        <!-- 🎓 ITTC: one number's call history (a tap on a Recents row) -->
+        <activity
+            android:name=".activities.IttcNumberActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_hist_title"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <!-- 🎓 ITTC direct mode (signed in to ITTC without the Tracker) -->
+        <activity
+            android:name=".activities.IttcAccountActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_account_title"
+            android:parentActivityName=".activities.MainActivity"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".activities.IttcLeadActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_lead_title"
+            android:parentActivityName=".activities.MainActivity"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".activities.IttcAddLeadActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_add_lead_title"
+            android:parentActivityName=".activities.MainActivity"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".activities.IttcTeamActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_team_title"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <service
+            android:name=".direct.IttcOutboxJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <receiver
+            android:name=".direct.IttcReminderReceiver"
+            android:exported="false" />
 
         <activity
             android:name=".activities.IttcAfterCallActivity"

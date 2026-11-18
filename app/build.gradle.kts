@@ -33,6 +33,11 @@ android {
         versionName = project.property("VERSION_NAME").toString()
         versionCode = project.property("VERSION_CODE").toString().toInt()
         setProperty("archivesBaseName", "ittc-phone-$versionName")
+        // 🎓 ITTC Phone 3.2: the ITTC server for signing in by itself (repository secrets
+        //  SUPABASE_URL / SUPABASE_ANON_KEY; the anon key is a public key, the server's row
+        //  security decides what anyone may see). Empty: the sign-in option is hidden.
+        buildConfigField("String", "ITTC_SERVER_URL", "\"${providers.environmentVariable("SUPABASE_URL").orElse("").get().trim().trimEnd('/')}\"")
+        buildConfigField("String", "ITTC_SERVER_KEY", "\"${providers.environmentVariable("SUPABASE_ANON_KEY").orElse("").get().trim()}\"")
     }
 
     signingConfigs {
@@ -138,6 +143,7 @@ detekt {
 dependencies {
     // (Fossify Commons, kept in this repository with ITTC changes)
     implementation(project(":commons"))
+    implementation(libs.okhttp)
     implementation(libs.indicator.fast.scroll)
     implementation(libs.autofit.text.view)
     implementation(libs.kotlinx.serialization.json)

@@ -2,11 +2,16 @@ package org.fossify.phone.fragments
 
 import android.content.Context
 import android.util.AttributeSet
+import android.widget.TextView
+import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.baseConfig
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beGoneIf
 import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getMyContactsCursor
+import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.hasPermission
 import org.fossify.commons.extensions.isDefaultDialer
 import org.fossify.commons.extensions.isVisible
@@ -19,6 +24,7 @@ import org.fossify.commons.helpers.SMT_PRIVATE
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.R
+import org.fossify.phone.activities.IttcNumberActivity
 import org.fossify.phone.activities.MainActivity
 import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.adapters.RecentCallsAdapter
@@ -31,6 +37,7 @@ import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.IttcRecentsCache
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcCallHistory
 import org.fossify.phone.interfaces.RefreshItemsListener
 import org.fossify.phone.models.CallLogItem
 import org.fossify.phone.models.RecentCall
@@ -53,6 +60,15 @@ class RecentsFragment(
         get() = ittcPrefs.getBoolean("recents_leads_only", false)
         set(value) = ittcPrefs.edit().putBoolean("recents_leads_only", value).apply()
 
+    // 🎓 ITTC: All / Missed / Incoming / Outgoing (with "Leads only"), and one row per number
+    private var recentsKind: Int
+        get() = ittcPrefs.getInt(IttcCallHistory.KEY_KIND, IttcCallHistory.KIND_ALL)
+        set(value) = ittcPrefs.edit().putInt(IttcCallHistory.KEY_KIND, value).apply()
+    private val onePerNumber: Boolean
+        get() = ittcPrefs.getBoolean(IttcCallHistory.KEY_ONE_PER_NUMBER, true)
+    private var chipTextColor = 0
+    private var chipPrimaryColor = 0
+
     override fun onFinishInflate() {
         super.onFinishInflate()
         binding = FragmentRecentsBinding.bind(this)
@@ -73,6 +89,23 @@ class RecentsFragment(
             }
         }
 
+        // 🎓 ITTC: the call-kind chips
+        chipTextColor = context.getProperTextColor()
+        chipPrimaryColor = context.getProperPrimaryColor()
+        kindChips().forEach { (kind, chip) ->
+            chip.setOnClickListener {
+                if (recentsKind == kind) return@setOnClickListener
+                recentsKind = kind
+                renderKindChips()
+                val all = allRecentCalls
+                ensureBackgroundThread {
+                    val shown = ittcFilter(all)
+                    activity?.runOnUiThread { if (searchQuery.isNullOrEmpty()) gotRecents(shown) }
+                }
+            }
+        }
+        renderKindChips()
+
         val placeholderResId = if (context.hasPermission(PERMISSION_READ_CALL_LOG)) {
             R.string.no_previous_calls
         } else {
@@ -90,6 +123,10 @@ class RecentsFragment(
 
     override fun setupColors(textColor: Int, primaryColor: Int, properPrimaryColor: Int) {
         binding.ittcRecentsLeadsOnly.setTextColor(properPrimaryColor)
+        // 🎓 ITTC
+        chipTextColor = textColor
+        chipPrimaryColor = properPrimaryColor
+        renderKindChips()
         binding.recentsPlaceholder.setTextColor(textColor)
         binding.recentsPlaceholder2.setTextColor(properPrimaryColor)
 
@@ -100,7 +137,8 @@ class RecentsFragment(
     }
 
     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
-        if (invalidate) {
+        // 🎓 ITTC: the call history page deleted / blocked calls: read the log again in full
+        if (IttcCallHistory.takeDirty() || invalidate) {
             allRecentCalls = emptyList()
         }
 
@@ -159,9 +197,15 @@ class RecentsFragment(
                 )
 
             prepareCallLog(recentCalls) {
+                // 🎓 ITTC: one row per number in the results too (already off the main thread)
+                val shown = if (onePerNumber) {
+                    groupCallsByDate(IttcCallHistory.groupByNumber(it.filterIsInstance<RecentCall>()))
+                } else {
+                    it
+                }
                 activity?.runOnUiThread {
                     showOrHidePlaceholder(recentCalls.isEmpty())
-                    recentsAdapter?.updateItems(it, fixedText)
+                    recentsAdapter?.updateItems(shown, fixedText)
                 }
             }
         }
@@ -225,11 +269,28 @@ class RecentsFragment(
                     refreshItemsListener = this,
                     showOverflowMenu = true,
                     itemDelete = { deleted ->
-                        allRecentCalls = allRecentCalls.filter { it !in deleted }
+                        // 🎓 ITTC: one row per number: every call of those numbers went
+                        val keys = if (onePerNumber) {
+                            deleted.map { IttcCallHistory.key(it.phoneNumber) }.filter { it.isNotEmpty() }.toHashSet()
+                        } else {
+                            emptySet<String>()
+                        }
+                        allRecentCalls = allRecentCalls.filter {
+                            it !in deleted && !(keys.isNotEmpty() && it is RecentCall && IttcCallHistory.key(it.phoneNumber) in keys)
+                        }
                     },
                     itemClick = {
                         val recentCall = it as RecentCall
-                        activity?.startCallWithConfirmationCheck(recentCall.phoneNumber, recentCall.name)
+                        // 🎓 ITTC: a tap opens the number's call history (Settings: or calls back, as before)
+                        if (IttcCallHistory.tapCalls(context)) {
+                            activity?.startCallWithConfirmationCheck(recentCall.phoneNumber, recentCall.name)
+                        } else {
+                            IttcNumberActivity.open(
+                                context = context,
+                                number = recentCall.phoneNumber,
+                                name = recentCall.name.takeIf { name -> name != recentCall.phoneNumber }
+                            )
+                        }
                     },
                     profileIconClick = {
                         val recentCall = it as RecentCall
@@ -356,12 +417,44 @@ class RecentsFragment(
         )
     }
 
-    /** 🎓 ITTC: "Leads only" on: just the calls with a lead's number (off the main thread) */
+    /**
+     * 🎓 ITTC: "Leads only" on: just the calls with a lead's number; the call-kind chip; one row per
+     * number (off the main thread)
+     */
     private fun ittcFilter(items: List<CallLogItem>): List<CallLogItem> {
-        if (!leadsOnly) return items
-        val calls = items.filterIsInstance<RecentCall>()
-        val leads = IttcBridge.leadsFor(context, calls.map { it.phoneNumber })
-        return groupCallsByDate(calls.filter { it.phoneNumber in leads })
+        val kind = recentsKind
+        val perNumber = onePerNumber
+        if (!leadsOnly && kind == IttcCallHistory.KIND_ALL && !perNumber) return items
+        var calls = items.filterIsInstance<RecentCall>()
+        if (leadsOnly) {
+            val leads = IttcBridge.leadsFor(context, calls.map { it.phoneNumber })
+            calls = calls.filter { it.phoneNumber in leads }
+        }
+
+        return if (perNumber) {
+            groupCallsByDate(IttcCallHistory.groupByNumber(calls, kind))
+        } else {
+            // (a "subsequent calls" group goes by its newest call, as its icon does)
+            groupCallsByDate(calls.filter { IttcCallHistory.matchesKind(it.type, kind) })
+        }
+    }
+
+    /** 🎓 ITTC */
+    private fun kindChips(): List<Pair<Int, TextView>> = listOf(
+        IttcCallHistory.KIND_ALL to binding.ittcRecentsKindAll,
+        IttcCallHistory.KIND_MISSED to binding.ittcRecentsKindMissed,
+        IttcCallHistory.KIND_INCOMING to binding.ittcRecentsKindIncoming,
+        IttcCallHistory.KIND_OUTGOING to binding.ittcRecentsKindOutgoing,
+    )
+
+    /** 🎓 ITTC: the chosen chip filled with the app's colour, the others faint (as in the Leads tab) */
+    private fun renderKindChips() {
+        val kind = recentsKind
+        kindChips().forEach { (k, chip) ->
+            val on = k == kind
+            chip.background.mutate().applyColorFilter(if (on) chipPrimaryColor else (chipTextColor and 0x00FFFFFF) or 0x22000000)
+            chip.setTextColor(if (on) chipPrimaryColor.getContrastColor() else chipTextColor)
+        }
     }
 
     private fun groupCallsByDate(recentCalls: List<RecentCall>): MutableList<CallLogItem> {

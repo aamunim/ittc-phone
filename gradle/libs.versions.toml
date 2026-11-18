@@ -23,6 +23,8 @@ app-build-minimumSDK = "26"
 app-build-javaVersion = "VERSION_17"
 app-build-kotlinJVMTarget = "17"
 [libraries]
+# 🎓 ITTC Phone 3.2: talking to the ITTC server when signed in by itself (HTTPS + the live updates socket)
+okhttp = { module = "com.squareup.okhttp3:okhttp", version = "4.12.0" }
 #Compose
 compose-detekt = { module = "io.nlopez.compose.rules:detekt", version.ref = "detektCompose" }
 #Fossify

@@ -5,15 +5,19 @@ ITTC Phone is the phone app for the admission team of ITTC. It works with ITTC A
 • Dual SIM, speed dial, blocked numbers, call screen with hold, merge and audio controls
 • Fast: recent calls open at once
 
-🎓 Built for admission calls (with ITTC Admission Tracker on the same phone)
+🎓 Built for admission calls (sign in with your ITTC account, or with ITTC Admission Tracker on the same phone)
 • See the lead's name, course and stage on the call screen and in recent calls, even when the number is not saved in your contacts
 • Leads tab: your open leads — today's calls, overdue, never called, hot — and the pipeline stages; super admins can see everyone's
-• After a lead call: choose what happened, write a note, change the pipeline stage and set the next call — saved to the Tracker at once
+• After a lead call: choose what happened, write a note, change the pipeline stage and set the next call — saved at once
 • Find a lead from the dial pad by typing their name
+• One row per number in recent calls, and a call history page for each number
+• Lead page: notes, stage, next call, WhatsApp / SMS templates; add a new lead after a call
+• Follow-up reminders, today's calls against your target, and "Call all" to work through a list
 
 🔐 Private by design
-• Your calls and contacts stay on your phone. ITTC Phone itself sends nothing over the internet, and has no ads or trackers
-• Only calls with your institute's leads are handed to ITTC Admission Tracker on the same phone; personal calls never are
+• Your calls and contacts stay on your phone, with no ads or trackers
+• Only calls with your institute's leads (and the results you save) go to your institute — personal calls never do
+• Without signing in, ITTC Phone sends nothing over the internet
 
 ITTC Phone is free software under the GNU GPL v3, based on Fossify Phone. Source code: https://github.com/aamunim/ittc-phone
 Privacy policy: https://lead.ittc.edu.bd/privacy-ittc-phone

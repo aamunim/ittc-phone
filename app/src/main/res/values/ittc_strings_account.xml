@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC Phone 3.2: the ITTC account screen (signed in without the Tracker) -->
+<resources>
+    <string name="ittc_account_title" translatable="false">ITTC account</string>
+    <string name="ittc_account_not_configured" translatable="false">This build can\'t sign in to ITTC</string>
+    <string name="ittc_account_explain" translatable="false">Sign in with your ITTC Tracker email and password. ITTC Phone then shows your leads and saves lead calls by itself — the Tracker app is not needed. Only calls with your leads are sent; personal calls never leave the phone.</string>
+    <string name="ittc_account_email" translatable="false">Email</string>
+    <string name="ittc_account_password" translatable="false">Password</string>
+    <string name="ittc_account_sign_in" translatable="false">Sign in</string>
+    <string name="ittc_account_signing_in" translatable="false">Signing in…</string>
+    <string name="ittc_account_fill_in" translatable="false">Enter your email and password.</string>
+    <string name="ittc_account_sign_in_failed" translatable="false">Could not sign in.</string>
+    <string name="ittc_account_signed_in" translatable="false">Signed in</string>
+    <string name="ittc_account_status_direct" translatable="false">✅ Working by itself</string>
+    <string name="ittc_account_status_tracker" translatable="false">🎓 Working through the Tracker app</string>
+    <string name="ittc_account_last_updated" translatable="false">Last updated: %s</string>
+    <string name="ittc_account_never_updated" translatable="false">Last updated: not yet</string>
+    <string name="ittc_account_refresh_error" translatable="false">⚠️ %s</string>
+    <string name="ittc_account_waiting" translatable="false">Waiting to send: %d</string>
+    <string name="ittc_account_send_now" translatable="false">Send now</string>
+    <string name="ittc_account_update_now" translatable="false">Update now</string>
+    <string name="ittc_account_updating" translatable="false">Updating…</string>
+    <string name="ittc_account_prefer_direct" translatable="false">Run without the Tracker</string>
+    <string name="ittc_account_prefer_direct_note" translatable="false">When the Tracker app is installed and signed in, ITTC Phone normally works through it. Turn on to let ITTC Phone send its own lead calls (the Tracker then stops sending them, so nothing is saved twice).</string>
+    <string name="ittc_account_reminders" translatable="false">Follow-up reminders</string>
+    <string name="ittc_account_unknown_after_call" translatable="false">After a call with an unknown number, offer Add as a lead</string>
+    <string name="ittc_account_update_needed" translatable="false">Update ITTC Phone from Google Play</string>
+    <string name="ittc_account_update_needed_note" translatable="false">Your admin needs a newer version of ITTC Phone.</string>
+    <string name="ittc_account_open_play" translatable="false">Open Google Play</string>
+    <string name="ittc_account_sign_out" translatable="false">Sign out</string>
+    <string name="ittc_account_sign_out_confirm" translatable="false">Sign out of ITTC on this phone?</string>
+    <string name="ittc_account_sign_out_unsent" translatable="false">%d change(s) are not sent yet (no internet). If you sign out now they are lost.</string>
+    <string name="ittc_account_notifications_off" translatable="false">Notifications are off for ITTC Phone, so reminders can\'t show.</string>
+    <string name="ittc_update_banner" translatable="false">⬆️ Update ITTC Phone — your admin needs a newer version</string>
+</resources>
