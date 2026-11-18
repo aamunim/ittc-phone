@@ -66,6 +66,8 @@ class MainActivity : SimpleActivity() {
     private var storedFontSize = 0
     private var storedStartNameWithSurname = false
     var cachedContacts = ArrayList<Contact>()
+    /** Goes up each time cachedContacts is filled again (Recents drops its per-row contact matches then) */
+    var cachedContactsVersion = 0
 
     // 🎓 ITTC 3.6: the dial pad on the main screen; the contacts it searches (a list never changed
     // after it is set, safe to read off the main thread); a tab change counts only after a touch
@@ -903,10 +905,9 @@ class MainActivity : SimpleActivity() {
     }
 
     fun cacheContacts() {
+        val privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
         ContactsHelper(this).getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
             if (SMT_PRIVATE !in config.ignoredContactSources) {
-                // 🎓 ITTC: opened only when it is read (as Favorites does)
-                val privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
                 val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
                 if (privateContacts.isNotEmpty()) {
                     contacts.addAll(privateContacts)
@@ -917,6 +918,7 @@ class MainActivity : SimpleActivity() {
             try {
                 cachedContacts.clear()
                 cachedContacts.addAll(contacts)
+                cachedContactsVersion++
             } catch (ignored: Exception) {
             }
             // 🎓 ITTC 3.6: for the dial pad's search (its own copy, never changed after)

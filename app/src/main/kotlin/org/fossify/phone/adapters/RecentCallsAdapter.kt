@@ -125,6 +125,7 @@ class RecentCallsAdapter(
     /** (each row's phone contact, by call id, for the current list — looked up once, not on every bind) */
     private val contactCache = HashMap<Int, Contact?>()
     private var contactCacheSize = -1
+    private var contactCacheVersion = -1
 
     private class Avatar(val initials: String, val bg: Int, val fg: Int)
 
@@ -422,10 +423,12 @@ class RecentCallsAdapter(
     }
 
     private fun findContactByCall(recentCall: RecentCall): Contact? {
-        val contacts = (activity as MainActivity).cachedContacts
+        val main = activity as MainActivity
+        val contacts = main.cachedContacts
         // (the app's contacts were loaded again since: look them up afresh)
-        if (contacts.size != contactCacheSize) {
+        if (main.cachedContactsVersion != contactCacheVersion || contacts.size != contactCacheSize) {
             contactCache.clear()
+            contactCacheVersion = main.cachedContactsVersion
             contactCacheSize = contacts.size
         }
         if (contactCache.containsKey(recentCall.id)) return contactCache[recentCall.id]

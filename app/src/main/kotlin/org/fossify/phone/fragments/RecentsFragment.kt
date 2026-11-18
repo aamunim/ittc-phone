@@ -143,6 +143,8 @@ class RecentsFragment(
         recentsAdapter?.apply {
             updateTextColor(textColor)
             initDrawables()
+            // rows on screen again with the new colours / settings / lead stages (no change animation here)
+            notifyItemRangeChanged(0, itemCount)
         }
     }
 
