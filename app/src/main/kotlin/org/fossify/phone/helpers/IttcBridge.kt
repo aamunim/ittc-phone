@@ -15,6 +15,8 @@ import android.provider.CallLog
 import android.telecom.Call
 import android.telecom.DisconnectCause
 import org.fossify.phone.activities.IttcAfterCallActivity
+import org.fossify.phone.activities.IttcLeadActivity
+import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.extensions.isOutgoing
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -90,6 +92,69 @@ object IttcBridge {
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
+    /** Is the Tracker installed (the real one)? */
+    fun trackerInstalled(context: Context): Boolean = trackerReady(context.applicationContext)
+
+    @Volatile private var signedInAt = 0L
+    @Volatile private var signedInKnown = false
+    @Volatile private var signedInAnswer = false
+
+    /**
+     * The Tracker is installed and someone is signed in to it (it answers "who is signed in").
+     * Kept for a minute; on the main thread only the kept answer is given (and a fresh one asked).
+     */
+    fun trackerSignedIn(context: Context): Boolean {
+        val app = context.applicationContext
+        val now = System.currentTimeMillis()
+        if (!signedInKnown) {
+            // (the last answer, kept: right after a restart the main thread must not guess "no")
+            signedInAnswer = app.getSharedPreferences("ittc", Context.MODE_PRIVATE).getBoolean("tracker_signed_in", false)
+            signedInKnown = true
+        }
+        if (now - signedInAt < 60_000) return signedInAnswer
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            signedInAt = now - 50_000 // (ask once; the answer is in within ~10 s)
+            io.execute { askSignedIn(app) }
+            return signedInAnswer
+        }
+        return askSignedIn(app)
+    }
+
+    private fun askSignedIn(app: Context): Boolean {
+        val answer = try {
+            trackerReady(app) && withTracker(app) { client ->
+                client.query(Uri.parse("$PROVIDER/phone_meta"), null, null, null, null)?.use { c ->
+                    if (!c.moveToFirst()) return@use false
+                    val i = c.getColumnIndex("json")
+                    !(i < 0 || c.isNull(i)) && parseMeta(c.getString(i))?.meId != null
+                }
+            } == true
+        } catch (_: Throwable) {
+            false
+        }
+        if (answer != signedInAnswer) {
+            app.getSharedPreferences("ittc", Context.MODE_PRIVATE).edit().putBoolean("tracker_signed_in", answer).apply()
+        }
+        signedInAnswer = answer
+        signedInKnown = true
+        signedInAt = System.currentTimeMillis()
+        return answer
+    }
+
+    /**
+     * Tell the Tracker (2.11.0+) whether ITTC Phone sends lead calls itself now: it then sends none
+     * of its own (no call saved twice). Off the main thread; false: no Tracker / an older one.
+     */
+    fun setTrackerDirect(context: Context, on: Boolean): Boolean {
+        val app = context.applicationContext
+        if (!trackerReady(app)) return false
+        return try {
+            withTracker(app) { it.call("direct_mode", if (on) "1" else "0", null) }?.getString("result") == "ok"
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     /**
      * The colour of a lead's stage line: Admitted blue, Not Now / cancelled grey, a working
      * stage the app's colour
@@ -114,7 +179,8 @@ object IttcBridge {
         }
         io.execute {
             val lead = try {
-                if (!trackerReady(app)) null else query(app, n)
+                if (IttcDirect.isActive(app)) IttcDirect.lookupLead(app, n)
+                else if (!trackerReady(app)) null else query(app, n)
             } catch (_: Throwable) {
                 null
             }
@@ -207,7 +273,9 @@ object IttcBridge {
         recents.execute {
             val found = HashMap<String, Lead>()
             try {
-                if (trackerReady(app)) {
+                if (IttcDirect.isActive(app)) {
+                    batch.forEach { n -> IttcDirect.lookupLead(app, n)?.let { found[n] = it } }
+                } else if (trackerReady(app)) {
                     withTracker(app) { client ->
                         client.query(Uri.parse(NUMBERS), null, null, batch.toTypedArray(), null)?.use { c ->
                             while (c.moveToNext()) {
@@ -238,7 +306,9 @@ object IttcBridge {
         val byClean = numbers.mapNotNull { n -> clean(n)?.let { it to n } }
         val missing = byClean.map { it.first }.distinct()
             .filter { known[it]?.let { k -> now - k.at >= RECENTS_TTL_MS } ?: true }
-        if (missing.isNotEmpty() && trackerReady(app)) {
+        if (missing.isNotEmpty() && IttcDirect.isActive(app)) {
+            missing.forEach { known[it] = Known(IttcDirect.lookupLead(app, it), now) }
+        } else if (missing.isNotEmpty() && trackerReady(app)) {
             missing.chunked(300).forEach { batch ->
                 val found = HashMap<String, Lead>()
                 try {
@@ -295,6 +365,7 @@ object IttcBridge {
     /** null: no Tracker / an older one (the tab then says to update it); call off the main thread */
     fun myLeads(context: Context): List<PhoneLead>? {
         val app = context.applicationContext
+        if (IttcDirect.isActive(app)) return IttcDirect.leads(app).also { myLeadsCache = it }
         if (!trackerReady(app)) return null
         return try {
             withTracker(app) { client ->
@@ -333,6 +404,8 @@ object IttcBridge {
         }?.also { myLeadsCache = it }
     }
 
+    fun parseTimeOf(s: String?): Long? = parseTime(s)
+
     private fun parseTime(s: String?): Long? =
         try {
             s?.let { java.time.OffsetDateTime.parse(it.replace(' ', 'T')).toInstant().toEpochMilli() }
@@ -348,7 +421,10 @@ object IttcBridge {
         val app = context.applicationContext
         recents.execute {
             val answer = try {
-                if (trackerReady(app)) withTracker(app) { it.call("refresh_leads", null, null) }?.getString("result") else null
+                if (IttcDirect.isActive(app)) {
+                    IttcDirect.refresh(app, force = true)
+                    "asked"
+                } else if (trackerReady(app)) withTracker(app) { it.call("refresh_leads", null, null) }?.getString("result") else null
             } catch (_: Throwable) {
                 null
             }
@@ -382,7 +458,28 @@ object IttcBridge {
         val people: List<Person>,
         /** when the Tracker fetched the list (server time) */
         val at: Long?,
-    )
+        /** the admin's ITTC Phone settings (Tracker 2.11.0+ / direct): note_presets, outcome_next, daily_target, min_version */
+        val settings: org.json.JSONObject? = null,
+    ) {
+        /** The admin's quick notes for the after-call screen */
+        val notePresets: List<String>
+            get() = settings?.optJSONArray("note_presets")?.let { a ->
+                (0 until a.length()).mapNotNull { a.optString(it).trim().takeIf { s -> s.isNotEmpty() } }
+            }.orEmpty()
+
+        /** The next call a result suggests: hours from now, or "tomorrow10"; null: none */
+        fun nextFor(outcome: String?): Any? {
+            val rules = settings?.optJSONObject("outcome_next") ?: return null
+            if (outcome == null || !rules.has(outcome) || rules.isNull(outcome)) return null
+            return when (val v = rules.opt(outcome)) {
+                is Number -> v.toDouble().takeIf { it > 0 }
+                is String -> v.takeIf { it.isNotBlank() }
+                else -> null
+            }
+        }
+
+        val dailyTarget: Int get() = settings?.optInt("daily_target", 0) ?: 0
+    }
 
     @Volatile
     var metaCache: PhoneMeta? = null
@@ -391,6 +488,7 @@ object IttcBridge {
     /** null: an older Tracker (no stages) or none yet; call off the main thread */
     fun phoneMeta(context: Context): PhoneMeta? {
         val app = context.applicationContext
+        if (IttcDirect.isActive(app)) return IttcDirect.meta(app)?.also { metaCache = it }
         if (!trackerReady(app)) return null
         return try {
             withTracker(app) { client ->
@@ -405,7 +503,7 @@ object IttcBridge {
         }?.also { metaCache = it }
     }
 
-    private fun parseMeta(json: String): PhoneMeta? {
+    fun parseMeta(json: String): PhoneMeta? {
         val o = try {
             org.json.JSONObject(json)
         } catch (_: Throwable) {
@@ -449,6 +547,7 @@ object IttcBridge {
             stages = stages,
             people = people,
             at = parseTime(o.str("at")),
+            settings = o.optJSONObject("settings"),
         )
     }
 
@@ -458,22 +557,25 @@ object IttcBridge {
      */
     fun watchLeads(context: Context, callback: () -> Unit): android.database.ContentObserver? {
         val app = context.applicationContext
-        if (!trackerReady(app)) return null
         val observer = object : android.database.ContentObserver(main) {
             override fun onChange(selfChange: Boolean) {
                 callback()
             }
         }
-        return try {
-            app.contentResolver.registerContentObserver(Uri.parse("$PROVIDER/my_leads"), false, observer)
-            observer
-        } catch (_: Throwable) {
-            null
+        // (direct mode: ITTC Phone's own list changed, or the mode switched)
+        IttcDirect.addObserver(observer)
+        if (trackerReady(app)) {
+            try {
+                app.contentResolver.registerContentObserver(Uri.parse("$PROVIDER/my_leads"), false, observer)
+            } catch (_: Throwable) {
+            }
         }
+        return observer
     }
 
     fun unwatchLeads(context: Context, observer: android.database.ContentObserver?) {
         observer ?: return
+        IttcDirect.removeObserver(observer)
         try {
             context.applicationContext.contentResolver.unregisterContentObserver(observer)
         } catch (_: Throwable) {
@@ -505,8 +607,27 @@ object IttcBridge {
         stage: Stage? = null,
     ): Boolean {
         val app = context.applicationContext
-        // (nothing goes to the Tracker before the person has seen the disclosure)
-        if (!IttcDisclosure.agreed(app) || !trackerReady(app)) return false
+        // (nothing is sent before the person has seen the disclosure)
+        if (!IttcDisclosure.agreed(app)) return false
+        if (IttcDirect.isActive(app)) {
+            val item = org.json.JSONObject()
+                .put("kind", "outcome")
+                .put("lead_id", leadId)
+                .put("number", number ?: org.json.JSONObject.NULL)
+                .put("outcome", outcome ?: org.json.JSONObject.NULL)
+                .put("note", note?.trim().orEmpty())
+            nextAt?.let { item.put("next_at", it) }
+            startedAt?.let { item.put("started_at", it) }
+            rowIdFor(number)?.let { item.put("device_call_id", it) }
+            stage?.let {
+                item.put("stage_id", it.id)
+                if (it.askDate) item.put("stage_due", true)
+            }
+            IttcDirect.enqueue(app, item)
+            IttcDirect.kick(app)
+            return true
+        }
+        if (!trackerReady(app)) return false
         val extras = Bundle().apply {
             putString("lead_id", leadId)
             number?.let { putString("number", it) }
@@ -538,6 +659,10 @@ object IttcBridge {
     // 📲 Open the lead in the Tracker (and its "add a note" popup for a call)
     // -------------------------------------------------------------------
     fun openLead(context: Context, leadId: String, callLogId: String? = null): Boolean {
+        if (IttcDirect.isActive(context)) {
+            IttcLeadActivity.open(context, leadId)
+            return true
+        }
         if (!trackerReady(context)) return false
         val query = callLogId?.let { "?callNote=${Uri.encode(it)}" }.orEmpty()
         return try {
@@ -615,6 +740,10 @@ object IttcBridge {
         forgetRecents()
         ended.execute {
             try {
+                if (IttcDirect.isActive(app)) {
+                    directEnded(app, number, startedAt, outgoing, talkedSec, reason, canShow)
+                    return@execute
+                }
                 if (!trackerReady(app)) return@execute
                 // only lead calls: a personal call is never handed over
                 val lead = query(app, number, startedAt) ?: return@execute
@@ -647,6 +776,26 @@ object IttcBridge {
                 // never break the phone because of the Tracker; its own sync is the backup
             }
         }
+    }
+
+    /** Direct mode: the after-call screen for a lead, and the call itself queued for the server */
+    private fun directEnded(app: Context, number: String, startedAt: Long, outgoing: Boolean, talkedSec: Int, reason: String?, canShow: Boolean) {
+        // only lead calls: a personal call is never sent
+        val lead = IttcDirect.lookupLead(app, number)
+        if (lead == null) {
+            // (an unknown number: the after-call screen offers "Add as a lead")
+            if (canShow && IttcDirect.unknownAfterCall(app)) {
+                main.post { IttcAfterCallActivity.openUnknown(app, number, outgoing, talkedSec, reason, startedAt) }
+            }
+            return
+        }
+        if (canShow) {
+            main.post { IttcAfterCallActivity.open(app, lead, number, outgoing, talkedSec, reason, startedAt) }
+        }
+        val id = findRow(app, number, startedAt) ?: return
+        rowIds[number] = id
+        IttcDirect.queueCall(app, id)
+        IttcDirect.kick(app)
     }
 
     /** The call log _ID of this call: the row for the number nearest to when it began (waits up to ~10 s) */

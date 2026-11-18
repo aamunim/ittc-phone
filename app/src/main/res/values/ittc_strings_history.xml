@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC: Recents "one row per number", its filter chips and the per-number call history page -->
+<resources>
+    <!-- Settings -->
+    <string name="ittc_hist_one_per_number" translatable="false">Recents: one row per number</string>
+    <string name="ittc_hist_tap_calls" translatable="false">Recents: tapping a call calls back (off: opens its history)</string>
+
+    <!-- Recents filter chips -->
+    <string name="ittc_hist_all" translatable="false">All</string>
+    <string name="ittc_hist_missed" translatable="false">Missed</string>
+    <string name="ittc_hist_incoming" translatable="false">Incoming</string>
+    <string name="ittc_hist_outgoing" translatable="false">Outgoing</string>
+    <string name="ittc_hist_missed_count" translatable="false">%d missed</string>
+
+    <!-- The call history page -->
+    <string name="ittc_hist_title" translatable="false">Call history</string>
+    <string name="ittc_hist_call" translatable="false">Call</string>
+    <string name="ittc_hist_sms" translatable="false">SMS</string>
+    <string name="ittc_hist_whatsapp" translatable="false">WhatsApp</string>
+    <string name="ittc_hist_save" translatable="false">Save</string>
+    <string name="ittc_hist_contact" translatable="false">Contact</string>
+    <string name="ittc_hist_block" translatable="false">Block</string>
+    <string name="ittc_hist_delete" translatable="false">Delete history</string>
+    <string name="ittc_hist_delete_confirm" translatable="false">Delete all %1$d calls with %2$s from the call history?</string>
+    <string name="ittc_hist_deleted" translatable="false">Call history deleted</string>
+    <string name="ittc_hist_blocked" translatable="false">Number blocked</string>
+    <string name="ittc_hist_none" translatable="false">No calls with this number</string>
+    <string name="ittc_hist_no_access" translatable="false">The call history can\'t be read</string>
+    <string name="ittc_hist_no_app" translatable="false">No app can open this</string>
+    <string name="ittc_hist_one_call" translatable="false">1 call</string>
+    <string name="ittc_hist_calls" translatable="false">%d calls</string>
+    <string name="ittc_hist_talk" translatable="false">%s talk</string>
+    <string name="ittc_hist_range" translatable="false">%1$s – %2$s</string>
+    <string name="ittc_hist_sim" translatable="false">SIM %d</string>
+</resources>

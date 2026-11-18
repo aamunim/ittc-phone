@@ -53,6 +53,7 @@ import org.fossify.phone.activities.MainActivity
 import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.databinding.ItemRecentCallBinding
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcCallHistory
 import org.fossify.phone.databinding.ItemRecentsDateBinding
 import org.fossify.phone.dialogs.ShowGroupedCallsDialog
 import org.fossify.phone.extensions.areMultipleSIMsAvailable
@@ -91,6 +92,10 @@ class RecentCallsAdapter(
     private var phoneNumberUtilInstance: PhoneNumberUtil = PhoneNumberUtil.getInstance()
     private var phoneNumberOfflineGeocoderInstance: PhoneNumberOfflineGeocoder = PhoneNumberOfflineGeocoder.getInstance()
     private val cachedSimColors = HashMap<Pair<Int,Int>, Int>()
+
+    // 🎓 ITTC: Recents shows one row per number (not in "Show call details", which has no listener)
+    private val ittcPerNumber: Boolean
+        get() = refreshItemsListener != null && IttcCallHistory.onePerNumber(activity)
 
     init {
         initDrawables()
@@ -317,13 +322,21 @@ class RecentCallsAdapter(
             it.groupedCalls?.mapTo(idsToRemove) { call -> call.id }
         }
 
-        RecentsHelper(activity).removeRecentCalls(idsToRemove) {
-            itemDelete(callsToRemove)
-            val recentCalls = currentList.toMutableList().also { it.removeAll(callsToRemove) }
-            activity.runOnUiThread {
-                refreshItemsListener?.refreshItems()
-                submitList(recentCalls)
-                finishActMode()
+        // 🎓 ITTC: one row per number: every call of the selected numbers, also those not loaded yet
+        val perNumber = ittcPerNumber
+        ensureBackgroundThread {
+            if (perNumber) {
+                idsToRemove.addAll(IttcCallHistory.idsFor(activity, callsToRemove.filter { !it.isUnknownNumber }.map { it.phoneNumber }))
+            }
+
+            RecentsHelper(activity).removeRecentCalls(idsToRemove.distinct()) {
+                itemDelete(callsToRemove)
+                val recentCalls = currentList.toMutableList().also { it.removeAll(callsToRemove) }
+                activity.runOnUiThread {
+                    refreshItemsListener?.refreshItems()
+                    submitList(recentCalls)
+                    finishActMode()
+                }
             }
         }
     }
@@ -537,14 +550,18 @@ class RecentCallsAdapter(
                     isSelected = true
                 }
 
+                // 🎓 ITTC: one row per number: "10:42 · 3 missed" (missed since the last answered / outgoing call)
+                val newMissed = if (ittcPerNumber && call.groupedCalls != null) IttcCallHistory.newMissed(call) else 0
                 itemRecentsDateTime.apply {
                     text = if (refreshItemsListener == null) {
                         call.startTS.formatDateOrTime(context, hideTimeOnOtherDays = false, showCurrentYear = false, hideTodaysDate = false)
+                    } else if (newMissed > 0) {
+                        "${call.startTS.formatTime(activity)} · ${activity.getString(R.string.ittc_hist_missed_count, newMissed)}"
                     } else {
                         call.startTS.formatTime(activity)
                     }
 
-                    setTextColor(if (call.type == Calls.MISSED_TYPE) missedCallColor else secondaryTextColor)
+                    setTextColor(if (call.type == Calls.MISSED_TYPE || newMissed > 0) missedCallColor else secondaryTextColor)
                     setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
                 }
 

@@ -310,6 +310,37 @@
 
             </RelativeLayout>
 
+            <!-- 🎓 ITTC: Recents shows each number once / a tap calls back instead of opening the history -->
+            <RelativeLayout
+                android:id="@+id/settings_ittc_one_per_number_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_ittc_one_per_number"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ittc_hist_one_per_number" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_ittc_tap_calls_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_ittc_tap_calls"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ittc_hist_tap_calls" />
+
+            </RelativeLayout>
+
             <RelativeLayout
                 android:id="@+id/settings_show_call_confirmation_holder"
                 style="@style/SettingsHolderSwitchStyle"
