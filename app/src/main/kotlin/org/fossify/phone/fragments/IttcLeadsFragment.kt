@@ -852,11 +852,6 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE) list.parent?.requestDisallowInterceptTouchEvent(true)
             }
 
-            override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
-                super.clearView(rv, vh)
-                rv.parent?.requestDisallowInterceptTouchEvent(false)
-            }
-
             // (a quick flick is not enough: no call by accident)
             override fun getSwipeEscapeVelocity(defaultValue: Float) = defaultValue * 4
 

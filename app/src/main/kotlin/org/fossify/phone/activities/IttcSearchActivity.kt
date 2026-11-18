@@ -137,8 +137,8 @@ class IttcSearchActivity : SimpleActivity() {
             show(mine, emptyList(), getString(R.string.ittc_c_signed_out))
             return
         }
-        // ("@" alone or one letter: not a search yet)
-        if (text.isNotEmpty() && text.count { it.isLetterOrDigit() } < 2) {
+        // ("@" alone or one character: not a search yet; Bengali vowel signs count)
+        if (text.isNotEmpty() && text.count { !it.isWhitespace() && it != '@' } < 2) {
             show(mine, emptyList(), getString(R.string.ittc_c_search_type_more))
             return
         }

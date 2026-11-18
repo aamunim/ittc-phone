@@ -389,7 +389,8 @@ object IttcVisitFeeApi {
      */
     fun search(context: Context, text: String, limit: Int = 40): List<Found> {
         val clean = text.replace(Regex("[%,()*\"\\\\]"), " ").replace(Regex("\\s+"), " ").trim()
-        if (clean.count { it.isLetterOrDigit() } < 2) return emptyList()
+        // (2 characters at least, "@" and spaces aside; Bengali vowel signs count)
+        if (clean.count { !it.isWhitespace() && it != '@' } < 2) return emptyList()
         val digits = searchDigits(clean)
         val username = clean.trimStart('@').lowercase()
         val parts = arrayListOf(

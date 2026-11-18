@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -92,6 +93,10 @@ class IttcLeadActivity : SimpleActivity() {
     private var cardsBound = false
     /** Paused after the first load (a call, a sheet's screen, the admission screen…): read the lead again */
     private var reloadOnResume = false
+    /** When it was paused (elapsedRealtime): a short pause (a permission dialog…) reads nothing again */
+    private var pausedAt = 0L
+    /** Back from the admission screen: the cards again too */
+    private var rebindOnResume = false
     private var loadedOnce = false
     private val notifyHold = IttcNotify.ScreenHold()
 
@@ -137,10 +142,13 @@ class IttcLeadActivity : SimpleActivity() {
         } catch (_: Throwable) {
         }
         notifyHold.resume(this)
-        if (reloadOnResume) {
-            // (back from elsewhere: the lead and both cards again, even offline)
+        val rebind = rebindOnResume
+        rebindOnResume = false
+        if (rebind || (reloadOnResume && SystemClock.elapsedRealtime() - pausedAt > 3_000)) {
+            // (back from elsewhere a while: the lead again; the cards when the server answers,
+            // or at once (even offline) after the admission screen)
             reloadOnResume = false
-            cardsBound = false
+            if (rebind) cardsBound = false
             load()
         }
     }
@@ -148,6 +156,7 @@ class IttcLeadActivity : SimpleActivity() {
     override fun onPause() {
         notifyHold.pause()
         if (loadedOnce) reloadOnResume = true
+        pausedAt = SystemClock.elapsedRealtime()
         super.onPause()
     }
 
@@ -286,8 +295,10 @@ class IttcLeadActivity : SimpleActivity() {
     }
 
     /** After a sheet saved something: the lead and its cards again */
+    /** After a sheet's change: the lead and the cards again */
     private fun reload() {
         if (!alive()) return
+        cardsBound = false
         load()
     }
 
@@ -659,7 +670,7 @@ class IttcLeadActivity : SimpleActivity() {
     private fun payment() = guarded("payment") { IttcPaymentSheet.show(this, leadId) { reload() } }
 
     private fun admit() = guarded("admit") {
-        reloadOnResume = true
+        rebindOnResume = true
         IttcAdmitActivity.open(this, leadId)
     }
 

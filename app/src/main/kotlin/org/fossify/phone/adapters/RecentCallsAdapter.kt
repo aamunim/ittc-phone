@@ -47,6 +47,7 @@ import org.fossify.commons.helpers.PERMISSION_WRITE_CALL_LOG
 import org.fossify.commons.helpers.SimpleContactsHelper
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isNougatPlus
+import org.fossify.commons.models.RecyclerSelectionPayload
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.phone.R
@@ -216,10 +217,15 @@ class RecentCallsAdapter(
 
     // 🎓 ITTC: after a new list only the corners / dividers of the rows on screen are drawn again (no full rebind, no flicker)
     override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: MutableList<Any>) {
-        if (payloads.isNotEmpty() && payloads.all { it === PAYLOAD_CORNERS }) {
-            if (holder is RecentCallViewHolder && position in 0 until itemCount) holder.bindCorners(position)
+        // (and a selection change only redraws the row's selected background: the base's payload)
+        if (payloads.isNotEmpty() && holder is RecentCallViewHolder && payloads.all { it === PAYLOAD_CORNERS || it is RecyclerSelectionPayload }) {
+            if (position in 0 until itemCount) {
+                if (payloads.any { it === PAYLOAD_CORNERS }) holder.bindCorners(position)
+                (payloads.lastOrNull { it is RecyclerSelectionPayload } as? RecyclerSelectionPayload)?.let { holder.bindSelected(it.selected) }
+            }
             return
         }
+        if (payloads.isNotEmpty() && payloads.all { it === PAYLOAD_CORNERS }) return
         super.onBindViewHolder(holder, position, payloads)
     }
 
@@ -614,6 +620,18 @@ class RecentCallsAdapter(
                     marginEnd = 0
                 }
                 binding.root.foreground = null
+            }
+        }
+
+        /** The selected look only (a selection change: no full bind) */
+        fun bindSelected(selected: Boolean) {
+            binding.itemRecentsHolder.isSelected = selected
+            if (cardMode) {
+                val fill = if (selected) palette.primarySoft else palette.surface
+                if (cardColor != fill) {
+                    cardColor = fill
+                    card.setColor(fill)
+                }
             }
         }
 

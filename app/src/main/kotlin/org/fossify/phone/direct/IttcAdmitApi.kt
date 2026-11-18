@@ -535,15 +535,15 @@ object IttcAdmitApi {
 
     /**
      * After a network error on record_payment (the reply was lost, the payment may be in): a
-     * payment of [amount] entered by me since [sinceMs] (less 2 minutes for the clocks), or null.
-     * Throws when the list can't be read either.
+     * payment of [amount] entered by me whose id is not in [knownIds] (the payments there before
+     * the attempt), or null. No clock test: the phone's clock may be off. Throws when the list
+     * can't be read either.
      */
-    fun findJustRecorded(context: Context, leadId: String, amount: Double, sinceMs: Long): PayResult? {
+    fun findJustRecorded(context: Context, leadId: String, amount: Double, knownIds: Set<String>): PayResult? {
         val me = IttcAuth.session(context)?.userId
-        val from = sinceMs - 2 * 60_000L
         val hit = payments(context, leadId).payments.firstOrNull {
             !it.voided && !it.refund && Math.abs(it.amount - amount) < 0.005 &&
-                (me == null || it.receivedBy == me) && (if (it.createdAt > 0) it.createdAt else it.paidAt) >= from
+                (me == null || it.receivedBy == me) && it.id !in knownIds
         } ?: return null
         return PayResult(hit.id, hit.receiptNo, null)
     }

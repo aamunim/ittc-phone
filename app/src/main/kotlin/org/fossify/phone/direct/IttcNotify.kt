@@ -48,6 +48,8 @@ object IttcNotify {
     private val worker = Executors.newSingleThreadExecutor()
     private var beat: ScheduledFuture<*>? = null
     private var retry: ScheduledFuture<*>? = null
+    /** The socket closed a little after the last screen let go (a screen to screen move keeps it) */
+    private var closing: ScheduledFuture<*>? = null
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<(Int) -> Unit>()
     private val posted = LinkedHashSet<String>()
@@ -105,6 +107,8 @@ object IttcNotify {
         val app = context.applicationContext
         appContext = app
         synchronized(this) {
+            closing?.cancel(false)
+            closing = null
             users++
             wanted = true
         }
@@ -125,15 +129,34 @@ object IttcNotify {
                 users = if (signedIn) (users - 1).coerceAtLeast(0) else 0
                 if (users > 0) return@execute
                 wanted = false
-                beat?.cancel(false)
                 retry?.cancel(false)
-                val s = socket
-                socket = null
-                try {
-                    s?.close(1000, null)
-                } catch (_: Throwable) {
+                closing?.cancel(false)
+                closing = null
+                if (!signedIn) {
+                    closeNow()
+                } else {
+                    // (in ~3 s, unless a screen starts again before: no reconnect between screens)
+                    closing = timer.schedule({
+                        synchronized(this@IttcNotify) {
+                            if (users == 0 && !wanted) closeNow()
+                        }
+                    }, 3_000, TimeUnit.MILLISECONDS)
                 }
             }
+        }
+    }
+
+    /** (holding the lock) the socket closed now */
+    private fun closeNow() {
+        closing?.cancel(false)
+        closing = null
+        beat?.cancel(false)
+        retry?.cancel(false)
+        val s = socket
+        socket = null
+        try {
+            s?.close(1000, null)
+        } catch (_: Throwable) {
         }
     }
 

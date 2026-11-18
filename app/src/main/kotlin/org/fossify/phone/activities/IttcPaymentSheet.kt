@@ -52,7 +52,8 @@ object IttcPaymentSheet {
                 column.addView(IttcDUi.title(activity, activity.getString(R.string.ittc_d_payments_title)))
                 val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
                 column.addView(body, IttcDUi.lp(activity, top = 4f))
-                fun load() {
+                /** [notice]: a message shown on top of the fresh list */
+                fun load(notice: String? = null) {
                     body.removeAllViews()
                     body.addView(IttcDUi.progress(activity), IttcDUi.lp(activity, top = 24f, width = ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER_HORIZONTAL })
                     val app = activity.applicationContext
@@ -70,10 +71,13 @@ object IttcPaymentSheet {
                             try {
                                 body.removeAllViews()
                                 val d = r.getOrNull()
+                                if (notice != null) {
+                                    body.addView(IttcDUi.errorBox(activity).also { IttcDUi.showError(it, notice) })
+                                }
                                 if (d == null) {
                                     body.addView(IttcDUi.hint(activity, IttcAdmitApi.errorText(r.exceptionOrNull() ?: Exception(), activity.getString(R.string.ittc_d_not_found))))
                                 } else {
-                                    fill(activity, body, d, dialog) {
+                                    fill(activity, body, d, dialog, reload = { load(it) }) {
                                         changed = true
                                         load()
                                     }
@@ -91,7 +95,7 @@ object IttcPaymentSheet {
         }
     }
 
-    private fun fill(activity: Activity, body: LinearLayout, d: Data, dialog: android.app.Dialog, saved: () -> Unit) {
+    private fun fill(activity: Activity, body: LinearLayout, d: Data, dialog: android.app.Dialog, reload: (String) -> Unit, saved: () -> Unit) {
         val p = IttcTheme.of(activity)
         val lead = d.lead
         body.addView(IttcDUi.hint(activity, listOfNotNull(lead.name, lead.studentRef?.let { activity.getString(R.string.ittc_d_student_id, it) }).joinToString(" · ")))
@@ -183,7 +187,9 @@ object IttcPaymentSheet {
                     save.alpha = 0.5f
                     val app = activity.applicationContext
                     val amountNow = form.amount()
-                    val started = System.currentTimeMillis()
+                    // the payments there before this attempt (the list on screen)
+                    val knownIds = pays.payments.map { it.id }.toSet()
+                    var notConfirmed = false
                     ensureBackgroundThread {
                         val r: Result<IttcAdmitApi.PayResult> = try {
                             Result.success(
@@ -192,13 +198,22 @@ object IttcPaymentSheet {
                         } catch (e: Throwable) {
                             if (e is IttcApi.ApiError && e.status == 0) {
                                 // The reply was lost: it may be saved. Look before letting it be sent again.
-                                val found = try {
-                                    IttcAdmitApi.findJustRecorded(app, lead.id, amountNow, started)
-                                } catch (_: Throwable) {
-                                    null
+                                try {
+                                    val found = IttcAdmitApi.findJustRecorded(app, lead.id, amountNow, knownIds)
+                                    if (found != null) {
+                                        Result.success(found)
+                                    } else {
+                                        notConfirmed = true
+                                        Result.failure(IllegalStateException(app.getString(R.string.ittc_d_pay_not_confirmed)))
+                                    }
+                                } catch (e2: Throwable) {
+                                    if (e2 is IttcApi.ApiError && e2.status == 0) {
+                                        Result.failure(e) // still no internet: the original error
+                                    } else {
+                                        notConfirmed = true
+                                        Result.failure(IllegalStateException(app.getString(R.string.ittc_d_pay_not_confirmed)))
+                                    }
                                 }
-                                if (found != null) Result.success(found)
-                                else Result.failure(IllegalStateException(app.getString(R.string.ittc_d_pay_not_confirmed)))
                             } else {
                                 Result.failure(e)
                             }
@@ -207,7 +222,14 @@ object IttcPaymentSheet {
                             busy = false
                             save.alpha = 1f
                             if (!IttcDUi.alive(activity)) return@runOnUiThread
-                            r.onFailure { IttcDUi.showError(error, IttcAdmitApi.errorText(it, activity.getString(R.string.ittc_d_could_not_save))) }
+                            r.onFailure {
+                                if (notConfirmed) {
+                                    // it may be in: show the list as it is now, the message on top
+                                    reload(activity.getString(R.string.ittc_d_pay_not_confirmed))
+                                } else {
+                                    IttcDUi.showError(error, IttcAdmitApi.errorText(it, activity.getString(R.string.ittc_d_could_not_save)))
+                                }
+                            }
                             r.onSuccess { res ->
                                 val amount = IttcAdmitApi.money(amountNow)
                                 activity.toast(activity.getString(R.string.ittc_d_payment_saved, amount, res.receiptNo))

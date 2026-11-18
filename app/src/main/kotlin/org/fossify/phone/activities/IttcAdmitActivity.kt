@@ -616,6 +616,8 @@ class IttcAdmitActivity : SimpleActivity() {
                         null
                     }
                     if (now == null || !now.admitted) throw e
+                    // markAdmitted's own refresh didn't run: bring the lists up to date
+                    IttcDirect.refreshAsync(app, force = true)
                     // admitted: the first payment only if none is in yet
                     if (payFirst) {
                         payFirst = try {
@@ -629,7 +631,12 @@ class IttcAdmitActivity : SimpleActivity() {
                 // the payment, now that the student is admitted (paid now, as the Tracker's AdmitSheet)
                 if (payArgs != null && payFirst) {
                     val amount = payArgs[0] as Double
-                    val started = System.currentTimeMillis()
+                    // the payments there before this attempt (null: couldn't be read)
+                    val knownIds = try {
+                        IttcAdmitApi.payments(app, leadId).payments.map { it.id }.toSet()
+                    } catch (_: Throwable) {
+                        null
+                    }
                     try {
                         paid = IttcAdmitApi.recordPayment(
                             app, leadId, amount, payArgs[1] as String, payArgs[2] as String?, null,
@@ -638,7 +645,7 @@ class IttcAdmitActivity : SimpleActivity() {
                     } catch (e: Throwable) {
                         if (e is IttcApi.ApiError && e.status == 0) {
                             paid = try {
-                                IttcAdmitApi.findJustRecorded(app, leadId, amount, started)
+                                knownIds?.let { IttcAdmitApi.findJustRecorded(app, leadId, amount, it) }
                             } catch (_: Throwable) {
                                 null
                             }
