@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.9: the Leads tab's pipeline board (a column per stage, drag a card to move the lead) -->
+<resources>
+    <!-- the list / board switch beside the filter chips -->
+    <string name="ittc_bd_view_list" translatable="false">Show as a list</string>
+    <string name="ittc_bd_view_board" translatable="false">Show as a board</string>
+
+    <!-- a column -->
+    <string name="ittc_bd_to_call" translatable="false">%d to call today</string>
+    <string name="ittc_bd_to_call_done" translatable="false">%1$d to call today · %2$d done</string>
+    <string name="ittc_bd_none_due" translatable="false">No calls due today</string>
+    <string name="ittc_bd_empty" translatable="false">No leads here</string>
+    <string name="ittc_bd_other" translatable="false">Other</string>
+    <string name="ittc_bd_column_desc" translatable="false">%1$s, %2$d leads</string>
+
+    <!-- a card -->
+    <string name="ittc_bd_call_was_due" translatable="false">Call was due %s ago</string>
+
+    <!-- dragging a card -->
+    <string name="ittc_bd_drop_hint" translatable="false">Drop on a stage to move the lead</string>
+    <string name="ittc_bd_drop_here" translatable="false">Drop here</string>
+    <string name="ittc_bd_drop_cancel" translatable="false">Drop here to cancel</string>
+    <string name="ittc_bd_not_for_course" translatable="false">“%s” is not a stage for this lead\'s course</string>
+
+    <!-- moving -->
+    <string name="ittc_bd_move_to" translatable="false">Move to…</string>
+    <string name="ittc_bd_move_title" translatable="false">Move %s?</string>
+    <string name="ittc_bd_move" translatable="false">Move</string>
+    <string name="ittc_bd_reason" translatable="false">Reason</string>
+    <string name="ittc_bd_note_required" translatable="false">A note is needed for this stage</string>
+    <string name="ittc_bd_pick_date" translatable="false">📅 Pick the %s</string>
+    <string name="ittc_bd_date_first" translatable="false">Please pick the %s first.</string>
+    <string name="ittc_bd_closed_text" translatable="false">This closes the lead for now. It leaves the call lists.</string>
+    <string name="ittc_bd_admit_text" translatable="false">Admitting is done on the admit form: the course, the batch, the fee and the student ID.</string>
+    <string name="ittc_bd_open_admit" translatable="false">Open the admit form</string>
+    <string name="ittc_bd_moved" translatable="false">%1$s moved to %2$s</string>
+    <string name="ittc_bd_moved_back" translatable="false">%1$s moved back to %2$s</string>
+    <string name="ittc_bd_undo" translatable="false">Undo</string>
+    <string name="ittc_bd_undo_note" translatable="false">Moved back from %s (undo)</string>
+    <string name="ittc_bd_from_to" translatable="false">From %1$s to %2$s</string>
+</resources>

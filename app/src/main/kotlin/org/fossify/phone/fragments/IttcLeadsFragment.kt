@@ -9,6 +9,7 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.format.DateUtils
@@ -36,8 +37,10 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.phone.R
 import org.fossify.phone.activities.IttcAddLeadActivity
+import org.fossify.phone.activities.IttcAdmitActivity
 import org.fossify.phone.activities.IttcLeadActivity
 import org.fossify.phone.activities.IttcLeadSheet
+import org.fossify.phone.activities.IttcStageMoveSheet
 import org.fossify.phone.activities.IttcTeamActivity
 import org.fossify.phone.databinding.IttcFragmentLeadsBinding
 import org.fossify.phone.databinding.IttcItemLeadBinding
@@ -50,6 +53,7 @@ import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDialer
 import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcStageMove
 import org.fossify.phone.helpers.IttcTabBadges
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcToday
@@ -71,6 +75,9 @@ import java.util.concurrent.Executors
  * lead" and live updates when signed in to ITTC directly, and "▶ Call all" (the power dialer).
  * 3.5: the 3.3 look — a blue "Today" card with the target ring, pill chips, lead cards (avatar,
  * stage pill, course · next call, the last note); swipe right calls, swipe left sets the next call.
+ * 3.9: ☰ list / ▦ board beside the filter chips — the board ([IttcLeadsBoard]) shows the same leads
+ * as a column per stage; in direct mode a card dragged to another stage (or "Move to…" in its long
+ * press sheet) moves the lead the lead page's way ([IttcStageMove]), with Undo.
  */
 class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     MyViewPagerFragment<IttcLeadsFragment.LeadsInnerBinding>(context, attributeSet) {
@@ -127,6 +134,11 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         private val liveExec = Executors.newSingleThreadExecutor()
         @Volatile private var remindersAt = 0L
         private const val KEY_TODAY_COLLAPSED = "leads_today_collapsed"
+        private const val KEY_BOARD = "leads_board"
+        private const val UNDO_MS = 5_000L
+        /** a board move is shown over the server's list until the server has it (or this long after it left the phone) */
+        private const val PENDING_SHOWN_MS = 60_000L
+        private const val PENDING_MAX_MS = 10 * 60_000L
         private const val TODAY_FOLD_MS = 180L
     }
 
@@ -165,6 +177,11 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         listOf(binding.ittcLeadsAdd, binding.ittcLeadsCallAll, binding.ittcLeadsStop, binding.ittcLeadsTeam).forEach { IttcUi.ripple(it) }
         binding.ittcLeadsList.setHasFixedSize(true)
         setupSwipes()
+        // ▦ 3.9: the board (remembered)
+        boardOn = prefs.getBoolean(KEY_BOARD, false)
+        binding.ittcLeadsViewList.setOnClickListener { setBoard(false) }
+        binding.ittcLeadsViewBoard.setOnClickListener { setBoard(true) }
+        listOf(binding.ittcLeadsViewList, binding.ittcLeadsViewBoard, binding.ittcLeadsUndoAction).forEach { IttcUi.ripple(it) }
         // (the last list at once, then the Tracker's)
         all = IttcBridge.myLeadsCache
         meta = IttcBridge.metaCache
@@ -246,6 +263,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         chipsSignature = null
         stagesSignature = null
         adapter.colorsChanged()
+        boardOrNull?.colorsChanged()
+        toggleStyled = null
         setBackgroundColor(p.bg)
         binding.ittcLeadsPlaceholder.setTextColor(p.text2)
         binding.ittcLeadsHint.setTextColor(p.muted)
@@ -280,7 +299,14 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     private fun load() {
         val ctx = context ?: return
+        // (board moves shown before the server has them: which still wait in the outbox)
+        val moved = pendingMoves.keys.toList()
         ensureBackgroundThread {
+            val queued: Set<String> = if (moved.isEmpty()) emptySet() else try {
+                moved.filter { IttcDirect.pendingFor(ctx, it) > 0 }.toSet()
+            } catch (_: Throwable) {
+                emptySet()
+            }
             val leads = try {
                 IttcBridge.myLeads(ctx)
             } catch (e: Throwable) {
@@ -320,7 +346,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 // (the Tracker installed / signed in after this tab opened: watch it now)
                 if (observer == null && isAttachedToWindow) observer = IttcBridge.watchLeads(context) { reload() }
                 loadedOnce = true
-                all = leads ?: emptyList()
+                all = withPending(leads ?: emptyList(), queued)
                 meta = m
                 noTracker = leads == null
                 // (the main screen's Leads badge: my leads due today or overdue)
@@ -470,7 +496,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             try {
                 TransitionManager.beginDelayedTransition(
                     this,
-                    AutoTransition().setDuration(TODAY_FOLD_MS).excludeChildren(binding.ittcLeadsList, true),
+                    AutoTransition().setDuration(TODAY_FOLD_MS).excludeChildren(binding.ittcLeadsList, true)
+                        .excludeChildren(binding.ittcLeadsBoard, true),
                 )
             } catch (_: Throwable) {
             }
@@ -675,9 +702,16 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         // (a stage that is gone: all stages)
         val stages = meta?.stages.orEmpty()
         if (meta != null && stageId != null && stages.none { it.id == stageId }) stageId = null
-        val staged = scoped.filter { stageId == null || it.stageId == stageId }
+        // ▦ 3.9: the board has a column per stage (the stage chips row and the stage choice are the list's)
+        val boardMode = boardOn && stages.isNotEmpty()
+        renderViewToggle(stages.isNotEmpty(), boardMode)
+        val staged = if (boardMode) scoped else scoped.filter { stageId == null || it.stageId == stageId }
         renderChips(today, staged)
-        renderStages(scoped.filter { query.isNotEmpty() || matches(filter, it, today) }, stages)
+        if (boardMode) {
+            binding.ittcLeadsStagesScroll.beVisibleIf(false)
+        } else {
+            renderStages(scoped.filter { query.isNotEmpty() || matches(filter, it, today) }, stages)
+        }
         renderStatus()
         val q = query.lowercase(Locale.getDefault())
         val digits = query.filter { it.isDigit() }
@@ -686,7 +720,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 (q.isEmpty() || l.name.lowercase(Locale.getDefault()).contains(q) ||
                     (digits.length >= 3 && listOfNotNull(l.phone, l.altPhone, l.whatsapp).any { it.filter(Char::isDigit).contains(digits) }))
         }.sortedWith(compareBy<IttcBridge.PhoneLead> { it.nextCall == null }.thenBy { it.nextCall ?: Long.MAX_VALUE })
-        adapter.submit(shown)
+        if (boardMode) board.submit(shown, stages, today, boardLook()) else adapter.submit(shown)
         shownLeads = shown
         renderActions()
         renderToday()
@@ -699,7 +733,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                     else -> R.string.ittc_l2_sign_in_here
                 },
             )
-            shown.isEmpty() -> context.getString(if (direct) R.string.ittc_l2_leads_none_direct else R.string.ittc_leads_none)
+            // (the board shows its columns, empty ones too)
+            shown.isEmpty() && !boardMode -> context.getString(if (direct) R.string.ittc_l2_leads_none_direct else R.string.ittc_leads_none)
             else -> null
         }
         binding.ittcLeadsPlaceholder.text = placeholder
@@ -713,8 +748,13 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             binding.ittcLeadsPlaceholder.setOnClickListener(null)
             binding.ittcLeadsPlaceholder.isClickable = false
         }
-        IttcUi.fadeIf(binding.ittcLeadsList, placeholder == null)
-        binding.ittcLeadsHint.beVisibleIf(placeholder == null && !swipeLearned())
+        IttcUi.fadeIf(binding.ittcLeadsList, placeholder == null && !boardMode)
+        IttcUi.fadeIf(binding.ittcLeadsBoard, placeholder == null && boardMode)
+        if (!boardMode) {
+            boardOrNull?.cancelDrag()
+            hideMoved()
+        }
+        binding.ittcLeadsHint.beVisibleIf(placeholder == null && !boardMode && !swipeLearned())
     }
 
     /**
@@ -977,6 +1017,212 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         } catch (e: Throwable) {
             IttcCrash.record(context, e, "Leads tab: lead sheet")
         }
+    }
+
+    // ------------------------------------------------------------- ▦ 3.9: the board
+    /** The board is chosen (shown when there are stages) */
+    private var boardOn = false
+    /** made the first time the board shows (the list alone never pays for it) */
+    private var boardOrNull: IttcLeadsBoard? = null
+    private val board: IttcLeadsBoard
+        get() = boardOrNull ?: IttcLeadsBoard(context, binding, boardHost).also {
+            boardOrNull = it
+            it.setup()
+        }
+    private var toggleStyled: Pair<IttcTheme.Palette, Boolean>? = null
+
+    private val boardHost = object : IttcLeadsBoard.Host {
+        override fun palette(): IttcTheme.Palette = pal()
+
+        // (as the lead page: the stage is changed when signed in to ITTC here)
+        override fun canMove(): Boolean = direct && activity != null
+
+        override fun owner(l: IttcBridge.PhoneLead): String? =
+            if (isSuper && scope != Scope.MY && person == null) ownerName(l) else null
+
+        override fun whenText(l: IttcBridge.PhoneLead, now: Long, today: Long): String = this@IttcLeadsFragment.whenText(l, now, today)
+
+        override fun span(ms: Long): String = this@IttcLeadsFragment.span(ms)
+
+        override fun initials(name: String?): String = initialsOf(name)
+
+        // (as a row's tap: the lead's own screen in direct mode, else the quick choices)
+        override fun open(l: IttcBridge.PhoneLead) {
+            val act = activity
+            if (direct && act != null) IttcLeadActivity.open(act, l.leadId) else showOptions(l)
+        }
+
+        override fun longPress(l: IttcBridge.PhoneLead) = showBoardOptions(l)
+
+        override fun call(l: IttcBridge.PhoneLead) = this@IttcLeadsFragment.call(l.callNumber)
+
+        override fun whatsApp(number: String) {
+            activity?.let { IttcLeadSheet.openWhatsApp(it, number) }
+        }
+
+        override fun drop(l: IttcBridge.PhoneLead, stage: IttcBridge.Stage) = requestMove(l, stage)
+    }
+
+    /** What the board's cards look like besides their leads (as the list's rows: theme, owner shown, the minute) */
+    private fun boardLook(): List<Any?> {
+        val ownerShown = isSuper && scope != Scope.MY && person == null
+        return listOf(pal(), ownerShown, if (ownerShown) meta?.let { it.meId to it.people } else null, System.currentTimeMillis() / 60_000L)
+    }
+
+    private fun setBoard(on: Boolean) {
+        if (boardOn == on) return
+        boardOn = on
+        prefs.edit().putBoolean(KEY_BOARD, on).apply()
+        render()
+    }
+
+    /** ☰ / ▦: the chosen one white (raised) on the soft track; styled again only when it changes */
+    private fun renderViewToggle(show: Boolean, boardMode: Boolean) {
+        val b = binding
+        b.ittcLeadsViewToggle.beVisibleIf(show)
+        if (!show) return
+        val p = pal()
+        val key = p to boardMode
+        if (toggleStyled == key) return
+        toggleStyled = key
+        b.ittcLeadsViewToggle.background = IttcTheme.rounded(context, p.surfaceAlt, 999f)
+        val inset = IttcTheme.dp(context, 4f)
+        listOf(b.ittcLeadsViewList to !boardMode, b.ittcLeadsViewBoard to boardMode).forEach { (v, on) ->
+            // (dark: the chosen one in the soft accent, a white pill would glare)
+            v.background = if (on) InsetDrawable(IttcTheme.rounded(context, if (p.dark) p.primarySoft else p.surface, 999f), inset) else null
+            v.elevation = if (on) IttcTheme.dp(context, 2f).toFloat() else 0f
+            v.setColorFilter(if (on) p.primary else p.muted)
+            v.isSelected = on
+        }
+    }
+
+    /** The long press sheet on the board: + "Move to…" (direct mode: the stages of the lead's course) */
+    private fun showBoardOptions(l: IttcBridge.PhoneLead) {
+        val act = activity ?: return
+        try {
+            val targets = if (direct) meta?.stages.orEmpty().filter { it.forCourse(l.courseId) } else emptyList()
+            val onMove: ((IttcBridge.Stage) -> Unit)? = if (direct) ({ st: IttcBridge.Stage -> requestMove(l, st) }) else null
+            IttcLeadSheet.show(act, l, direct, canHandOver = isSuper, moveTo = targets, onMove = onMove)
+        } catch (e: Throwable) {
+            IttcCrash.record(context, e, "Leads board: lead sheet")
+        }
+    }
+
+    /**
+     * Move [l] to [st] (a drop on the board, or "Move to…"): the lead page's rules — a stage that
+     * needs a note or a date, or closes the lead, is asked first (a sheet); Admitted goes to the
+     * admit form; any other stage moves at once (with Undo).
+     */
+    private fun requestMove(l: IttcBridge.PhoneLead, st: IttcBridge.Stage) {
+        val act = activity ?: return
+        if (!direct || l.stageId == st.id) return
+        if (!st.forCourse(l.courseId)) {
+            context.toast(context.getString(R.string.ittc_bd_not_for_course, st.name))
+            return
+        }
+        val from = meta?.stages.orEmpty().firstOrNull { it.id == l.stageId }
+        try {
+            if (IttcStageMove.isAdmitted(st.name) || IttcStageMove.needsConfirm(st)) {
+                IttcStageMoveSheet.show(
+                    act, l, from?.name ?: l.stage, st, meta?.notePresets.orEmpty(),
+                    onMove = { note, due -> moveNow(l, from, st, note, due, undo = false) },
+                    onAdmit = { IttcAdmitActivity.open(act, l.leadId) },
+                )
+            } else {
+                moveNow(l, from, st, null, null, undo = false)
+            }
+        } catch (e: Throwable) {
+            IttcCrash.record(context, e, "Leads board: move")
+        }
+    }
+
+    /** A stage move shown here before the server's list has it */
+    private class PendingMove(val stageId: String, val stage: String, val due: Long?, val at: Long)
+
+    private val pendingMoves = HashMap<String, PendingMove>()
+
+    /** The server's / Tracker's list with this tab's own moves on top, until the list has them ([queued]: still in the outbox) */
+    private fun withPending(list: List<IttcBridge.PhoneLead>, queued: Set<String>): List<IttcBridge.PhoneLead> {
+        if (pendingMoves.isEmpty()) return list
+        val now = System.currentTimeMillis()
+        val settled = HashSet<String>()
+        val out = list.map { l ->
+            val pm = pendingMoves[l.leadId] ?: return@map l
+            if (l.stageId == pm.stageId || (l.leadId !in queued && now - pm.at > PENDING_SHOWN_MS)) {
+                settled += l.leadId
+                l
+            } else {
+                l.copy(stage = pm.stage, stageId = pm.stageId, nextCall = pm.due ?: l.nextCall)
+            }
+        }
+        val entries = pendingMoves.entries.iterator()
+        while (entries.hasNext()) {
+            val e = entries.next()
+            if (e.key in settled || now - e.value.at > PENDING_MAX_MS) entries.remove()
+        }
+        return out
+    }
+
+    /**
+     * Queue the move (the lead page's way: the outbox, sent at once with internet, kept without), show
+     * it at once, then "Rahim moved to Interested · Undo" ([undo]: this is the Undo — no Undo again)
+     */
+    private fun moveNow(l: IttcBridge.PhoneLead, from: IttcBridge.Stage?, to: IttcBridge.Stage, note: String?, due: Long?, undo: Boolean) {
+        val act = activity ?: return
+        val name = l.name.ifEmpty { l.callNumber.orEmpty() }
+        IttcStageMove.queue(act, l.leadId, IttcStageMove.item(to.id, note, due)) { ok ->
+            if (!::binding.isInitialized) return@queue
+            if (!ok) {
+                context.toast(R.string.ittc_lp_no_app)
+                return@queue
+            }
+            val moved = l.copy(stage = to.name, stageId = to.id, nextCall = due ?: l.nextCall)
+            pendingMoves[l.leadId] = PendingMove(to.id, to.name, due, System.currentTimeMillis())
+            all = all.map { if (it.leadId == l.leadId) moved else it }
+            render()
+            // (Undo: back to the stage it came from, when that needs no date; a note when it needs one)
+            val back = from?.takeIf {
+                !undo && due == null && it.id != to.id && !it.askDate && it.forCourse(l.courseId) && !IttcStageMove.isAdmitted(it.name)
+            }
+            if (undo) {
+                showMoved(context.getString(R.string.ittc_bd_moved_back, name, to.name), null)
+            } else {
+                showMoved(
+                    context.getString(R.string.ittc_bd_moved, name, to.name),
+                    back?.let { f ->
+                        {
+                            val undoNote = if (f.noteRequired) context.getString(R.string.ittc_bd_undo_note, to.name) else null
+                            moveNow(moved, to, f, undoNote, null, undo = true)
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    private val hideMovedNow = Runnable { IttcUi.fadeIf(binding.ittcLeadsUndo, false) }
+
+    /** The bar over the board for a few seconds ([undo]: its Undo) */
+    private fun showMoved(text: String, undo: (() -> Unit)?) {
+        val b = binding
+        val p = pal()
+        b.ittcLeadsUndo.background = if (p.dark) IttcTheme.rounded(context, p.surfaceAlt, 14f, p.outline) else IttcTheme.rounded(context, p.text, 14f)
+        b.ittcLeadsUndoText.setTextColor(if (p.dark) p.text else p.bg)
+        b.ittcLeadsUndoAction.setTextColor(if (p.dark) p.call else p.ring)
+        b.ittcLeadsUndoText.text = text
+        b.ittcLeadsUndoAction.beVisibleIf(undo != null)
+        b.ittcLeadsUndoAction.setOnClickListener {
+            hideMoved()
+            undo?.invoke()
+        }
+        IttcUi.fadeIn(b.ittcLeadsUndo)
+        removeCallbacks(hideMovedNow)
+        postDelayed(hideMovedNow, UNDO_MS)
+    }
+
+    private fun hideMoved() {
+        removeCallbacks(hideMovedNow)
+        if (binding.ittcLeadsUndo.visibility != GONE) binding.ittcLeadsUndo.visibility = GONE
     }
 
     // ------------------------------------------------------------- 👉 swipes

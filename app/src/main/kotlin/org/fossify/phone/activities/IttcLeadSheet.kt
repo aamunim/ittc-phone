@@ -64,9 +64,18 @@ object IttcLeadSheet {
 
     /**
      * The sheet for [l]. [direct]: signed in to ITTC here (the lead page's actions are offered);
-     * [canHandOver]: a super admin (hand over is offered).
+     * [canHandOver]: a super admin (hand over is offered). 3.9 (the Leads board, direct mode):
+     * [moveTo] the stages it can go to — a "Move to…" row of chips that calls [onMove] (also the
+     * way to move a lead without dragging, e.g. with TalkBack).
      */
-    fun show(activity: SimpleActivity, l: IttcBridge.PhoneLead, direct: Boolean, canHandOver: Boolean) {
+    fun show(
+        activity: SimpleActivity,
+        l: IttcBridge.PhoneLead,
+        direct: Boolean,
+        canHandOver: Boolean,
+        moveTo: List<IttcBridge.Stage> = emptyList(),
+        onMove: ((IttcBridge.Stage) -> Unit)? = null,
+    ) {
         if (activity.isFinishing || activity.isDestroyed) return
         val p = IttcTheme.of(activity)
         val sheet = IttcCUi.sheet(activity)
@@ -125,6 +134,43 @@ object IttcLeadSheet {
         if (quick.isNotEmpty()) {
             body.addView(View(c), LinearLayout.LayoutParams(1, IttcCUi.dp(c, 8)))
             quick.forEach { body.addView(row(c, p, it, sheet)) }
+        }
+
+        // 🧭 3.9: Move to… (the board): a chip per stage, the lead's own one marked
+        if (onMove != null && moveTo.isNotEmpty()) {
+            body.addView(IttcCUi.divider(c))
+            body.addView(
+                IttcCUi.section(c, c.getString(R.string.ittc_bd_move_to)),
+                IttcCUi.topMargin(c, 4).apply { bottomMargin = IttcCUi.dp(c, 8) },
+            )
+            val chips = moveTo.map { st ->
+                val here = st.id == l.stageId
+                IttcCUi.chip(c, st.name, here) {
+                    if (here) return@chip
+                    try {
+                        sheet.dialog.dismiss()
+                    } catch (_: Throwable) {
+                    }
+                    onMove(st)
+                }.apply {
+                    maxLines = 1
+                    // (a dot in the stage's colour)
+                    if (!here) {
+                        val size = IttcCUi.dp(c, 8)
+                        setCompoundDrawablesRelativeWithIntrinsicBounds(
+                            GradientDrawable().apply {
+                                shape = GradientDrawable.OVAL
+                                setColor(IttcTheme.stageColors(c, st.name).second)
+                                setSize(size, size)
+                            },
+                            null, null, null,
+                        )
+                        compoundDrawablePadding = IttcCUi.dp(c, 6)
+                    }
+                    contentDescription = c.getString(R.string.ittc_bd_move_to) + " " + st.name
+                }
+            }
+            body.addView(IttcCUi.chipRow(c, chips))
         }
 
         // 🧭 the lead page's own actions (direct mode): the page opens and runs it

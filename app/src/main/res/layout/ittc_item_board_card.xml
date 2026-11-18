@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.9: a lead on the Leads board — avatar, name, course · batch, the number, the next call,
+     the last note, 💬 WhatsApp and 📞. Tap: the lead; long press: its actions (and Move to…);
+     long press and drag (direct mode): move it to another stage. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/ittc_board_card_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <LinearLayout
+        android:id="@+id/ittc_board_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/ittc_board_card_avatar"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:gravity="center"
+                android:importantForAccessibility="no"
+                android:maxLines="1"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                tools:text="RH" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/ittc_board_card_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:maxLines="1"
+                    android:textSize="14sp"
+                    tools:text="Rahim Hasan" />
+
+                <TextView
+                    android:id="@+id/ittc_board_card_course"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="1dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textSize="12sp"
+                    tools:text="CSE · Batch 12" />
+
+                <TextView
+                    android:id="@+id/ittc_board_card_phone"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="1dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textSize="12sp"
+                    tools:text="01712-345678" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/ittc_board_card_note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="12sp"
+            tools:text="“Will talk with family”" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/ittc_board_card_clock"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_clock_vector" />
+
+            <TextView
+                android:id="@+id/ittc_board_card_when"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textSize="12sp"
+                tools:text="Call was due 2 h ago" />
+
+            <!-- 💬 / 📞: 36 dp circles in 44 dp touch areas -->
+            <ImageView
+                android:id="@+id/ittc_board_card_whatsapp"
+                android:layout_width="@dimen/ittc_touch"
+                android:layout_height="@dimen/ittc_touch"
+                android:contentDescription="@string/ittc_lp_whatsapp"
+                android:padding="13dp"
+                android:src="@drawable/ittc_ic_whatsapp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <ImageView
+                android:id="@+id/ittc_board_card_call"
+                android:layout_width="@dimen/ittc_touch"
+                android:layout_height="@dimen/ittc_touch"
+                android:layout_marginEnd="-4dp"
+                android:contentDescription="@string/call_number"
+                android:padding="13dp"
+                android:src="@drawable/ic_phone_vector" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>
