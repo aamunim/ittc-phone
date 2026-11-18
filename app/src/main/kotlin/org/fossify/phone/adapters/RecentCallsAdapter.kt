@@ -253,6 +253,8 @@ class RecentCallsAdapter(
         val recyclerViewState = layoutManager.onSaveInstanceState()
         contactCache.clear()
         super.submitList(list) {
+            // (rows of the old list bound during the diff may have matched against old contacts)
+            contactCache.clear()
             layoutManager.onRestoreInstanceState(recyclerViewState)
             // 🎓 ITTC: a row's card corners depend on its neighbours: the rows on screen again
             if (cardMode && !activity.isFinishing && !activity.isDestroyed) notifyItemRangeChanged(0, itemCount, PAYLOAD_CORNERS)
@@ -639,6 +641,8 @@ class RecentCallsAdapter(
             binding.itemRecentsBar.background = barBg
             // (the 36 dp circle inside the 44 dp touch area; the pressed ripple keeps to the circle)
             binding.itemRecentsHistory.background = InsetDrawable(historyBg, IttcTheme.dp(activity, 4f))
+            // (an inset background replaces the view's padding with its insets: the arrow keeps its 18 dp)
+            IttcTheme.dp(activity, 13f).let { pad -> binding.itemRecentsHistory.setPadding(pad, pad, pad, pad) }
             IttcUi.ripple(binding.itemRecentsHistory)
             if (cardMode) {
                 binding.root.background = card

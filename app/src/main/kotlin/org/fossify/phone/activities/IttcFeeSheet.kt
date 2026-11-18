@@ -443,8 +443,11 @@ object IttcFeeSheet {
         body.addView(IttcCUi.section(a, a.getString(R.string.ittc_c_disc_on)), IttcCUi.topMargin(a, 12))
         // (a chip changes only the chips' looks and the preview: the field keeps its text and focus)
         var updatePreviewNow: () -> Unit = {}
+        // (made here so a chip tap clears an old error line; placed below the note)
+        val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         val onChips = ArrayList<Pair<String?, TextView>>()
         fun pickFee(id: String?) {
+            err.visibility = View.GONE
             st.feeId = id
             onChips.forEach { (fid, chip) -> IttcCUi.setChipOn(chip, fid == id) }
             updatePreviewNow()
@@ -466,6 +469,7 @@ object IttcFeeSheet {
         lateinit var takaChip: TextView
         lateinit var percentChip: TextView
         fun pickPercent(on: Boolean) {
+            err.visibility = View.GONE
             st.percent = on
             IttcCUi.setChipOn(takaChip, !on)
             IttcCUi.setChipOn(percentChip, on)
@@ -525,6 +529,7 @@ object IttcFeeSheet {
         val reasonChips = ArrayList<Pair<String, TextView>>()
         setting.reasons.forEach { r ->
             reasonChips += r to IttcCUi.chip(a, r, st.reason == r) {
+                err.visibility = View.GONE
                 st.reason = if (st.reason == r) null else r
                 reasonChips.forEach { (reason, chip) -> IttcCUi.setChipOn(chip, reason == st.reason) }
             }
@@ -539,7 +544,6 @@ object IttcFeeSheet {
             }
         })
         body.addView(note, IttcCUi.topMargin(a, 10))
-        val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         body.addView(err, IttcCUi.topMargin(a, 8))
 
         val row = IttcCUi.row(a)
@@ -575,7 +579,10 @@ object IttcFeeSheet {
         val note = IttcCUi.noteInput(a, "").apply { setText(st.eventNote) }
         // (the kind changes the chips, the amount field and the note's hint in place: typing is kept)
         val chips = ArrayList<Pair<String, TextView>>()
+        // (made here so a kind tap clears an old error line; placed below the note)
+        val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         fun showKind() {
+            err.visibility = View.GONE
             val isNote = st.eventKind == "note"
             chips.forEach { (k, chip) -> IttcCUi.setChipOn(chip, k == st.eventKind) }
             amount.visibility = if (isNote) View.GONE else View.VISIBLE
@@ -605,7 +612,6 @@ object IttcFeeSheet {
                 st.eventNote = s?.toString().orEmpty()
             }
         })
-        val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         body.addView(err, IttcCUi.topMargin(a, 8))
         val row = IttcCUi.row(a)
         lateinit var save: TextView

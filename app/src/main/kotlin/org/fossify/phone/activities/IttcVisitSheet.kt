@@ -253,7 +253,10 @@ object IttcVisitSheet {
         // (the note keeps its text and focus)
         val quick = ArrayList<Pair<Long, TextView>>()
         lateinit var pick: TextView
+        // (made here so a new pick clears an old "pick a date" line; placed below the note)
+        val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         fun showPicked() {
+            err.visibility = View.GONE
             val at = st.pickedAt
             quick.forEach { (time, chip) -> IttcCUi.setChipOn(chip, time == at) }
             pick.text = at?.let { "📅 " + IttcCUi.whenText(it) } ?: a.getString(R.string.ittc_c_visit_pick)
@@ -284,7 +287,6 @@ object IttcVisitSheet {
 
         val note = keepNote(st, IttcCUi.noteInput(a, a.getString(R.string.ittc_c_visit_note_hint)))
         body.addView(note, IttcCUi.topMargin(a, 12))
-        val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         body.addView(err, IttcCUi.topMargin(a, 8))
 
         val row = IttcCUi.row(a)
