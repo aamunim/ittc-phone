@@ -74,7 +74,7 @@ internal object IttcApi {
     fun signOutServer(access: String) {
         try {
             send(
-                Request.Builder().url("$base/auth/v1/logout").header("apikey", key)
+                Request.Builder().url("$base/auth/v1/logout?scope=local").header("apikey", key)
                     .header("Authorization", "Bearer $access").post("{}".toRequestBody(JSON)).build(),
             )
         } catch (_: Throwable) {

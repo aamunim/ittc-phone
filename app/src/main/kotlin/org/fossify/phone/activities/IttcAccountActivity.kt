@@ -85,7 +85,7 @@ class IttcAccountActivity : SimpleActivity() {
                 updating = true
                 ittcAccountUpdateNow.isEnabled = false
                 ittcAccountUpdateNow.setText(R.string.ittc_account_updating)
-                IttcDirect.refreshAsync(applicationContext, force = true)
+                IttcDirect.refreshAsync(applicationContext, force = true, directory = true)
                 // (a refresh already running sends no new "changed")
                 main.postDelayed({ doneUpdating() }, 20_000)
             }

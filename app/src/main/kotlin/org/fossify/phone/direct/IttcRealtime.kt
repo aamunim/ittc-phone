@@ -23,6 +23,7 @@ internal object IttcRealtime {
     @Volatile private var socket: WebSocket? = null
     @Volatile private var users = 0
     @Volatile private var openedAt = 0L
+    private var failures = 0
     private var ref = 0
     private val timer = Executors.newSingleThreadScheduledExecutor()
     private var beat: ScheduledFuture<*>? = null
@@ -50,6 +51,8 @@ internal object IttcRealtime {
 
     private fun listener(app: Context, uid: String, access: String) = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            // (stopped meanwhile: this socket is not wanted)
+            synchronized(this@IttcRealtime) { if (socket !== webSocket) return }
             val config = JSONObject().put(
                 "postgres_changes",
                 JSONArray().put(
@@ -63,6 +66,8 @@ internal object IttcRealtime {
                     .put("ref", nextRef()).toString(),
             )
             synchronized(this@IttcRealtime) {
+                if (socket !== webSocket) return
+                failures = 0
                 beat?.cancel(false)
                 // (the server closes a quiet socket: a heartbeat every 25 s; a fresh token now and then)
                 beat = timer.scheduleAtFixedRate({
@@ -73,8 +78,8 @@ internal object IttcRealtime {
                     }
                 }, 25, 25, TimeUnit.SECONDS)
             }
-            // (anything changed while it was closed)
-            IttcDirect.refreshAsync(app, force = true)
+            // (anything changed while it was closed; the list's own 20 s limit applies)
+            IttcDirect.refreshAsync(app, directory = false)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -90,19 +95,22 @@ internal object IttcRealtime {
                 }
                 // (the channel ended — token ran out, server restart: join again with a fresh token)
                 "phx_close", "phx_error" -> reopen(app, webSocket, 5_000)
-                "phx_reply" -> if (o.optJSONObject("payload")?.optString("status") == "error") reopen(app, webSocket, 30_000)
+                "phx_reply" -> if (o.optJSONObject("payload")?.optString("status") == "error") reopen(app, webSocket, 30_000, failed = true)
             }
         }
 
-        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = reopen(app, webSocket, 15_000)
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = reopen(app, webSocket, 15_000, failed = true)
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = reopen(app, webSocket, 5_000)
     }
 
     /** Close this socket (if it is still the one) and, while still wanted, open a new one later */
-    private fun reopen(app: Context, webSocket: WebSocket, afterMs: Long) {
+    private fun reopen(app: Context, webSocket: WebSocket, afterMs: Long, failed: Boolean = false) {
         synchronized(this) {
             if (socket !== webSocket) return
+            // (failing again and again: wait longer each time, up to 10 minutes)
+            if (failed) failures++
+            val wait = if (failures == 0) afterMs else minOf(afterMs shl minOf(failures - 1, 5), 10 * 60_000L)
             socket = null
             beat?.cancel(false)
             try {
@@ -111,7 +119,7 @@ internal object IttcRealtime {
             }
             if (users > 0) {
                 retry?.cancel(false)
-                retry = timer.schedule({ open(app) }, afterMs, TimeUnit.MILLISECONDS)
+                retry = timer.schedule({ open(app) }, wait, TimeUnit.MILLISECONDS)
             }
         }
     }

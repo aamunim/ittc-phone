@@ -592,7 +592,13 @@ class IttcAfterCallActivity : SimpleActivity() {
                 tries++
             }
             val started = intent.getLongExtra(STARTED_AT, 0L).takeIf { it > 0 }
-            val ok = IttcBridge.saveOutcome(this, leadId, number, chosen, note, next, started, stage)
+            // (a full disk, a broken file: never the app stopping right after a call)
+            val ok = try {
+                IttcBridge.saveOutcome(this, leadId, number, chosen, note, next, started, stage)
+            } catch (e: Throwable) {
+                IttcCrash.record(this, e, "After-call: save")
+                false
+            }
             runOnUiThread {
                 saving = false
                 if (isDestroyed) return@runOnUiThread

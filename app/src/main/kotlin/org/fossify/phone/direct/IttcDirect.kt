@@ -77,7 +77,10 @@ object IttcDirect {
         val now = System.currentTimeMillis()
         if (now - modeAt < 30_000) return modeActive
         val active = isSignedIn(context) && prefs(context).getBoolean("allowed", true) &&
-            (preferDirect(context) || !IttcBridge.trackerSignedIn(context))
+            (preferDirect(context) || !IttcBridge.trackerSignedIn(context)) &&
+            // (a Tracker older than 2.11 on the phone sends every call with its own id: working by
+            // itself then would save each lead call twice)
+            (prefs(context).getString("tracker_device_id", null) != null || !IttcBridge.trackerInstalled(context))
         modeActive = active
         modeAt = now
         return active
@@ -161,6 +164,18 @@ object IttcDirect {
                 },
             )
         }
+        // (changes kept from an earlier sign-in go only with the same person; checked before the new
+        // token is kept, so nothing of another person's is ever sent with it)
+        synchronized(outboxLock) {
+            val owner = prefs(app).getString("outbox_user", null)
+            if (owner != null && owner != t.userId) file(app, OUTBOX).delete()
+            prefs(app).edit().putString("outbox_user", t.userId).commit()
+        }
+        generation++
+        listOf(LEADS, META, DIR).forEach { file(app, it).delete() }
+        leadsCache = null
+        metaCache = null
+        dirCache = null
         IttcAuth.save(app, t)
         val ok = checkSession(app, fresh = true)
         if (!ok) {
@@ -168,16 +183,13 @@ object IttcDirect {
             val msg = lastMessage(app) ?: "Could not check your sign-in. Please try again."
             throw IllegalStateException(msg)
         }
-        // (changes kept from an earlier sign-in go only with the same person)
-        synchronized(outboxLock) {
-            val owner = prefs(app).getString("outbox_user", null)
-            if (owner != null && owner != t.userId) file(app, OUTBOX).delete()
-            prefs(app).edit().putString("outbox_user", t.userId).apply()
-        }
         prefs(app).edit().putBoolean("allowed", true).apply()
         modeAt = 0
-        syncTrackerFlag(app)
-        refresh(app, force = true)
+        // (now, not later: a Tracker 2.11+ gives its phone id with the answer, which direct mode needs)
+        IttcBridge.setTrackerDirect(app, preferDirect(app) || !IttcBridge.trackerSignedIn(app))
+        modeAt = 0
+        refresh(app, force = true, directory = true)
+        kick(app)
     }
 
     /** Signed out here (the server is told when there is internet) */
@@ -211,8 +223,10 @@ object IttcDirect {
         listOf(LEADS, META, DIR).forEach { file(app, it).delete() }
         if (!keepOutbox) synchronized(outboxLock) { file(app, OUTBOX).delete() }
         leadsCache = null
+        ownCache = null
         metaCache = null
         dirCache = null
+        lastLeadsText = null
         IttcBridge.clearCaches()
         IttcLeadApi.forget()
         IttcToday.clear(app)
@@ -252,7 +266,8 @@ object IttcDirect {
                 else -> "Your account is not active."
             }
             prefs(app).edit().putBoolean("allowed", false).apply()
-            clearLocal(app, msg)
+            // (changes not sent yet stay: they go if this person may sign in again)
+            clearLocal(app, msg, keepOutbox = true)
             return false
         }
         prefs(app).edit()
@@ -300,26 +315,40 @@ object IttcDirect {
     /** The lead with this number (from the kept list: works without internet) */
     fun lookupLead(context: Context, number: String?): IttcBridge.Lead? {
         val n = normalizeBd(number) ?: return null
-        return directory(context)[sha256(n)]
+        return leadFor(context, sha256(n))
+    }
+
+    @Volatile private var ownCache: Map<String, IttcBridge.Lead>? = null
+
+    /**
+     * Who is a lead: my own leads first (from the list that comes every few seconds — a lead
+     * assigned a moment ago is known on the call screen before the whole list comes again), then
+     * the "who is a lead" list (every lead I can see, fetched every 15 minutes)
+     */
+    private fun leadFor(context: Context, hash: String): IttcBridge.Lead? =
+        ownLeads(context)[hash] ?: directory(context)[hash]
+
+    private fun ownLeads(context: Context): Map<String, IttcBridge.Lead> {
+        ownCache?.let { return it }
+        val map = HashMap<String, IttcBridge.Lead>()
+        leads(context).forEach { l ->
+            val lead = IttcBridge.Lead(l.leadId, l.name, l.rating, l.stage, l.course, l.lastNote)
+            listOf(l.phone, l.altPhone, l.whatsapp).forEach { n -> normalizeBd(n)?.let { map[sha256(it)] = lead } }
+        }
+        ownCache = map
+        return map
     }
 
     private fun directory(context: Context): Map<String, IttcBridge.Lead> {
         dirCache?.let { return it }
         val f = file(context, DIR)
         val map = HashMap<String, IttcBridge.Lead>()
-        // (my own leads first, from the list that comes every few seconds: a lead assigned a moment
-        // ago is known on the call screen before the whole list comes again)
-        leads(context).forEach { l ->
-            val lead = IttcBridge.Lead(l.leadId, l.name, l.rating, l.stage, l.course, l.lastNote)
-            listOf(l.phone, l.altPhone, l.whatsapp).forEach { n -> normalizeBd(n)?.let { map[sha256(it)] = lead } }
-        }
         try {
             if (f.exists()) {
                 val arr = JSONArray(f.readText())
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
                     val hash = o.optString("hash").takeIf { it.isNotEmpty() } ?: continue
-                    if (map.containsKey(hash)) continue
                     map[hash] = IttcBridge.Lead(
                         leadId = o.optString("lead_id"),
                         name = o.optString("name"),
@@ -360,40 +389,53 @@ object IttcDirect {
         )
     }
 
-    private val refreshing = java.util.concurrent.atomic.AtomicBoolean(false)
-    @Volatile private var again = false
-    @Volatile private var againForce = false
-    @Volatile private var againDirectory = false
+    private val refreshLock = Any()
+    private var refreshing = false
+    private var again = false
+    private var againForce = false
+    private var againDirectory = false
+    @Volatile private var lastDone = 0L
 
     /** Changes with every sign-in / sign-out: a list fetched for the last person is never kept */
     @Volatile private var generation = 0
 
     /**
-     * Fetch the lists again (off the main thread). At most every 20 s unless forced; the "who is a
-     * lead" list every 15 min (or [directory]). Also checks the session every 5 min. Asked while one
-     * runs: it runs once more after it.
+     * Fetch the lists again (off the main thread). At most every 20 s unless forced (forced: not
+     * again within 3 s); the "who is a lead" list every 15 min, or with [directory]. Also checks the
+     * session every 5 min. Asked while one runs: it runs once more after it.
      */
-    fun refresh(context: Context, force: Boolean = false, directory: Boolean = force) {
+    fun refresh(context: Context, force: Boolean = false, directory: Boolean = false) {
         val app = context.applicationContext
         if (!isSignedIn(app)) return
-        if (!refreshing.compareAndSet(false, true)) {
-            againForce = againForce || force
-            againDirectory = againDirectory || directory
-            again = true
-            return
+        synchronized(refreshLock) {
+            if (refreshing) {
+                again = true
+                againForce = againForce || force
+                againDirectory = againDirectory || directory
+                return
+            }
+            refreshing = true
         }
-        try {
-            refreshOnce(app, force, directory)
-            while (again) {
+        var f = force
+        var d = directory
+        while (true) {
+            try {
+                if (!(f && !d && System.currentTimeMillis() - lastDone < 3_000)) refreshOnce(app, f, d)
+            } finally {
+                synchronized(refreshLock) {
+                    if (!again) {
+                        refreshing = false
+                    }
+                }
+            }
+            synchronized(refreshLock) {
+                if (!refreshing) return
                 again = false
-                val f = againForce
-                val d = againDirectory
+                f = againForce
+                d = againDirectory
                 againForce = false
                 againDirectory = false
-                refreshOnce(app, f, d)
             }
-        } finally {
-            refreshing.set(false)
         }
     }
 
@@ -408,7 +450,13 @@ object IttcDirect {
                 if (isSignedIn(app)) p.edit().putString("refresh_error", "Could not check your sign-in").apply()
                 return
             }
-            val data = JSONObject(IttcApi.rpc(app, "my_phone_data"))
+            val text = IttcApi.rpc(app, "my_phone_data").trim()
+            // (no answer: the account is not active any more — the session check says so next)
+            if (text == "null" || text.isEmpty()) {
+                p.edit().putLong("last_check", 0).putString("refresh_error", "Your account is not active").apply()
+                return
+            }
+            val data = JSONObject(text)
             val leads = data.optJSONArray("leads") ?: JSONArray()
             data.remove("leads")
             val dir = if (directory || now - p.getLong("last_directory", 0) > 15 * 60_000 || !file(app, DIR).exists()) {
@@ -418,24 +466,30 @@ object IttcDirect {
             }
             // (signed out / someone else signed in meanwhile: this list is not theirs)
             if (gen != generation || !isSignedIn(app)) return
-            writeAtomic(file(app, LEADS), leads.toString())
+            val leadsText = leads.toString()
+            val changedLeads = leadsText != lastLeadsText
+            lastLeadsText = leadsText
+            writeAtomic(file(app, LEADS), leadsText)
             writeAtomic(file(app, META), data.toString())
             data.optJSONObject("settings")?.let { p.edit().putString("settings", it.toString()).apply() }
             leadsCache = null
+            ownCache = null
             metaCache = null
             if (dir != null) {
                 writeAtomic(file(app, DIR), dir.toString())
                 p.edit().putLong("last_directory", now).apply()
+                dirCache = null
             }
-            dirCache = null
+            lastDone = System.currentTimeMillis()
             p.edit().putLong("last_refresh", now).remove("refresh_error").apply()
             // (the Tracker forgets "ITTC Phone works by itself" after 2 hours unless told again)
             if (now - p.getLong("last_flag", 0) > 10 * 60_000) {
                 p.edit().putLong("last_flag", now).apply()
                 syncTrackerFlag(app)
             }
-            IttcBridge.forgetRecents()
-            IttcReminders.schedule(app, leads(app))
+            // (Recents asks again and the alarms are set again only when something changed)
+            if (changedLeads || dir != null) IttcBridge.forgetRecents()
+            if (changedLeads) IttcReminders.schedule(app, leads(app))
         } catch (e: Throwable) {
             p.edit().putString("refresh_error", e.message ?: "Could not update").apply()
         }
@@ -451,13 +505,15 @@ object IttcDirect {
             JSONArray(IttcApi.rpc(app, "my_lead_directory"))
         }
 
+    @Volatile private var lastLeadsText: String? = null
+
     private var pendingRefresh: Runnable? = null
 
     /**
      * Refresh soon. With a delay, several asks close together make one (the live pings);
      * [directory] false: the "who is a lead" list only when it is due.
      */
-    fun refreshAsync(context: Context, force: Boolean = false, delayMs: Long = 0, directory: Boolean = force) {
+    fun refreshAsync(context: Context, force: Boolean = false, delayMs: Long = 0, directory: Boolean = false) {
         val app = context.applicationContext
         if (delayMs <= 0) {
             io.execute { refresh(app, force, directory) }
@@ -512,7 +568,7 @@ object IttcDirect {
     fun queueCallAt(context: Context, number: String, startedAt: Long, refreshFirst: Boolean = true) {
         val app = context.applicationContext
         io.execute {
-            if (refreshFirst) refresh(app, force = true)
+            if (refreshFirst) refresh(app, force = true, directory = true)
             enqueue(app, JSONObject().put("kind", "call_at").put("number", number).put("started_at", startedAt))
         }
     }
@@ -591,7 +647,17 @@ object IttcDirect {
             val arr = readArray(file(app, OUTBOX))
             item.put("qid", UUID.randomUUID().toString()).put("at", System.currentTimeMillis())
             // (the phone id fixed now: a call and its result always go with the same one)
-            if (!item.has("device")) item.put("device", callDeviceId(app))
+            if (!item.has("device")) {
+                val rowId = item.optString("device_call_id")
+                var device: String? = null
+                if (rowId.isNotEmpty()) {
+                    for (k in 0 until arr.length()) {
+                        val q = arr.optJSONObject(k) ?: continue
+                        if (q.optString("kind") == "call" && q.optJSONObject("call")?.optString("id") == rowId) device = q.optString("device")
+                    }
+                }
+                item.put("device", device?.takeIf { it.isNotBlank() } ?: callDeviceId(app))
+            }
             arr.put(item)
             // (never grows without end: the oldest go first)
             val keep = JSONArray()
@@ -687,6 +753,9 @@ object IttcDirect {
         "call_at" -> {
             val row = callRowAt(app, item.getString("number"), item.getLong("started_at"))
             when {
+                // (only calls with leads ever leave the phone)
+                lookupLead(app, item.getString("number")) == null ->
+                    if (System.currentTimeMillis() - item.optLong("at") < 30 * 60_000) Keep else Done
                 row != null -> {
                     rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", deviceOf(app, item)).put("p_calls", JSONArray().put(row.toJson())))
                     Done

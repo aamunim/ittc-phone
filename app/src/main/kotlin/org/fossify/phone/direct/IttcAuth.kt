@@ -19,7 +19,14 @@ internal object IttcAuth {
 
     fun session(context: Context): IttcApi.Tokens? {
         cached?.let { return it }
-        val json = IttcSecure.decrypt(prefs(context).getString(KEY_SESSION, null)) ?: return null
+        val stored = prefs(context).getString(KEY_SESSION, null) ?: return null
+        val json = IttcSecure.decrypt(stored)
+        if (json == null) {
+            // (the key is gone — restored to another phone, cleared lock screen: sign in again; never
+            // retried on every check)
+            prefs(context).edit().remove(KEY_SESSION).apply()
+            return null
+        }
         return try {
             val o = JSONObject(json)
             IttcApi.Tokens(
@@ -50,8 +57,10 @@ internal object IttcAuth {
     }
 
     fun clear(context: Context) {
-        cached = null
-        prefs(context).edit().remove(KEY_SESSION).apply()
+        synchronized(lock) {
+            cached = null
+            prefs(context).edit().remove(KEY_SESSION).commit()
+        }
     }
 
     /**
@@ -66,6 +75,8 @@ internal object IttcAuth {
             if (!forceRefresh && s.expiresAt - System.currentTimeMillis() > 60_000) return s.access
             try {
                 val fresh = IttcApi.refresh(s.refresh)
+                // (signed out / someone else signed in while it was asked: never brought back)
+                if (session(context)?.refresh != s.refresh) return null
                 save(context, fresh.copy(userId = fresh.userId.ifEmpty { s.userId }, email = fresh.email ?: s.email))
                 fresh.access
             } catch (e: IttcApi.ApiError) {
