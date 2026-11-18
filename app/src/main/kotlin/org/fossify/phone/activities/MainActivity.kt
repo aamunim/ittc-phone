@@ -340,32 +340,48 @@ class MainActivity : SimpleActivity() {
 
     // 🎓 ITTC 3.8: no toolbar search on the Leads tab (its own 🔍 "Search leads" stays in the top
     // bar): the search field, its icon and its rounded box go; an open search is closed first
-    private var ittcSearchHidden = false
-    private var ittcSearchBox: Drawable? = null
+    // 🎓 ITTC 3.8.1: on the Leads tab (signed in) the search bar keeps its look but opens the lead search
+    // screen — one search there, not two (the 🔍 in the bar is hidden on that tab)
+    private var ittcLeadSearchMode = false
+    private var ittcSignedInTop = false
+    private var ittcSearchHint: CharSequence? = null
 
     private fun ittcSearchForTab(kind: Int?) {
-        val hide = kind == ITTC_TAB_LEADS
-        if (hide == ittcSearchHidden) return
-        ittcSearchHidden = hide
+        val leadMode = kind == ITTC_TAB_LEADS && ittcSignedInTop
+        ittcSearchItem?.isVisible = ittcSignedInTop && !leadMode
+        if (leadMode == ittcLeadSearchMode) return
+        ittcLeadSearchMode = leadMode
         val menu = binding.mainMenu
         val searchField = menu.binding.topToolbarSearch
-        val box = menu.binding.toolbarContainer
-        if (hide) {
+        val icon = menu.binding.topToolbarSearchIcon
+        if (leadMode) {
             if (menu.isSearchOpen) menu.closeSearch()
             searchField.clearFocus()
-            ittcSearchBox = box.background
-            box.background = null
+            if (ittcSearchHint == null) ittcSearchHint = searchField.hint
+            searchField.hint = getString(R.string.ittc_a_search_leads)
+            searchField.isFocusable = false
+            searchField.isFocusableInTouchMode = false
+            searchField.isCursorVisible = false
+            searchField.setOnClickListener { IttcSearchActivity.open(this) }
+            icon.setOnClickListener { IttcSearchActivity.open(this) }
         } else {
-            ittcSearchBox?.let {
-                // (in the accent of now: the theme may have changed meanwhile)
-                it.applyColorFilter(getProperPrimaryColor().adjustAlpha(LOWER_ALPHA))
-                box.background = it
+            ittcSearchHint?.let { searchField.hint = it }
+            ittcSearchHint = null
+            searchField.setOnClickListener(null)
+            searchField.isClickable = false
+            searchField.isFocusable = true
+            searchField.isFocusableInTouchMode = true
+            searchField.isCursorVisible = true
+            // (the bar's own 🔍 as MySearchMenu.setupMenu sets it)
+            icon.setOnClickListener {
+                if (menu.isSearchOpen) {
+                    menu.closeSearch()
+                } else {
+                    searchField.requestFocus()
+                    showKeyboard(searchField)
+                }
             }
-            ittcSearchBox = null
         }
-        searchField.isEnabled = !hide
-        searchField.beInvisibleIf(hide)
-        menu.binding.topToolbarSearchIcon.beGoneIf(hide)
     }
 
     private fun setupOptionsMenu() {
@@ -929,7 +945,9 @@ class MainActivity : SimpleActivity() {
     }
 
     private fun showIttcTopBar(signedIn: Boolean, unread: Int) {
+        ittcSignedInTop = signedIn
         ittcSearchItem?.isVisible = signedIn
+        ittcSearchForTab(currentKind())
         ittcBellItem?.isVisible = signedIn
         showIttcBadge(if (signedIn) unread else 0)
     }
