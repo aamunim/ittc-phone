@@ -190,6 +190,7 @@ class MainActivity : SimpleActivity() {
         if (ittcNotifyStarted) {
             ittcNotifyStarted = false
             try {
+                IttcNotify.removeListener(ittcUnreadListener)
                 IttcNotify.stop()
             } catch (_: Throwable) {
             }
@@ -654,6 +655,8 @@ class MainActivity : SimpleActivity() {
                 if (ittcResumed && !ittcNotifyStarted) {
                     ittcNotifyStarted = true
                     try {
+                        // (a new notification while the app is open: the badge at once)
+                        IttcNotify.addListener(ittcUnreadListener)
                         IttcNotify.start(app)
                     } catch (_: Throwable) {
                     }
@@ -684,6 +687,7 @@ class MainActivity : SimpleActivity() {
     private var ittcBellBadge: TextView? = null
     private var ittcResumed = false
     private var ittcNotifyStarted = false
+    private val ittcUnreadListener: (Int) -> Unit = { n -> if (!isFinishing && !isDestroyed) showIttcBadge(n) }
 
     private fun setupIttcTopBar() {
         val menu = binding.mainMenu.requireToolbar().menu

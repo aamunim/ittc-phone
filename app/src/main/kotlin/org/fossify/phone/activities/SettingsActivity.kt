@@ -329,6 +329,8 @@ class SettingsActivity : SimpleActivity() {
                 prefs.edit().putBoolean(IttcCallHistory.KEY_ONE_PER_NUMBER, settingsIttcOnePerNumber.isChecked).apply()
             }
 
+            // (3.5: a tap on a Recents row always calls; the history page has its own → button)
+            settingsIttcTapCallsHolder.visibility = android.view.View.GONE
             settingsIttcTapCalls.isChecked = IttcCallHistory.tapCalls(this@SettingsActivity)
             settingsIttcTapCallsHolder.setOnClickListener {
                 settingsIttcTapCalls.toggle()

@@ -241,6 +241,7 @@ object IttcDirect {
             .remove("last_directory").remove("refresh_error").remove("tracker_device_id").apply()
         if (message != null) prefs(app).edit().putString("message", message).apply()
         IttcRealtime.stop()
+        IttcNotify.stop()
         IttcReminders.cancelAll(app, notifications = true)
         modeAt = 0
         modeActive = false

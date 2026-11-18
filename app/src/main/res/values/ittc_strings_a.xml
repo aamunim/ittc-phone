@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.5 (part A): the Leads tab, Recents, the call history page, the top bar -->
+<resources>
+    <!-- top bar -->
+    <item name="ittc_a_menu_search_leads" type="id" />
+    <item name="ittc_a_menu_inbox" type="id" />
+    <string name="ittc_a_search_leads" translatable="false">Search leads</string>
+    <string name="ittc_a_notifications" translatable="false">Notifications</string>
+    <string name="ittc_a_notifications_unread" translatable="false">Notifications, %d unread</string>
+
+    <!-- Leads tab: the Today card -->
+    <string name="ittc_a_today" translatable="false">Today</string>
+    <string name="ittc_a_offline" translatable="false">offline</string>
+    <string name="ittc_a_team" translatable="false">Team</string>
+    <string name="ittc_a_calls" translatable="false">calls</string>
+    <string name="ittc_a_connected" translatable="false">connected</string>
+    <string name="ittc_a_talk_time" translatable="false">talk time</string>
+    <string name="ittc_a_of_target" translatable="false">of %d</string>
+    <string name="ittc_a_ring_target" translatable="false">%1$d of %2$d calls</string>
+    <string name="ittc_a_ring_calls" translatable="false">%d calls today</string>
+    <string name="ittc_a_today_extra" translatable="false">%1$d stage changes · %2$d new leads</string>
+    <string name="ittc_a_target_done" translatable="false">Target reached 🎉</string>
+
+    <!-- Leads tab: actions -->
+    <string name="ittc_a_call_all" translatable="false">Call all (%d)</string>
+    <string name="ittc_a_call_next" translatable="false">Call next (%d left)</string>
+    <string name="ittc_a_add_lead" translatable="false">+ Add lead</string>
+    <string name="ittc_a_stop" translatable="false">Stop</string>
+
+    <!-- Leads tab: rows -->
+    <string name="ittc_a_never_called" translatable="false">Never called</string>
+    <string name="ittc_a_last_call" translatable="false">Last call %s</string>
+    <string name="ittc_a_overdue" translatable="false">Overdue %s</string>
+    <string name="ittc_a_next_today" translatable="false">Next call %1$s · in %2$s</string>
+    <string name="ittc_a_next_at" translatable="false">Next call %s</string>
+    <string name="ittc_a_min" translatable="false">%d min</string>
+    <string name="ittc_a_hours" translatable="false">%d h</string>
+    <string name="ittc_a_days" translatable="false">%d d</string>
+
+    <!-- Leads tab: swipes -->
+    <string name="ittc_a_swipe_hint" translatable="false">Swipe right to call · swipe left to set the next call</string>
+    <string name="ittc_a_swipe_call" translatable="false">Call</string>
+    <string name="ittc_a_swipe_next" translatable="false">Next call</string>
+    <string name="ittc_a_next_title" translatable="false">Next call · %s</string>
+    <string name="ittc_a_in_1h" translatable="false">In 1 hour</string>
+    <string name="ittc_a_this_evening" translatable="false">This evening, 6 PM</string>
+    <string name="ittc_a_tomorrow" translatable="false">Tomorrow, 10 AM</string>
+    <string name="ittc_a_in_2_days" translatable="false">In 2 days, 10 AM</string>
+    <string name="ittc_a_pick" translatable="false">Pick a date and time…</string>
+    <string name="ittc_a_in_past" translatable="false">That time has passed</string>
+    <string name="ittc_a_next_set" translatable="false">Next call: %s</string>
+    <string name="ittc_a_next_failed" translatable="false">Could not save the next call</string>
+
+    <!-- Recents -->
+    <string name="ittc_a_call_history" translatable="false">Call history</string>
+    <string name="ittc_a_earlier" translatable="false">Earlier</string>
+    <string name="ittc_a_declined" translatable="false">Declined</string>
+    <string name="ittc_a_blocked" translatable="false">Blocked</string>
+    <string name="ittc_a_lead" translatable="false">Lead</string>
+    <string name="ittc_a_leads_chip" translatable="false">Leads</string>
+</resources>
