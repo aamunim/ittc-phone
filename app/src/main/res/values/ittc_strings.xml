@@ -28,7 +28,7 @@
     <string name="ittc_note_hint" translatable="false">Note (optional)</string>
     <string name="ittc_next_call" translatable="false">Next call</string>
     <string name="ittc_save" translatable="false">✅ Save</string>
-    <string name="ittc_saved" translatable="false">✅ Saved — the Tracker sends it</string>
+    <string name="ittc_saved" translatable="false">✅ Saved</string>
     <string name="ittc_old_tracker" translatable="false">Update ITTC Admission Tracker (2.10.5) to save here — opening it instead</string>
     <string name="ittc_stage" translatable="false">Pipeline stage</string>
     <string name="ittc_stage_needs_note" translatable="false">✍️ “%s” needs a note</string>

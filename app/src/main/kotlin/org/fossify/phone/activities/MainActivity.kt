@@ -26,6 +26,7 @@ import org.fossify.commons.helpers.*
 import org.fossify.commons.models.RadioItem
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.BuildConfig
 import org.fossify.phone.R
 import org.fossify.phone.adapters.ViewPagerAdapter
@@ -70,6 +71,7 @@ class MainActivity : SimpleActivity() {
         setupOptionsMenu()
         refreshMenuItems()
         setupEdgeToEdge(padBottomImeAndSystem = listOf(binding.mainTabsHolder))
+        binding.ittcUpdateBanner.setOnClickListener { IttcAccountActivity.openPlay(this) }
 
         EventBus.getDefault().register(this)
         launchedDialer = savedInstanceState?.getBoolean(OPEN_DIAL_PAD_AT_LAUNCH) ?: false
@@ -155,6 +157,9 @@ class MainActivity : SimpleActivity() {
                 it?.fontSizeChanged()
             }
         }
+
+        // 🎓 ITTC 3.2: signed in to ITTC — send what waits, fetch the lists (throttled), tell the Tracker
+        if (IttcDisclosure.agreed(this)) ittcDirectResume()
 
         checkShortcuts()
         Handler().postDelayed({
@@ -252,6 +257,7 @@ class MainActivity : SimpleActivity() {
                     R.id.change_view_type -> changeViewType()
                     R.id.column_count -> changeColumnCount()
                     R.id.about -> launchAbout()
+                    R.id.ittc_account -> startActivity(Intent(applicationContext, IttcAccountActivity::class.java))
                     else -> return@setOnMenuItemClickListener false
                 }
                 return@setOnMenuItemClickListener true
@@ -598,6 +604,26 @@ class MainActivity : SimpleActivity() {
                 } else {
                     0
                 }
+            }
+        }
+    }
+
+    // 🎓 ITTC 3.2: direct mode on every return to the main screen (all off the main thread), and
+    // the "update from Google Play" banner when the admin needs a newer version
+    private fun ittcDirectResume() {
+        val app = applicationContext
+        ensureBackgroundThread {
+            if (!IttcDirect.isSignedIn(app)) {
+                runOnUiThread { if (!isFinishing && !isDestroyed) binding.ittcUpdateBanner.beGone() }
+                return@ensureBackgroundThread
+            }
+            IttcDirect.kick(app)
+            IttcDirect.refreshAsync(app)
+            IttcDirect.syncTrackerFlag(app)
+            val update = IttcDirect.updateNeeded(app)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                binding.ittcUpdateBanner.beVisibleIf(update)
             }
         }
     }

@@ -91,6 +91,15 @@ internal object IttcApi {
                 .post(args.toString().toRequestBody(JSON)).build()
         }
 
+    /** A server function with a given token (signing out: the kept session is already gone) */
+    fun rpcWith(access: String, name: String, args: JSONObject = JSONObject()): String =
+        send(
+            Request.Builder().url("$base/rest/v1/rpc/$name")
+                .header("apikey", key)
+                .header("Authorization", "Bearer $access")
+                .post(args.toString().toRequestBody(JSON)).build(),
+        )
+
     /** Rows of a table (PostgREST query, e.g. "message_templates?select=id,name&is_active=eq.true") */
     fun select(context: Context, query: String): JSONArray =
         JSONArray(

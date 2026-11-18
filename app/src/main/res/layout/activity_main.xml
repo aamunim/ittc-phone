@@ -18,12 +18,31 @@
         android:scrollbars="none"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
+        <!-- 🎓 ITTC 3.2: the admin needs a newer version (signed in only); a tap opens Google Play -->
+        <TextView
+            android:id="@+id/ittc_update_banner"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:background="@color/md_red_700"
+            android:foreground="?attr/selectableItemBackground"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingTop="@dimen/medium_margin"
+            android:paddingEnd="@dimen/activity_margin"
+            android:paddingBottom="@dimen/medium_margin"
+            android:text="@string/ittc_update_banner"
+            android:textColor="#FFFFFFFF"
+            android:textSize="@dimen/normal_text_size"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
         <org.fossify.commons.views.MyViewPager
             android:id="@+id/view_pager"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             app:layout_constraintBottom_toTopOf="@+id/main_tabs_holder"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toBottomOf="@+id/ittc_update_banner" />
 
         <org.fossify.commons.views.MyFloatingActionButton
             android:id="@+id/main_dialpad_button"

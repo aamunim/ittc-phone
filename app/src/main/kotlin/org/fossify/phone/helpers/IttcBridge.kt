@@ -149,7 +149,10 @@ object IttcBridge {
         val app = context.applicationContext
         if (!trackerReady(app)) return false
         return try {
-            withTracker(app) { it.call("direct_mode", if (on) "1" else "0", null) }?.getString("result") == "ok"
+            val answer = withTracker(app) { it.call("direct_mode", if (on) "1" else "0", null) }
+            // (Tracker 2.11.0+: its phone id; ITTC Phone sends calls with it, so the server keeps one copy)
+            answer?.getString("device_id")?.takeIf { it.isNotBlank() }?.let { IttcDirect.setTrackerDeviceId(app, it) }
+            answer?.getString("result") == "ok"
         } catch (_: Throwable) {
             false
         }

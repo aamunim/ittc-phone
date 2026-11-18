@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.2: the Leads tab's "Today" card, power dialer, after-call additions, team view -->
+<resources>
+    <!-- Today card -->
+    <string name="ittc_l2_today" translatable="false">📊 Today</string>
+    <string name="ittc_l2_today_direct" translatable="false">📞 %1$d calls · ✅ %2$d connected · ⏱ %3$s · 🧭 %4$d stage changes · ➕ %5$d new</string>
+    <string name="ittc_l2_today_phone" translatable="false">📞 %1$d calls · ✅ %2$d connected · ⏱ %3$s</string>
+    <string name="ittc_l2_target" translatable="false">%1$d / %2$d calls</string>
+    <string name="ittc_l2_target_done" translatable="false">🎉 %1$d / %2$d calls — target reached</string>
+    <string name="ittc_l2_offline" translatable="false">offline — last numbers</string>
+    <string name="ittc_l2_team" translatable="false">👥 Team</string>
+
+    <!-- Leads tab actions -->
+    <string name="ittc_l2_add_lead" translatable="false">＋ Add lead</string>
+    <string name="ittc_l2_call_all" translatable="false">▶ Call all (%d)</string>
+    <string name="ittc_l2_call_next" translatable="false">▶ Call next (%d left)</string>
+    <string name="ittc_l2_stop" translatable="false">■ Stop</string>
+    <string name="ittc_l2_call_all_title" translatable="false">Call all</string>
+    <string name="ittc_l2_call_all_text" translatable="false">Call these %d leads one after another? After each call, save the result and the next call starts.</string>
+    <string name="ittc_l2_call_all_go" translatable="false">▶ Start</string>
+    <string name="ittc_l2_nobody" translatable="false">No lead here has a number</string>
+    <string name="ittc_l2_open_lead" translatable="false">👤 Open the lead</string>
+    <string name="ittc_l2_leads_none_direct" translatable="false">No leads here.</string>
+
+    <!-- After-call -->
+    <string name="ittc_l2_save_next" translatable="false">✅ Save &amp; call next (%d left)</string>
+    <string name="ittc_l2_save_last" translatable="false">✅ Save (last one)</string>
+    <string name="ittc_l2_stop_calling" translatable="false">■ Stop calling</string>
+    <string name="ittc_l2_calling_stopped" translatable="false">Calling stopped</string>
+    <string name="ittc_l2_all_called" translatable="false">✅ All called</string>
+    <string name="ittc_l2_presets" translatable="false">Quick notes</string>
+    <string name="ittc_l2_auto_next" translatable="false">⚡ %s</string>
+    <string name="ittc_l2_unknown_badge" translatable="false">📞 Call ended · not a lead</string>
+    <string name="ittc_l2_add_as_lead" translatable="false">＋ Add as a lead</string>
+
+    <!-- Team -->
+    <string name="ittc_team_title" translatable="false">Team today</string>
+    <string name="ittc_l2_team_me" translatable="false">Me</string>
+    <string name="ittc_l2_team_line" translatable="false">📞 %1$d calls · ✅ %2$d connected · ⏱ %3$s</string>
+    <string name="ittc_l2_team_overdue" translatable="false">⚠ %d overdue</string>
+    <string name="ittc_l2_team_stages" translatable="false">🧭 %d stage changes</string>
+    <string name="ittc_l2_team_new" translatable="false">➕ %d new</string>
+    <string name="ittc_l2_team_none" translatable="false">Nobody in your team yet.</string>
+    <string name="ittc_l2_team_offline" translatable="false">⚠ No internet — tap to try again</string>
+    <string name="ittc_l2_team_error" translatable="false">⚠ Could not load (%s) — tap to try again</string>
+    <string name="ittc_l2_team_loading" translatable="false">⟳ Loading…</string>
+    <string name="ittc_l2_team_updated" translatable="false">⟳ Updated %s · tap to refresh</string>
+    <string name="ittc_l2_team_signed_out" translatable="false">Sign in to ITTC in ITTC Phone to see your team.</string>
+</resources>

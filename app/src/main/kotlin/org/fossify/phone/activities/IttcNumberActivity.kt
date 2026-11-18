@@ -7,16 +7,22 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.CallLog.Calls
 import android.provider.ContactsContract
+import android.util.TypedValue
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.TextView
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.FeatureLockedDialog
 import org.fossify.commons.extensions.addBlockedNumber
 import org.fossify.commons.extensions.adjustAlpha
+import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.formatDateOrTime
 import org.fossify.commons.extensions.formatPhoneNumber
 import org.fossify.commons.extensions.formatSecondsToShortTimeString
 import org.fossify.commons.extensions.formatTime
 import org.fossify.commons.extensions.getColoredDrawableWithColor
+import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.hasPermission
@@ -33,9 +39,10 @@ import org.fossify.commons.helpers.PERMISSION_WRITE_CALL_LOG
 import org.fossify.commons.helpers.SimpleContactsHelper
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
+import org.fossify.phone.databinding.ItemRecentsDateBinding
 import org.fossify.phone.databinding.IttcActivityNumberBinding
 import org.fossify.phone.databinding.IttcItemNumberCallBinding
-import org.fossify.phone.databinding.ItemRecentsDateBinding
+import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.extensions.areMultipleSIMsAvailable
 import org.fossify.phone.extensions.config
 import org.fossify.phone.extensions.getDayCode
@@ -179,8 +186,15 @@ class IttcNumberActivity : SimpleActivity() {
             } catch (_: Throwable) {
                 null
             }
+            val direct = try {
+                IttcDirect.isActive(this)
+            } catch (_: Throwable) {
+                false
+            }
+            val canOpen = direct || IttcBridge.trackerInstalled(this)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
+                showLeadBox(lead, direct, canOpen)
                 binding.ittcNumberLead.apply {
                     beVisibleIf(lead != null)
                     if (lead != null) {
@@ -192,6 +206,61 @@ class IttcNumberActivity : SimpleActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * The lead box under the header: a lead → its summary, "Open lead" (and "Templates" in direct
+     * mode); no lead and signed in to ITTC here → "Add as a lead"
+     */
+    private fun showLeadBox(lead: IttcBridge.Lead?, direct: Boolean, canOpen: Boolean) {
+        val box = binding.ittcNumberLeadBox
+        box.removeAllViews()
+        val buttons = ArrayList<Pair<Int, () -> Unit>>()
+        if (lead != null) {
+            if (canOpen) {
+                buttons += R.string.ittc_nl_open to {
+                    if (!IttcBridge.openLead(this, lead.leadId)) toast(R.string.ittc_tracker_missing)
+                }
+            }
+            if (direct) buttons += R.string.ittc_nl_templates to { IttcLeadActivity.open(this, lead.leadId, showTemplates = true) }
+        } else if (direct) {
+            buttons += R.string.ittc_nl_add to { IttcAddLeadActivity.open(this, number, contactName ?: givenName) }
+        }
+        val note = lead?.let { listOfNotNull(it.rating?.let { r -> "★ ${r.replaceFirstChar { c -> c.uppercase() }}" }, it.lastNote?.let { n -> "“${n.take(160)}”" }).joinToString("  ") }
+        box.beVisibleIf(buttons.isNotEmpty() || !note.isNullOrEmpty())
+        val textColor = getProperTextColor()
+        val primary = getProperPrimaryColor()
+        val density = resources.displayMetrics.density
+        val m = (density * 4).toInt()
+        box.setPadding((density * 12).toInt(), 0, (density * 12).toInt(), (density * 8).toInt())
+        if (!note.isNullOrEmpty()) {
+            box.addView(TextView(this).apply {
+                text = note
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTextColor(textColor.adjustAlpha(0.8f))
+                setPadding(m, 0, m, m)
+            })
+        }
+        if (buttons.isEmpty()) return
+        val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        buttons.forEach { (label, action) ->
+            line.addView(
+                TextView(this).apply {
+                    setText(label)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    val pad = (density * 10).toInt()
+                    setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                    setBackgroundResource(R.drawable.ittc_chip_background)
+                    background.mutate().applyColorFilter(primary)
+                    setTextColor(primary.getContrastColor())
+                    setOnClickListener { action() }
+                },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(m, m, m, 0) },
+            )
+        }
+        box.addView(line)
     }
 
     private fun loadCalls() {

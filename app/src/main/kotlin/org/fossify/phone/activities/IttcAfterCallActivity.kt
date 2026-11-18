@@ -26,15 +26,21 @@ import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
+import org.fossify.commons.extensions.hasPermission
+import org.fossify.commons.helpers.PERMISSION_READ_CONTACTS
 import org.fossify.phone.R
 import org.fossify.phone.databinding.IttcActivityAfterCallBinding
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcCrash
+import org.fossify.phone.helpers.IttcDialer
 
 /**
  * 🎓 ITTC: right after a lead call that was not started from the Tracker (an incoming call, or one
  * dialed here): who it was, how the call went, and in one go what happened, the pipeline stage,
  * a note and the next call — saved through the Tracker (an older Tracker: its own note popup).
  * Calls started from the Tracker skip this: the Tracker shows its popup when the call ends.
+ * 3.2: the admin's quick notes, the next call a result suggests, the power dialer ("Save & call
+ * next"), and a number that is no lead (direct mode): "Add as a lead".
  */
 class IttcAfterCallActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityAfterCallBinding::inflate)
@@ -66,29 +72,134 @@ class IttcAfterCallActivity : SimpleActivity() {
         super.onDestroy()
     }
 
+    /** The key of what is on screen (a new call: the note written for the last one goes) */
+    private var shownKey: String? = null
+    private var unknownMode = false
+
     private fun show(intent: Intent) {
-        val leadId = intent.getStringExtra(LEAD_ID)
-        val number = intent.getStringExtra(NUMBER)
-        if (leadId.isNullOrEmpty() || number.isNullOrEmpty()) {
+        try {
+            showNow(intent)
+        } catch (e: Throwable) {
+            // (never lose the screen right after a call: what could be shown stays)
+            IttcCrash.record(this, e, "After-call screen")
+        }
+    }
+
+    private fun showNow(intent: Intent) {
+        val unknown = intent.getBooleanExtra(UNKNOWN, false)
+        val leadId = intent.getStringExtra(LEAD_ID)?.takeIf { it.isNotEmpty() }
+        val number = intent.getStringExtra(NUMBER)?.takeIf { it.isNotEmpty() }
+        if (number == null || (!unknown && leadId == null)) {
             finish()
             return
         }
+        unknownMode = unknown
         IttcBridge.afterCallShown(number)
         val name = intent.getStringExtra(NAME).orEmpty()
         val talked = intent.getIntExtra(TALKED_SEC, 0)
         val outgoing = intent.getBooleanExtra(OUTGOING, false)
         val reason = intent.getStringExtra(REASON)
+        val key = "${leadId.orEmpty()}|$number|${intent.getLongExtra(STARTED_AT, 0L)}"
+        if (key != shownKey) {
+            shownKey = key
+            binding.ittcAcNoteInput.setText("")
+        }
 
         updateTextColors(binding.ittcAcHolder)
         val primary = getProperPrimaryColor()
         binding.apply {
-            ittcAcBadge.text = getString(R.string.ittc_after_call_badge)
+            ittcAcBadge.text = getString(if (unknown) R.string.ittc_l2_unknown_badge else R.string.ittc_after_call_badge)
             ittcAcName.text = name.ifEmpty { number }
             ittcAcNumber.text = number
             ittcAcNumber.beGoneIf(name.isEmpty())
             ittcAcResult.text = result(talked, outgoing, reason)
             ittcAcResult.setTextColor(if (talked > 0) primary else getProperTextColor())
+        }
+        showLeadSections(!unknown)
+        if (unknown) {
+            showUnknown(number)
+            return
+        }
+        showLead(intent, leadId ?: return, number, talked, outgoing, reason)
+    }
 
+    /** The result / stage / note / next call parts: only for a lead */
+    private fun showLeadSections(show: Boolean) {
+        binding.apply {
+            listOf(ittcAcOutcomeLabel, ittcAcOutcomes, ittcAcNoteInput, ittcAcNextLabel, ittcAcNextScroll, ittcAcSave)
+                .forEach { it.beGoneIf(!show) }
+            if (!show) {
+                listOf(ittcAcInfo, ittcAcNote, ittcAcStageLabel, ittcAcStages, ittcAcStageHint, ittcAcPresetsScroll, ittcAcStop)
+                    .forEach { it.beGoneIf(true) }
+            }
+            ittcAcAddLead.beGoneIf(show)
+            ittcAcCloseButton.beGoneIf(show)
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 📞 A number that is no lead (direct mode): "Add as a lead" or close
+    // ------------------------------------------------------------------
+    private var contactName: String? = null
+
+    private fun showUnknown(number: String) {
+        val primary = getProperPrimaryColor()
+        contactName = null
+        outcome = null
+        stages = emptyList()
+        stageChoice = null
+        currentStageId = null
+        binding.apply {
+            ittcAcAddLead.backgroundTintList = ColorStateList.valueOf(primary)
+            ittcAcAddLead.setTextColor(primary.getContrastColor())
+            ittcAcAddLead.setOnClickListener {
+                try {
+                    IttcAddLeadActivity.open(this@IttcAfterCallActivity, number, contactName)
+                } catch (e: Throwable) {
+                    IttcCrash.record(this@IttcAfterCallActivity, e, "After-call: add as a lead")
+                }
+                finish()
+            }
+            ittcAcCloseButton.setTextColor(getProperTextColor())
+            ittcAcCloseButton.setOnClickListener { finish() }
+            ittcAcClose.setOnClickListener { finish() }
+        }
+        showToday()
+        // (the name a contact on this phone has for the number)
+        ensureBackgroundThread {
+            val found = contactNameFor(number)
+            runOnUiThread {
+                if (isFinishing || isDestroyed || !unknownMode || intent.getStringExtra(NUMBER) != number) return@runOnUiThread
+                if (found.isNullOrBlank()) return@runOnUiThread
+                contactName = found
+                binding.ittcAcName.text = found
+                binding.ittcAcNumber.beGoneIf(false)
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission") // (READ_CONTACTS checked first)
+    private fun contactNameFor(number: String): String? {
+        if (!hasPermission(PERMISSION_READ_CONTACTS)) return null
+        return try {
+            val uri = android.net.Uri.withAppendedPath(
+                android.provider.ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                android.net.Uri.encode(number),
+            )
+            contentResolver.query(uri, arrayOf(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 🎓 A lead
+    // ------------------------------------------------------------------
+    private fun showLead(intent: Intent, leadId: String, number: String, talked: Int, outgoing: Boolean, reason: String?) {
+        val primary = getProperPrimaryColor()
+        binding.apply {
             val info = listOfNotNull(
                 intent.getStringExtra(COURSE),
                 intent.getStringExtra(STAGE),
@@ -103,7 +214,20 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcSave.backgroundTintList = ColorStateList.valueOf(primary)
             ittcAcSave.setTextColor(primary.getContrastColor())
             ittcAcSave.setOnClickListener { save(leadId, number) }
-            ittcAcClose.setOnClickListener { finish() }
+            ittcAcClose.setOnClickListener {
+                // (✕ while calling through a list: the list stops)
+                if (IttcDialer.active) {
+                    IttcDialer.stop(this@IttcAfterCallActivity)
+                    toast(R.string.ittc_l2_calling_stopped)
+                }
+                finish()
+            }
+            ittcAcStop.setTextColor(getProperTextColor())
+            ittcAcStop.setOnClickListener {
+                IttcDialer.stop(this@IttcAfterCallActivity)
+                toast(R.string.ittc_l2_calling_stopped)
+                renderDialer()
+            }
         }
         // (a likely answer chosen already: talked → Connected, no answer → No answer, busy → Busy)
         outcome = when {
@@ -114,13 +238,98 @@ class IttcAfterCallActivity : SimpleActivity() {
         }
         nextAt = null
         nextKey = "none"
+        userNext = false
         stages = emptyList()
         currentStageId = null
         stageChoice = null
+        // (the kept settings at once: quick notes and the suggested next call)
+        meta = IttcBridge.metaCache
+        applyAutoNext()
         renderChoices()
         renderStages()
+        renderPresets()
+        IttcDialer.load(this)
+        renderDialer()
         showToday()
         loadStages(leadId, intent.getStringExtra(STAGE))
+    }
+
+    // ------------------------------------------------------------------
+    // ▶ The power dialer: "Save & call next (N left)" · "Stop calling"
+    // ------------------------------------------------------------------
+    private fun renderDialer() {
+        val on = IttcDialer.active && !unknownMode
+        binding.ittcAcSave.text = when {
+            !on -> getString(R.string.ittc_save)
+            IttcDialer.remaining > 0 -> getString(R.string.ittc_l2_save_next, IttcDialer.remaining)
+            else -> getString(R.string.ittc_l2_save_last)
+        }
+        binding.ittcAcStop.beGoneIf(!on)
+    }
+
+    // ------------------------------------------------------------------
+    // 📝 The admin's quick notes (a tap adds one to the note)
+    // ------------------------------------------------------------------
+    private var meta: IttcBridge.PhoneMeta? = null
+
+    private fun renderPresets() {
+        val presets: List<String> = if (unknownMode) emptyList() else try {
+            meta?.notePresets.orEmpty()
+        } catch (_: Throwable) {
+            emptyList<String>()
+        }
+        binding.ittcAcPresets.removeAllViews()
+        binding.ittcAcPresetsScroll.beGoneIf(presets.isEmpty())
+        val m = (resources.displayMetrics.density * 6).toInt()
+        presets.forEach { preset ->
+            binding.ittcAcPresets.addView(
+                chip(preset, false) { addPreset(preset) }.apply { maxLines = 1 },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, m, 0) },
+            )
+        }
+    }
+
+    private fun addPreset(preset: String) {
+        val input = binding.ittcAcNoteInput
+        val now = input.text?.toString()?.trimEnd().orEmpty()
+        val text = if (now.isEmpty()) preset else "$now, $preset"
+        input.setText(text)
+        input.setSelection(input.text?.length ?: 0)
+    }
+
+    // ------------------------------------------------------------------
+    // ⚡ The next call a result suggests (the admin's rules) — the person's own choice wins
+    // ------------------------------------------------------------------
+    /** the person chose a next call themselves (then no rule changes it) */
+    private var userNext = false
+
+    private fun tomorrowAt10(): Long = Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_YEAR, 1)
+        set(Calendar.HOUR_OF_DAY, 10)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    private fun applyAutoNext() {
+        if (userNext || unknownMode) return
+        val rule = try {
+            meta?.nextFor(outcome)
+        } catch (_: Throwable) {
+            null
+        }
+        val at = when (rule) {
+            is Number -> System.currentTimeMillis() + (rule.toDouble() * 60 * 60 * 1000).toLong()
+            is String -> if (rule.equals("tomorrow10", true)) tomorrowAt10() else null
+            else -> null
+        }
+        if (at != null) {
+            nextKey = "auto"
+            nextAt = at
+        } else if (nextKey == "auto") {
+            nextKey = "none"
+            nextAt = null
+        }
     }
 
     // ------------------------------------------------------------------
@@ -134,14 +343,29 @@ class IttcAfterCallActivity : SimpleActivity() {
         ensureBackgroundThread {
             // (fresh from the Tracker: the stage may have changed on the last call; the caches only
             // when it cannot answer)
-            val meta = IttcBridge.phoneMeta(this) ?: IttcBridge.metaCache
-            val lead = (IttcBridge.myLeads(this) ?: IttcBridge.myLeadsCache).firstOrNull { it.leadId == leadId }
-            val list = meta?.stages.orEmpty().filter { it.forCourse(lead?.courseId) }
+            val fresh = try {
+                IttcBridge.phoneMeta(this)
+            } catch (_: Throwable) {
+                null
+            } ?: IttcBridge.metaCache
+            val lead = try {
+                (IttcBridge.myLeads(this) ?: IttcBridge.myLeadsCache).firstOrNull { it.leadId == leadId }
+            } catch (_: Throwable) {
+                null
+            }
+            val list = fresh?.stages.orEmpty().filter { it.forCourse(lead?.courseId) }
             val current = lead?.stageId ?: list.firstOrNull { it.name.equals(stageName, true) }?.id
             runOnUiThread {
-                if (isFinishing || isDestroyed || intent.getStringExtra(LEAD_ID) != leadId) return@runOnUiThread
+                if (isFinishing || isDestroyed || unknownMode || intent.getStringExtra(LEAD_ID) != leadId) return@runOnUiThread
                 stages = list
                 currentStageId = current
+                // (the latest settings: quick notes, and the next call for the result chosen)
+                if (fresh != null) {
+                    meta = fresh
+                    applyAutoNext()
+                    renderChoices()
+                    renderPresets()
+                }
                 renderStages()
             }
         }
@@ -238,7 +462,10 @@ class IttcAfterCallActivity : SimpleActivity() {
                 line.addView(
                     chip(label, outcome == value) {
                         outcome = if (outcome == value) null else value
+                        // (the admin's rule for this result, unless the person chose a time)
+                        applyAutoNext()
                         renderChoices()
+                        renderStages()
                     },
                     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(m, m, m, 0) },
                 )
@@ -248,12 +475,24 @@ class IttcAfterCallActivity : SimpleActivity() {
 
         binding.ittcAcNext.removeAllViews()
         val now = System.currentTimeMillis()
-        val tomorrow10 = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-            set(Calendar.HOUR_OF_DAY, 10)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-        }.timeInMillis
+        val tomorrow10 = tomorrowAt10()
+        // (the time a result's rule chose: shown first, marked ⚡)
+        val auto = nextAt
+        if (nextKey == "auto" && auto != null) {
+            val label = getString(
+                R.string.ittc_l2_auto_next,
+                DateUtils.formatDateTime(this, auto, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_TIME),
+            )
+            binding.ittcAcNext.addView(
+                chip(label, true) {
+                    // (kept: now the person's own choice)
+                    userNext = true
+                    nextKey = "pick"
+                    renderChoices()
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, 0, 0) },
+            )
+        }
         val options = listOf(
             Triple("none", "No", null),
             Triple("1h", "In 1 hour", now + 60 * 60 * 1000L),
@@ -263,6 +502,7 @@ class IttcAfterCallActivity : SimpleActivity() {
         options.forEach { (key, label, at) ->
             binding.ittcAcNext.addView(
                 chip(label, nextKey == key) {
+                    userNext = true
                     nextKey = key
                     nextAt = at
                     renderChoices()
@@ -288,6 +528,7 @@ class IttcAfterCallActivity : SimpleActivity() {
             TimePickerDialog(this, { _, h, mi ->
                 val at = Calendar.getInstance().apply { set(y, mo, d, h, mi, 0) }.timeInMillis
                 if (at > System.currentTimeMillis()) {
+                    userNext = true
                     nextKey = "pick"
                     nextAt = at
                     renderChoices()
@@ -323,6 +564,7 @@ class IttcAfterCallActivity : SimpleActivity() {
         binding.ittcAcSave.isEnabled = false
         val chosen = outcome
         val next = nextAt
+        val dialing = IttcDialer.active
         ensureBackgroundThread {
             // (the call's row in the call log, so the result lands on that very call; if it is not
             // found yet, the Tracker finds it later by the number and the call's start time)
@@ -335,9 +577,18 @@ class IttcAfterCallActivity : SimpleActivity() {
             val ok = IttcBridge.saveOutcome(this, leadId, number, chosen, note, next, started, stage)
             runOnUiThread {
                 saving = false
+                if (isDestroyed) return@runOnUiThread
                 binding.ittcAcSave.isEnabled = true
                 if (ok) {
                     toast(R.string.ittc_saved)
+                    // ▶ calling through a list: the next lead at once (the dial screen opens on its own)
+                    if (dialing && IttcDialer.active) {
+                        try {
+                            if (!IttcDialer.next(applicationContext)) toast(R.string.ittc_l2_all_called)
+                        } catch (e: Throwable) {
+                            IttcCrash.record(this, e, "After-call: call next")
+                        }
+                    }
                     finish()
                 } else {
                     toast(R.string.ittc_old_tracker)
@@ -428,6 +679,25 @@ class IttcAfterCallActivity : SimpleActivity() {
         private const val TALKED_SEC = "ittc_talked_sec"
         private const val REASON = "ittc_reason"
         private const val STARTED_AT = "ittc_started_at"
+        private const val UNKNOWN = "ittc_unknown"
+
+        /** After a call with a number that is no lead (direct mode): "Add as a lead" or close */
+        fun openUnknown(context: Context, number: String, outgoing: Boolean, talkedSec: Int, reason: String?, startedAt: Long) {
+            try {
+                context.startActivity(
+                    Intent(context, IttcAfterCallActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        .putExtra(UNKNOWN, true)
+                        .putExtra(NUMBER, number)
+                        .putExtra(OUTGOING, outgoing)
+                        .putExtra(TALKED_SEC, talkedSec)
+                        .putExtra(REASON, reason)
+                        .putExtra(STARTED_AT, startedAt),
+                )
+            } catch (_: Throwable) {
+                // (not allowed right now: nothing is lost, it is no lead)
+            }
+        }
 
         fun open(
             context: Context,

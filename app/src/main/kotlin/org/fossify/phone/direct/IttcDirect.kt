@@ -120,6 +120,16 @@ object IttcDirect {
         return id
     }
 
+    /**
+     * The id calls are sent with: the Tracker's own (when it is on this phone), so a call sent by
+     * both apps is kept once by the server; else this install's
+     */
+    fun callDeviceId(context: Context): String = prefs(context).getString("tracker_device_id", null) ?: deviceId(context)
+
+    fun setTrackerDeviceId(context: Context, id: String) {
+        if (prefs(context).getString("tracker_device_id", null) != id) prefs(context).edit().putString("tracker_device_id", id).apply()
+    }
+
     /** Too old for the admin's lowest version: it must be updated from Google Play */
     fun updateNeeded(context: Context): Boolean {
         val min = settings(context).optString("min_version").takeIf { it.isNotBlank() && it != "null" } ?: return false
@@ -152,7 +162,7 @@ object IttcDirect {
             )
         }
         IttcAuth.save(app, t)
-        val ok = checkSession(app)
+        val ok = checkSession(app, fresh = true)
         if (!ok) {
             val msg = lastMessage(app) ?: "You may not sign in to ITTC Phone. Ask your admin."
             throw IllegalStateException(msg)
@@ -171,7 +181,7 @@ object IttcDirect {
         sender.execute {
             try {
                 if (access != null) {
-                    IttcApi.rpc(app, "ittc_phone_forget", JSONObject().put("p_device_id", device))
+                    IttcApi.rpcWith(access, "ittc_phone_forget", JSONObject().put("p_device_id", device))
                     IttcApi.signOutServer(access)
                 }
             } catch (_: Throwable) {
@@ -202,13 +212,13 @@ object IttcDirect {
      * Ask the server: still allowed? signed out by an admin? the settings, who I am (also every
      * few minutes). false: not allowed (and signed out here).
      */
-    fun checkSession(context: Context): Boolean {
+    fun checkSession(context: Context, fresh: Boolean = false): Boolean {
         val app = context.applicationContext
         val info = JSONObject()
             .put("device_label", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
             .put("app_version", BuildConfig.VERSION_NAME)
         val answer = try {
-            JSONObject(IttcApi.rpc(app, "ittc_phone_session", JSONObject().put("p_device_id", deviceId(app)).put("p_info", info)))
+            JSONObject(IttcApi.rpc(app, "ittc_phone_session", JSONObject().put("p_device_id", deviceId(app)).put("p_info", info).put("p_fresh", fresh)))
         } catch (e: IttcApi.ApiError) {
             // (no internet / the server busy: keep working with what is kept)
             return e.status == 0 || e.status >= 500
@@ -353,6 +363,11 @@ object IttcDirect {
                 p.edit().putLong("last_directory", now).apply()
             }
             p.edit().putLong("last_refresh", now).remove("refresh_error").apply()
+            // (the Tracker forgets "ITTC Phone works by itself" after 2 hours unless told again)
+            if (now - p.getLong("last_flag", 0) > 10 * 60_000) {
+                p.edit().putLong("last_flag", now).apply()
+                syncTrackerFlag(app)
+            }
             IttcBridge.forgetRecents()
             IttcReminders.schedule(app, leads(app))
         } catch (e: Throwable) {
@@ -553,7 +568,7 @@ object IttcDirect {
     private fun send(app: Context, item: JSONObject): Result = when (item.optString("kind")) {
         "call" -> {
             val calls = JSONArray().put(item.getJSONObject("call"))
-            rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", deviceId(app)).put("p_calls", calls))
+            rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", callDeviceId(app)).put("p_calls", calls))
             Done
         }
         "outcome" -> sendOutcome(app, item)
@@ -616,7 +631,7 @@ object IttcDirect {
                 // (the call itself first: the result lands on it, never a second call; call sync
                 // may be off for this person — then the result alone makes the call)
                 try {
-                    rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", deviceId(app)).put("p_calls", JSONArray().put(row.toJson())))
+                    rpc(app, "sync_phone_calls", JSONObject().put("p_device_id", callDeviceId(app)).put("p_calls", JSONArray().put(row.toJson())))
                 } catch (e: IttcApi.ApiError) {
                     if (e.status == 0 || e.status >= 500) throw e
                 }
@@ -625,7 +640,7 @@ object IttcDirect {
                     JSONObject().put("p_lead_id", leadId).put("p_outcome", outcome).put("p_notes", note ?: "")
                         .put("p_duration_sec", row.durationSec).put("p_called_at", iso(row.dateMs))
                         .put("p_direction", if (row.direction == "outgoing") "outgoing" else "incoming")
-                        .put("p_device_id", deviceId(app)).put("p_device_call_id", rowId)
+                        .put("p_device_id", callDeviceId(app)).put("p_device_call_id", rowId)
                         .apply { row.sim?.let { put("p_sim_label", it) } },
                 )
             } else if (outcome != null && o.has("started_at") && System.currentTimeMillis() - o.optLong("at") < 15 * 60_000) {

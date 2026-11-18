@@ -114,6 +114,7 @@ class SettingsActivity : SimpleActivity() {
         setupDialPadOpen()
         setupGroupSubsequentCalls()
         setupIttcRecents() // 🎓 ITTC
+        setupIttcAccount() // 🎓 ITTC 3.2
         setupStartNameWithSurname()
         setupFormatPhoneNumbers()
         setupDialpadVibrations()
@@ -308,6 +309,13 @@ class SettingsActivity : SimpleActivity() {
                 settingsGroupSubsequentCalls.toggle()
                 config.groupSubsequentCalls = settingsGroupSubsequentCalls.isChecked
             }
+        }
+    }
+
+    // 🎓 ITTC 3.2: the ITTC account screen
+    private fun setupIttcAccount() {
+        binding.settingsIttcAccountHolder.setOnClickListener {
+            startActivity(Intent(this, IttcAccountActivity::class.java))
         }
     }
 

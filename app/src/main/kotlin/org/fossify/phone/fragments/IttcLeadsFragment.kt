@@ -2,6 +2,7 @@ package org.fossify.phone.fragments
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.text.format.DateUtils
 import android.util.AttributeSet
@@ -15,16 +16,27 @@ import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getTextSize
+import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.phone.R
+import org.fossify.phone.activities.IttcAddLeadActivity
+import org.fossify.phone.activities.IttcLeadActivity
+import org.fossify.phone.activities.IttcTeamActivity
 import org.fossify.phone.databinding.IttcFragmentLeadsBinding
 import org.fossify.phone.databinding.IttcItemLeadBinding
+import org.fossify.phone.direct.IttcDirect
+import org.fossify.phone.direct.IttcRealtime
+import org.fossify.phone.direct.IttcReminders
 import org.fossify.phone.extensions.startCallIntent
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
+import org.fossify.phone.helpers.IttcDialer
+import org.fossify.phone.helpers.IttcToday
+import org.json.JSONObject
 import java.util.Calendar
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /**
  * 🎓 ITTC: the "Leads" tab — open leads from the Admission Tracker: the signed-in user's own
@@ -34,6 +46,8 @@ import java.util.Locale
  * Live: the Tracker announces each new list (a ContentObserver) and it shows at once.
  * 📞 calls at once; a tap on the row offers WhatsApp, SMS, the other number and the lead in the
  * Tracker. The toolbar search filters by name or number.
+ * 3.2: a "Today" card (+ the day's target, and the team for team leads / super admins), "＋ Add
+ * lead" and live updates when signed in to ITTC directly, and "▶ Call all" (the power dialer).
  */
 class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     MyViewPagerFragment<IttcLeadsFragment.LeadsInnerBinding>(context, attributeSet) {
@@ -67,6 +81,24 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private var observer: android.database.ContentObserver? = null
     private val prefs by lazy { context.getSharedPreferences("ittc", Context.MODE_PRIVATE) }
 
+    /** signed in to ITTC by itself and working that way (found off the main thread) */
+    private var direct = false
+    /** the rows on screen now (for "Call all") */
+    private var shownLeads: List<IttcBridge.PhoneLead> = emptyList()
+    /** direct mode: phone_today(); Tracker mode: the call log's [calls, connected, seconds] */
+    private var today: JSONObject? = null
+    private var phoneToday: IntArray? = null
+    private var todayOffline = false
+    private var todayAsking = false
+    /** live updates held by this tab (touched on [liveExec] only) */
+    @Volatile private var liveHeld = false
+
+    companion object {
+        /** start / release in order, never two at once (the refcount stays right) */
+        private val liveExec = Executors.newSingleThreadExecutor()
+        @Volatile private var remindersAt = 0L
+    }
+
     override fun onFinishInflate() {
         super.onFinishInflate()
         binding = IttcFragmentLeadsBinding.bind(this)
@@ -82,9 +114,18 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             if (trackerClosed && IttcBridge.openTracker(context)) return@setOnClickListener
             ask(force = true)
         }
+        binding.ittcLeadsAdd.setOnClickListener { IttcAddLeadActivity.open(context, null, null) }
+        binding.ittcLeadsCallAll.setOnClickListener { callAll() }
+        binding.ittcLeadsStop.setOnClickListener {
+            IttcDialer.stop(context)
+            context.toast(R.string.ittc_l2_calling_stopped)
+            render()
+        }
+        binding.ittcLeadsTeam.setOnClickListener { IttcTeamActivity.open(context) }
         // (the last list at once, then the Tracker's)
         all = IttcBridge.myLeadsCache
         meta = IttcBridge.metaCache
+        today = IttcToday.peek()
         render()
     }
 
@@ -92,13 +133,50 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (observer == null) observer = IttcBridge.watchLeads(context) { reload() }
+        syncLive()
     }
 
     override fun onDetachedFromWindow() {
         IttcBridge.unwatchLeads(context, observer)
         observer = null
         removeCallbacks(reloadNow)
+        // (still counted as attached during this call: say it)
+        syncLive(attached = false)
         super.onDetachedFromWindow()
+    }
+
+    // (the app went to the background / came back: live updates only while it is on screen)
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        syncLive(visible = visibility == VISIBLE)
+        if (visibility == VISIBLE && isAttachedToWindow && ::binding.isInitialized) {
+            // (back from a call: the dialer's buttons and today's numbers)
+            render()
+            loadToday(force = false)
+        }
+    }
+
+    /**
+     * ⚡ Direct mode: live updates (IttcRealtime, counted) while this tab is on screen, and a fresh
+     * list when it shows. Held at most once per tab; let go when it goes away.
+     */
+    private fun syncLive(attached: Boolean = isAttachedToWindow, visible: Boolean = windowVisibility == VISIBLE) {
+        val app = context?.applicationContext ?: return
+        val wanted = attached && visible
+        liveExec.execute {
+            try {
+                val want = wanted && IttcDirect.isActive(app)
+                if (want && !liveHeld) {
+                    liveHeld = true
+                    IttcRealtime.start(app)
+                    IttcDirect.refreshAsync(app)
+                } else if (!want && liveHeld) {
+                    liveHeld = false
+                    IttcRealtime.release()
+                }
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     private val reloadNow = Runnable { load() }
@@ -124,6 +202,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         // (ask the Tracker for a fresh list now and then; it answers when it runs)
         ask(force = false)
         load()
+        loadToday(force = false)
+        syncLive()
     }
 
     /** Ask the Tracker to fetch a fresh list (at most every 20 s unless tapped) */
@@ -159,7 +239,26 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 IttcCrash.record(ctx, e, "Leads tab: reading the stages")
                 null
             }
+            val isDirect = try {
+                IttcDirect.isActive(ctx)
+            } catch (_: Throwable) {
+                false
+            }
+            // ⏰ Tracker mode: follow-up reminders from this list too (direct mode sets them itself)
+            val now = System.currentTimeMillis()
+            if (!isDirect && leads != null && now - remindersAt > 10 * 60_000) {
+                try {
+                    if (IttcReminders.enabled(ctx)) {
+                        remindersAt = now
+                        IttcReminders.schedule(ctx, leads)
+                    }
+                } catch (e: Throwable) {
+                    IttcCrash.record(ctx, e, "Leads tab: reminders")
+                }
+            }
             post {
+                val modeChanged = direct != isDirect
+                direct = isDirect
                 // (the Tracker installed / signed in after this tab opened: watch it now)
                 if (observer == null && isAttachedToWindow) observer = IttcBridge.watchLeads(context) { reload() }
                 loadedOnce = true
@@ -172,8 +271,158 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                     trackerClosed = false
                 }
                 render()
+                if (modeChanged) {
+                    syncLive()
+                    loadToday(force = true)
+                }
             }
         }
+    }
+
+    // ------------------------------------------------------------- 📊 today
+    private var todayAt = 0L
+
+    /** Today's numbers, off the main thread (the server's at most once a minute; see IttcToday) */
+    private fun loadToday(force: Boolean) {
+        val ctx = context ?: return
+        if (todayAsking || (!force && System.currentTimeMillis() - todayAt < 30_000)) return
+        todayAsking = true
+        todayAt = System.currentTimeMillis()
+        ensureBackgroundThread {
+            var t: JSONObject? = null
+            var p: IntArray? = null
+            var off = false
+            try {
+                if (IttcDirect.isActive(ctx)) {
+                    t = IttcToday.direct(ctx)
+                    off = IttcToday.offline
+                } else {
+                    p = IttcToday.fromCallLog(ctx)
+                }
+            } catch (e: Throwable) {
+                IttcCrash.record(ctx, e, "Leads tab: today")
+            }
+            post {
+                todayAsking = false
+                today = t
+                phoneToday = p
+                todayOffline = off
+                renderToday()
+            }
+        }
+    }
+
+    private fun renderToday() {
+        if (!::binding.isInitialized) return
+        try {
+            renderTodayNow()
+        } catch (e: Throwable) {
+            IttcCrash.record(context, e, "Leads tab: today card")
+            binding.ittcLeadsToday.beVisibleIf(false)
+        }
+    }
+
+    private fun renderTodayNow() {
+        val b = binding
+        val t = today
+        val p = phoneToday
+        val calls: Int
+        val stats: String
+        var target = meta?.dailyTarget ?: 0
+        var team = false
+        if (t != null) {
+            val me = t.optJSONObject("me") ?: JSONObject()
+            calls = me.optInt("calls")
+            stats = context.getString(
+                R.string.ittc_l2_today_direct,
+                calls,
+                me.optInt("connected"),
+                IttcToday.duration(me.optInt("talk_sec")),
+                me.optInt("stage_changes"),
+                me.optInt("new_leads"),
+            )
+            t.optInt("target", 0).takeIf { it > 0 }?.let { target = it }
+            team = t.optJSONArray("team") != null
+        } else if (p != null) {
+            calls = p[0]
+            stats = context.getString(R.string.ittc_l2_today_phone, p[0], p[1], IttcToday.duration(p[2]))
+        } else {
+            b.ittcLeadsToday.beVisibleIf(false)
+            return
+        }
+        b.ittcLeadsToday.background.mutate().applyColorFilter((textColor and 0x00FFFFFF) or 0x14000000)
+        b.ittcLeadsTodayTitle.text = context.getString(R.string.ittc_l2_today) +
+            if (t != null && todayOffline) " · " + context.getString(R.string.ittc_l2_offline) else ""
+        b.ittcLeadsTodayTitle.setTextColor(textColor)
+        b.ittcLeadsTodayStats.text = stats
+        b.ittcLeadsTodayStats.setTextColor(textColor)
+        b.ittcLeadsTodayProgress.beVisibleIf(target > 0)
+        b.ittcLeadsTodayTarget.beVisibleIf(target > 0)
+        if (target > 0) {
+            b.ittcLeadsTodayProgress.max = target
+            b.ittcLeadsTodayProgress.progress = calls.coerceAtMost(target)
+            b.ittcLeadsTodayProgress.progressTintList = ColorStateList.valueOf(primaryColor)
+            b.ittcLeadsTodayTarget.text = context.getString(
+                if (calls >= target) R.string.ittc_l2_target_done else R.string.ittc_l2_target,
+                calls,
+                target,
+            )
+            b.ittcLeadsTodayTarget.setTextColor(textColor)
+        }
+        b.ittcLeadsTeam.beVisibleIf(team)
+        if (team) {
+            b.ittcLeadsTeam.background.mutate().applyColorFilter(primaryColor)
+            b.ittcLeadsTeam.setTextColor(primaryColor.getContrastColor())
+        }
+        b.ittcLeadsToday.beVisibleIf(true)
+    }
+
+    // ------------------------------------------------------------- ▶ power dialer
+    private fun callable(): List<IttcBridge.PhoneLead> = shownLeads.filter { !it.callNumber.isNullOrBlank() }
+
+    private fun callAll() {
+        val act = activity ?: return
+        if (IttcDialer.active) {
+            // (calling through a list already: on with the next one)
+            IttcDialer.next(act)
+            render()
+            return
+        }
+        val list = callable()
+        if (list.isEmpty()) {
+            context.toast(R.string.ittc_l2_nobody)
+            return
+        }
+        AlertDialog.Builder(act)
+            .setTitle(R.string.ittc_l2_call_all_title)
+            .setMessage(context.getString(R.string.ittc_l2_call_all_text, list.size))
+            .setPositiveButton(R.string.ittc_l2_call_all_go) { _, _ ->
+                IttcDialer.start(act, list)
+                render()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun renderActions() {
+        val b = binding
+        IttcDialer.load(context)
+        val dialing = IttcDialer.active
+        val n = callable().size
+        b.ittcLeadsAdd.beVisibleIf(direct)
+        b.ittcLeadsCallAll.text = if (dialing) {
+            context.getString(R.string.ittc_l2_call_next, IttcDialer.remaining)
+        } else {
+            context.getString(R.string.ittc_l2_call_all, n)
+        }
+        b.ittcLeadsCallAll.beVisibleIf(dialing && IttcDialer.remaining > 0 || !dialing && n > 0)
+        b.ittcLeadsStop.beVisibleIf(dialing)
+        listOf(b.ittcLeadsAdd, b.ittcLeadsCallAll, b.ittcLeadsStop).forEach { v ->
+            val on = v == b.ittcLeadsCallAll
+            v.background.mutate().applyColorFilter(if (on) primaryColor else (textColor and 0x00FFFFFF) or 0x22000000)
+            v.setTextColor(if (on) primaryColor.getContrastColor() else textColor)
+        }
+        b.ittcLeadsActions.beVisibleIf(b.ittcLeadsAdd.visibility == VISIBLE || b.ittcLeadsCallAll.visibility == VISIBLE || dialing)
     }
 
     private var noTracker = false
@@ -305,10 +554,13 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                     (digits.length >= 3 && listOfNotNull(l.phone, l.altPhone, l.whatsapp).any { it.filter(Char::isDigit).contains(digits) }))
         }.sortedWith(compareBy<IttcBridge.PhoneLead> { it.nextCall == null }.thenBy { it.nextCall ?: Long.MAX_VALUE })
         adapter.submit(shown)
+        shownLeads = shown
+        renderActions()
+        renderToday()
         val placeholder = when {
             !loadedOnce && all.isEmpty() -> context.getString(R.string.ittc_leads_loading)
             noTracker -> context.getString(R.string.ittc_leads_no_tracker)
-            shown.isEmpty() -> context.getString(R.string.ittc_leads_none)
+            shown.isEmpty() -> context.getString(if (direct) R.string.ittc_l2_leads_none_direct else R.string.ittc_leads_none)
             else -> null
         }
         binding.ittcLeadsPlaceholder.text = placeholder
@@ -460,7 +712,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             }
         }
         l.callNumber?.let { n -> items += context.getString(R.string.ittc_sms) to { tryStart(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$n"))) } }
-        items += context.getString(R.string.ittc_lead_open) to { IttcBridge.openLead(act, l.leadId) }
+        items += context.getString(if (direct) R.string.ittc_l2_open_lead else R.string.ittc_lead_open) to { IttcBridge.openLead(act, l.leadId) }
         AlertDialog.Builder(act)
             .setTitle(l.name.ifEmpty { l.callNumber ?: "" })
             .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
@@ -508,7 +760,15 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 ittcLeadCall.applyColorFilter(primaryColor)
                 ittcLeadCall.setOnClickListener { call(l.callNumber) }
                 ittcLeadCall.beVisibleIf(l.callNumber != null)
-                ittcLeadHolder.setOnClickListener { showOptions(l) }
+                // (direct mode: the lead's own screen; long press: the quick choices)
+                ittcLeadHolder.setOnClickListener {
+                    val act = activity
+                    if (direct && act != null) IttcLeadActivity.open(act, l.leadId) else showOptions(l)
+                }
+                ittcLeadHolder.setOnLongClickListener {
+                    showOptions(l)
+                    true
+                }
             }
         }
     }
