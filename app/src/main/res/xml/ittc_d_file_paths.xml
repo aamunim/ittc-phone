@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🧾 ITTC 3.5: files the app shares (receipt pictures), for a FileProvider with the authority
+     "${applicationId}.ittcfiles" (only once the manifest declares it; until then receipts go as text) -->
+<paths>
+    <cache-path name="ittc_receipts" path="ittc_receipts/" />
+</paths>

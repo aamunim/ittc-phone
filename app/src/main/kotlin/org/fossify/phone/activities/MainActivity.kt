@@ -11,6 +11,11 @@ import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.provider.Settings
+import android.view.Gravity
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -27,6 +32,7 @@ import org.fossify.commons.models.RadioItem
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.helpers.IttcDisclosure
 import org.fossify.phone.direct.IttcDirect
+import org.fossify.phone.direct.IttcNotify
 import org.fossify.phone.BuildConfig
 import org.fossify.phone.R
 import org.fossify.phone.adapters.ViewPagerAdapter
@@ -69,6 +75,7 @@ class MainActivity : SimpleActivity() {
         // 🎓 ITTC: the reason the app stopped last time, once (to report it)
         if (savedInstanceState == null) org.fossify.phone.helpers.IttcCrash.showIfAny(this)
         setupOptionsMenu()
+        setupIttcTopBar()
         refreshMenuItems()
         setupEdgeToEdge(padBottomImeAndSystem = listOf(binding.mainTabsHolder))
         binding.ittcUpdateBanner.setOnClickListener { IttcAccountActivity.openPlay(this) }
@@ -159,6 +166,7 @@ class MainActivity : SimpleActivity() {
         }
 
         // 🎓 ITTC 3.2: signed in to ITTC — send what waits, fetch the lists (throttled), tell the Tracker
+        ittcResumed = true
         if (IttcDisclosure.agreed(this)) ittcDirectResume()
 
         checkShortcuts()
@@ -177,6 +185,15 @@ class MainActivity : SimpleActivity() {
 
     override fun onPause() {
         super.onPause()
+        // 🎓 ITTC 3.5: no live notification watch while the app is in the background
+        ittcResumed = false
+        if (ittcNotifyStarted) {
+            ittcNotifyStarted = false
+            try {
+                IttcNotify.stop()
+            } catch (_: Throwable) {
+            }
+        }
         storedShowTabs = config.showTabs
         storedStartNameWithSurname = config.startNameWithSurname
         config.lastUsedViewPagerPage = binding.viewPager.currentItem
@@ -258,6 +275,7 @@ class MainActivity : SimpleActivity() {
                     R.id.column_count -> changeColumnCount()
                     R.id.about -> launchAbout()
                     R.id.ittc_account -> startActivity(Intent(applicationContext, IttcAccountActivity::class.java))
+                    R.id.ittc_a_menu_search_leads -> IttcSearchActivity.open(this@MainActivity)
                     else -> return@setOnMenuItemClickListener false
                 }
                 return@setOnMenuItemClickListener true
@@ -290,6 +308,8 @@ class MainActivity : SimpleActivity() {
 
     private fun updateMenuColors() {
         binding.mainMenu.updateColors()
+        // 🎓 ITTC 3.5: the bell drawn by hand, in the colour of the other top bar icons
+        ittcBellIcon?.setColorFilter(getProperBackgroundColor().getContrastColor())
     }
 
     private fun checkContactPermissions() {
@@ -614,8 +634,36 @@ class MainActivity : SimpleActivity() {
         val app = applicationContext
         ensureBackgroundThread {
             if (!IttcDirect.isSignedIn(app)) {
-                runOnUiThread { if (!isFinishing && !isDestroyed) binding.ittcUpdateBanner.beGone() }
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        binding.ittcUpdateBanner.beGone()
+                        showIttcTopBar(false, 0)
+                    }
+                }
                 return@ensureBackgroundThread
+            }
+            // 🎓 ITTC 3.5: 🔍 and 🔔 (the last unread count at once, a fresh one in a moment)
+            val unread = try {
+                IttcNotify.unreadCached(app)
+            } catch (_: Throwable) {
+                0
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                showIttcTopBar(true, unread)
+                if (ittcResumed && !ittcNotifyStarted) {
+                    ittcNotifyStarted = true
+                    try {
+                        IttcNotify.start(app)
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+            try {
+                IttcNotify.refreshAsync(app) { n ->
+                    runOnUiThread { if (!isFinishing && !isDestroyed) showIttcBadge(n) }
+                }
+            } catch (_: Throwable) {
             }
             IttcDirect.kick(app)
             IttcDirect.refreshAsync(app)
@@ -625,6 +673,88 @@ class MainActivity : SimpleActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 binding.ittcUpdateBanner.beVisibleIf(update)
             }
+        }
+    }
+
+    // 🎓 ITTC 3.5: in the top bar, when signed in to ITTC: 🔍 search leads and 🔔 notifications
+    // (with the unread count); both hidden otherwise
+    private var ittcSearchItem: MenuItem? = null
+    private var ittcBellItem: MenuItem? = null
+    private var ittcBellIcon: ImageView? = null
+    private var ittcBellBadge: TextView? = null
+    private var ittcResumed = false
+    private var ittcNotifyStarted = false
+
+    private fun setupIttcTopBar() {
+        val menu = binding.mainMenu.requireToolbar().menu
+        ittcSearchItem = menu.add(Menu.NONE, R.id.ittc_a_menu_search_leads, Menu.NONE, R.string.ittc_a_search_leads).apply {
+            setIcon(R.drawable.ic_search_vector)
+            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            isVisible = false
+        }
+
+        val size = resources.getDimensionPixelSize(R.dimen.ittc_touch)
+        val bell = FrameLayout(this).apply {
+            layoutParams = android.view.ViewGroup.LayoutParams(size, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            minimumHeight = size
+            contentDescription = getString(R.string.ittc_a_notifications)
+            isClickable = true
+            isFocusable = true
+            setBackgroundResource(org.fossify.commons.R.drawable.ripple_all_corners)
+            setOnClickListener { IttcInboxActivity.open(this@MainActivity) }
+        }
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_bell_vector)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setColorFilter(getProperBackgroundColor().getContrastColor())
+        }
+        val iconSize = (24 * resources.displayMetrics.density).toInt()
+        bell.addView(icon, FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER))
+        val p = org.fossify.phone.helpers.IttcTheme.of(this)
+        val badge = TextView(this).apply {
+            visibility = View.GONE
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setTextColor(p.dangerStrong.getContrastColor())
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 10f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            val dp = resources.displayMetrics.density
+            minWidth = (16 * dp).toInt()
+            minHeight = (16 * dp).toInt()
+            setPadding((4 * dp).toInt(), 0, (4 * dp).toInt(), 0)
+            background = org.fossify.phone.helpers.IttcTheme.rounded(this@MainActivity, p.dangerStrong, 999f)
+        }
+        bell.addView(
+            badge,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
+                val dp = resources.displayMetrics.density
+                topMargin = (2 * dp).toInt()
+                marginEnd = (2 * dp).toInt()
+            },
+        )
+        ittcBellIcon = icon
+        ittcBellBadge = badge
+        ittcBellItem = menu.add(Menu.NONE, R.id.ittc_a_menu_inbox, Menu.NONE, R.string.ittc_a_notifications).apply {
+            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            actionView = bell
+            isVisible = false
+        }
+    }
+
+    private fun showIttcTopBar(signedIn: Boolean, unread: Int) {
+        ittcSearchItem?.isVisible = signedIn
+        ittcBellItem?.isVisible = signedIn
+        showIttcBadge(if (signedIn) unread else 0)
+    }
+
+    private fun showIttcBadge(unread: Int) {
+        val badge = ittcBellBadge ?: return
+        badge.text = if (unread > 99) "99+" else unread.toString()
+        badge.beVisibleIf(unread > 0)
+        ittcBellItem?.actionView?.contentDescription = if (unread > 0) {
+            getString(R.string.ittc_a_notifications_unread, unread)
+        } else {
+            getString(R.string.ittc_a_notifications)
         }
     }
 

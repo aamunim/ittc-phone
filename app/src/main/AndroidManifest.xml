@@ -203,6 +203,17 @@
             android:parentActivityName=".activities.MainActivity"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- 🎓 ITTC 3.5: receipt images shared to WhatsApp etc. (only files in cache/ittc_receipts) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.ittcfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/ittc_d_file_paths" />
+        </provider>
+
         <service
             android:name=".direct.IttcOutboxJob"
             android:exported="false"

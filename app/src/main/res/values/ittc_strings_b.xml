@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.5 (Part B): the lead page, the after-call screen, the call screen's lead card, and
+     the restyled add-lead / account / team screens -->
+<resources>
+    <!-- lead page -->
+    <string name="ittc_b_rating" translatable="false">Rating</string>
+    <string name="ittc_b_more" translatable="false">More</string>
+    <string name="ittc_b_change_stage" translatable="false">Change stage</string>
+    <string name="ittc_b_note" translatable="false">Note</string>
+    <string name="ittc_b_notes_head" translatable="false">Notes</string>
+    <string name="ittc_b_add_note" translatable="false">Add a note</string>
+    <string name="ittc_b_assigned_you" translatable="false">Assigned to you</string>
+    <string name="ittc_b_assigned_to" translatable="false">Assigned to %s</string>
+    <string name="ittc_b_ai_chance" translatable="false">AI chance %s</string>
+    <string name="ittc_b_no_next_call" translatable="false">No next call</string>
+    <string name="ittc_b_next_call_label" translatable="false">Next call</string>
+    <string name="ittc_b_today_at" translatable="false">Today %s</string>
+    <string name="ittc_b_tomorrow_at" translatable="false">Tomorrow %s</string>
+    <string name="ittc_b_yesterday_at" translatable="false">Yesterday %s</string>
+    <string name="ittc_b_book_visit" translatable="false">Book visit</string>
+    <string name="ittc_b_fee" translatable="false">Fee offer</string>
+    <string name="ittc_b_papers" translatable="false">Papers</string>
+    <string name="ittc_b_payment" translatable="false">Payment</string>
+    <string name="ittc_b_admit" translatable="false">Admit</string>
+    <string name="ittc_b_templates" translatable="false">Templates</string>
+    <string name="ittc_b_next_call" translatable="false">Next call</string>
+    <string name="ittc_b_edit" translatable="false">Edit</string>
+    <string name="ittc_b_hand_over" translatable="false">Hand over</string>
+    <string name="ittc_b_web" translatable="false">Open on web</string>
+    <string name="ittc_b_today" translatable="false">Today</string>
+    <string name="ittc_b_yesterday" translatable="false">Yesterday</string>
+    <string name="ittc_b_you" translatable="false">You</string>
+    <string name="ittc_b_tl_call" translatable="false">Call</string>
+    <string name="ittc_b_tl_message" translatable="false">Message</string>
+
+    <!-- after-call screen -->
+    <string name="ittc_b_ended_out" translatable="false">Call ended · Outgoing</string>
+    <string name="ittc_b_ended_in" translatable="false">Call ended · Incoming</string>
+    <string name="ittc_b_ended_unknown" translatable="false">Call ended · not a lead</string>
+    <string name="ittc_b_talked" translatable="false">Talked %s</string>
+    <string name="ittc_b_no_answer" translatable="false">No answer</string>
+    <string name="ittc_b_busy" translatable="false">Busy</string>
+    <string name="ittc_b_missed" translatable="false">Missed call</string>
+    <string name="ittc_b_declined" translatable="false">Declined</string>
+    <string name="ittc_b_last_note" translatable="false">Last note: “%s”</string>
+    <string name="ittc_b_stage" translatable="false">Stage</string>
+    <string name="ittc_b_stage_now" translatable="false">• %s (now)</string>
+    <string name="ittc_b_out_connected" translatable="false">Connected</string>
+    <string name="ittc_b_out_no_answer" translatable="false">No answer</string>
+    <string name="ittc_b_out_busy" translatable="false">Busy</string>
+    <string name="ittc_b_out_switched_off" translatable="false">Switched off</string>
+    <string name="ittc_b_out_call_back" translatable="false">Call back</string>
+    <string name="ittc_b_out_wrong_number" translatable="false">Wrong no.</string>
+    <string name="ittc_b_next_none" translatable="false">No</string>
+    <string name="ittc_b_next_1h" translatable="false">In 1 hour</string>
+    <string name="ittc_b_next_tomorrow" translatable="false">Tomorrow 10 AM</string>
+    <string name="ittc_b_next_2d" translatable="false">In 2 days</string>
+    <string name="ittc_b_next_pick" translatable="false">Pick…</string>
+    <string name="ittc_b_dialer_next_prefix" translatable="false">Calling a list · next: </string>
+    <string name="ittc_b_dialer_left" translatable="false">%d left</string>
+    <string name="ittc_b_dialer_last" translatable="false">Calling a list · this is the last one</string>
+    <string name="ittc_b_stop" translatable="false">Stop</string>
+    <string name="ittc_b_save" translatable="false">Save</string>
+    <string name="ittc_b_save_next" translatable="false">Save &amp; call next</string>
+    <string name="ittc_b_save_last" translatable="false">Save (last one)</string>
+    <string name="ittc_b_add_as_lead" translatable="false">Add as a lead</string>
+
+    <!-- call screen: the lead card -->
+    <string name="ittc_b_incall_badge" translatable="false">ITTC lead</string>
+    <string name="ittc_b_write_note_now" translatable="false">Write a note now</string>
+    <string name="ittc_b_note_kept" translatable="false">Note kept · edit</string>
+    <string name="ittc_b_note_now_title" translatable="false">Note for this call</string>
+    <string name="ittc_b_note_now_explain" translatable="false">It is filled in on the screen after the call.</string>
+    <string name="ittc_b_keep_note" translatable="false">Done</string>
+
+    <!-- add lead -->
+    <string name="ittc_b_add_who" translatable="false">Who</string>
+</resources>

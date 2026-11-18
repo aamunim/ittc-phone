@@ -3,21 +3,16 @@ package org.fossify.phone.activities
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
-import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getAlertDialogBuilder
-import org.fossify.commons.extensions.getContrastColor
-import org.fossify.commons.extensions.getProperPrimaryColor
-import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.hideKeyboard
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.updateTextColors
@@ -30,11 +25,13 @@ import org.fossify.phone.direct.IttcApi
 import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcLeadApi
 import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcTheme
 
 /**
  * 🎓 ITTC direct mode: add a lead (from a number, after a call with someone who is not a lead, or
  * the Leads tab). Needs internet: the server checks it (a course, a number that is no lead yet) and
  * gives it a stage and a person, as the Tracker's form does.
+ * 3.5: the card look (cards on the soft background, course pills, a round Save button).
  */
 class IttcAddLeadActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityAddLeadBinding::inflate)
@@ -42,32 +39,43 @@ class IttcAddLeadActivity : SimpleActivity() {
     private var courses: List<IttcLeadApi.Course> = emptyList()
     private var courseId: String? = null
     private var saving = false
+    private lateinit var p: IttcTheme.Palette
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        p = IttcTheme.of(this)
         setContentView(binding.root)
         binding.apply {
             setupEdgeToEdge(padBottomImeAndSystem = listOf(ittcAddScrollview))
-            setupMaterialScrollListener(ittcAddScrollview, ittcAddAppbar)
+            // (no colour change on scroll: the bar keeps the page's soft background)
             if (savedInstanceState == null) {
                 ittcAddPhone.setText(intent.getStringExtra(NUMBER)?.let { IttcDirect.normalizeBd(it) ?: it }.orEmpty())
                 ittcAddName.setText(intent.getStringExtra(NAME).orEmpty())
             }
             ittcAddSameWhatsapp.setOnCheckedChangeListener { _, same -> ittcAddWhatsapp.beVisibleIf(!same) }
             ittcAddWhatsapp.beVisibleIf(!ittcAddSameWhatsapp.isChecked)
-            val primary = getProperPrimaryColor()
-            ittcAddSave.backgroundTintList = ColorStateList.valueOf(primary)
-            ittcAddSave.setTextColor(primary.getContrastColor())
             ittcAddSave.setOnClickListener { save() }
             ittcAddCourseStatus.setOnClickListener { if (courses.isEmpty()) loadCourses() }
         }
         updateTextColors(binding.ittcAddHolder)
+        styleCards()
         loadCourses()
+    }
+
+    /** 🎨 Cards on the soft background, the round Save button */
+    private fun styleCards() {
+        binding.apply {
+            ittcAddCoordinator.setBackgroundColor(p.bg)
+            listOf(ittcAddPersonCard, ittcAddCourseCard, ittcAddNoteCard).forEach { IttcTheme.card(it, p) }
+            listOf(ittcAddPersonLabel, ittcAddCourseLabel).forEach { it.setTextColor(p.muted) }
+            ittcAddCourseStatus.setTextColor(p.text2)
+            IttcTheme.button(ittcAddSave, p.primary, p.onPrimary)
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.ittcAddAppbar, NavigationIcon.Arrow)
+        setupTopAppBar(binding.ittcAddAppbar, NavigationIcon.Arrow, topBarColor = p.bg)
     }
 
     private fun alive() = !isFinishing && !isDestroyed
@@ -117,17 +125,16 @@ class IttcAddLeadActivity : SimpleActivity() {
         }
     }
 
+    /** A course pill: chosen = filled blue, else outlined (≥ 44 dp to touch) */
     private fun chip(label: String, on: Boolean, onClick: () -> Unit): TextView = TextView(this).apply {
         text = label
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-        val pad = (resources.displayMetrics.density * 10).toInt()
+        val pad = (resources.displayMetrics.density * 12).toInt()
         setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
+        minHeight = (resources.displayMetrics.density * 44).toInt()
         gravity = Gravity.CENTER
-        setBackgroundResource(R.drawable.ittc_chip_background)
-        val primary = getProperPrimaryColor()
-        val textColor = getProperTextColor()
-        background.mutate().applyColorFilter(if (on) primary else (textColor and 0x00FFFFFF) or 0x22000000)
-        setTextColor(if (on) primary.getContrastColor() else textColor)
+        if (on) IttcTheme.pill(this, p.primary, p.onPrimary) else IttcTheme.pill(this, p.surface, p.text, p.outline)
+        if (on) setTypeface(typeface, android.graphics.Typeface.BOLD)
         maxLines = 2
         setOnClickListener { onClick() }
     }
@@ -135,7 +142,7 @@ class IttcAddLeadActivity : SimpleActivity() {
     // ------------------------------------------------------------------ save
     private fun showError(message: String?) {
         binding.ittcAddError.text = message
-        binding.ittcAddError.setTextColor(resources.getColor(R.color.md_red_700, theme))
+        binding.ittcAddError.setTextColor(p.danger)
         binding.ittcAddError.beVisibleIf(!message.isNullOrBlank())
     }
 
@@ -243,6 +250,7 @@ class IttcAddLeadActivity : SimpleActivity() {
     private fun setSaving(on: Boolean) {
         saving = on
         binding.ittcAddSave.isEnabled = !on
+        binding.ittcAddSave.alpha = if (on) 0.6f else 1f
         binding.ittcAddSave.setText(if (on) R.string.ittc_al_saving else R.string.ittc_al_save)
     }
 

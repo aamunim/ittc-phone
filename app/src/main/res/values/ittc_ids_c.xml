@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.4 (part C): view tag keys -->
+<resources>
+    <!-- IttcLeadExtras: which load a container is waiting for (an older one that comes late is dropped) -->
+    <item name="ittc_c_extras_gen" type="id" />
+</resources>

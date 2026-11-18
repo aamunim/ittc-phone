@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC Phone 3.5 (Part D): Admit, Payments, Papers / DocReady, the lead page's admission card -->
+<resources>
+    <string name="ittc_admit_title">Admit</string>
+
+    <!-- common -->
+    <string name="ittc_d_retry">Retry</string>
+    <string name="ittc_d_could_not_load">Could not load.</string>
+    <string name="ittc_d_could_not_save">Could not save.</string>
+    <string name="ittc_d_could_not_save_admission">Could not save the admission.</string>
+    <string name="ittc_d_could_not_share">Could not share the receipt.</string>
+    <string name="ittc_d_could_not_make_link">Could not make the link.</string>
+    <string name="ittc_d_not_found">Not found, or you can\'t see this lead.</string>
+    <string name="ittc_d_done">Done</string>
+    <string name="ittc_d_cancel">Cancel</string>
+    <string name="ittc_d_saving">Saving…</string>
+    <string name="ittc_d_no_app">No app on this phone could open it (WhatsApp / SMS).</string>
+    <string name="ittc_d_student_id">Student ID: %1$s</string>
+    <string name="ittc_d_share">Share</string>
+    <string name="ittc_d_share_receipt">Share receipt</string>
+
+    <!-- the lead page's card -->
+    <string name="ittc_d_card_title">🎓 Admission</string>
+    <string name="ittc_d_st_not_admitted">Not admitted</string>
+    <string name="ittc_d_st_admitted">Admitted</string>
+    <string name="ittc_d_st_submitted">📤 Submitted online</string>
+    <string name="ittc_d_st_ready">🏛 Ready for ITTC</string>
+    <string name="ittc_d_st_received">🏛 Received by ITTC</string>
+    <string name="ittc_d_st_returned">↩ Returned</string>
+    <string name="ittc_d_st_cancelled">Cancelled</string>
+    <string name="ittc_d_st_closed">Not now</string>
+    <string name="ittc_d_step_submitted">📤 Submitted Online</string>
+    <string name="ittc_d_step_received">🏛 Received by ITTC</string>
+    <string name="ittc_d_not_yet">Not yet</string>
+    <string name="ittc_d_after_submitted">After Submitted</string>
+    <string name="ittc_d_ready">Ready</string>
+    <string name="ittc_d_more_needed">%1$s more</string>
+    <string name="ittc_d_returned_reason">↩ %1$s undone: %2$s</string>
+    <string name="ittc_d_admit_btn">🎓 Admit</string>
+    <string name="ittc_d_no_fee">No fee set</string>
+    <string name="ittc_d_paid_full">✓ Paid in full (%1$s)</string>
+    <string name="ittc_d_paid_due">💵 %1$s paid · %2$s due</string>
+    <string name="ittc_d_last_payment">Last: %1$s · %2$s · %3$s</string>
+    <string name="ittc_d_next_due">📅 Next: installment %1$d · %2$s by %3$s</string>
+    <string name="ittc_d_next_late">⚠ Late: installment %1$d · %2$s by %3$s</string>
+    <string name="ittc_d_take_payment">💵 Take payment</string>
+    <string name="ittc_d_payments">💵 Payments</string>
+    <string name="ittc_d_fee_is">💰 Fee %1$s</string>
+    <string name="ittc_d_fee_unknown">💰 Fee not set yet</string>
+    <string name="ittc_d_pay_after_admit">Payments are taken after admission.</string>
+    <string name="ittc_d_papers_count">📄 Papers %1$d/%2$d</string>
+    <string name="ittc_d_papers_none">📄 No papers needed</string>
+    <string name="ittc_d_all_in">All in</string>
+    <string name="ittc_d_papers">📄 Papers</string>
+    <string name="ittc_d_ask_papers">🔗 Papers</string>
+
+    <!-- payments -->
+    <string name="ittc_d_payments_title">💵 Payments</string>
+    <string name="ittc_d_fee_from">%1$s − %2$s discount</string>
+    <string name="ittc_d_payments_off">Payments are turned off (Settings → Fee &amp; discount).</string>
+    <string name="ittc_d_fee">Fee</string>
+    <string name="ittc_d_paid">Paid</string>
+    <string name="ittc_d_due">Due</string>
+    <string name="ittc_d_paid_in_full">✓ Paid in full</string>
+    <string name="ittc_d_installments">Installments</string>
+    <string name="ittc_d_inst_paid">✓ Paid</string>
+    <string name="ittc_d_inst_part">Part paid</string>
+    <string name="ittc_d_inst_late">⚠ Late</string>
+    <string name="ittc_d_inst_due">Due</string>
+    <string name="ittc_d_save_payment">Save payment</string>
+    <string name="ittc_d_cant_take">You can\'t take payments. Ask an admin.</string>
+    <string name="ittc_d_receipts">Receipts</string>
+    <string name="ittc_d_college_no_short">College no. %1$s</string>
+    <string name="ittc_d_void">Void</string>
+    <string name="ittc_d_payment_saved">💵 %1$s received · %2$s</string>
+    <string name="ittc_d_payment_saved_title">Payment saved</string>
+    <string name="ittc_d_amount_hint">Amount (৳), up to %1$s</string>
+    <string name="ittc_d_txn_hint">Transaction ID *</string>
+    <string name="ittc_d_college_required">College receipt no. *</string>
+    <string name="ittc_d_college_optional">College receipt no. (optional)</string>
+    <string name="ittc_d_paid_today">📅 Today (change if paid earlier)</string>
+    <string name="ittc_d_backdate_hint">Up to %1$d days back. Older payments: ask an admin.</string>
+    <string name="ittc_d_note_optional">Note (optional)</string>
+    <string name="ittc_d_err_least">At least %1$s must be paid to admit.</string>
+    <string name="ittc_d_err_amount">Please type the amount.</string>
+    <string name="ittc_d_err_more_than_due">That is more than the amount due (%1$s).</string>
+    <string name="ittc_d_err_more_than_fee">That is more than the fee (%1$s).</string>
+    <string name="ittc_d_err_method">Please choose how it was paid.</string>
+    <string name="ittc_d_err_txn">Please type the transaction ID for %1$s.</string>
+    <string name="ittc_d_err_college">Please type the college receipt no.</string>
+
+    <!-- papers / DocReady -->
+    <string name="ittc_d_papers_title">📄 Papers</string>
+    <string name="ittc_d_papers_summary">%1$d of %2$d required papers in</string>
+    <string name="ittc_d_papers_empty">No papers are set for this lead\'s course.</string>
+    <string name="ittc_d_papers_tick_hint">* required. Papers are ticked in the Tracker (or when you accept a paper the student sent).</string>
+    <string name="ittc_d_paper_original">Original</string>
+    <string name="ittc_d_paper_photocopy">Photocopy</string>
+    <string name="ittc_d_paper_received">Received</string>
+    <string name="ittc_d_paper_not_needed">Not needed</string>
+    <string name="ittc_d_paper_missing">Missing</string>
+    <string name="ittc_d_paper_optional">Optional</string>
+    <string name="ittc_d_ask_title">🔗 Ask for papers (DocReady link)</string>
+    <string name="ittc_d_ask_explain">They get a link, take photos on their own phone, and the papers come in the right size and weight. Each one is checked before it counts.</string>
+    <string name="ittc_d_docready_off">DocReady is turned off in Settings.</string>
+    <string name="ittc_d_docready_no_steps">No papers are set in Settings → DocReady.</string>
+    <string name="ittc_d_has_n">" · has %1$d"</string>
+    <string name="ittc_d_link_open_for">Link open for</string>
+    <string name="ittc_d_n_days">%1$d days</string>
+    <string name="ittc_d_send_whatsapp">WhatsApp</string>
+    <string name="ittc_d_send_sms">SMS</string>
+    <string name="ittc_d_err_choose_paper">Choose at least one paper.</string>
+    <string name="ittc_d_err_no_number">No number to send it to.</string>
+    <string name="ittc_d_open_links">Links still open</string>
+    <string name="ittc_d_link_until">🔗 Open until %1$s</string>
+    <string name="ittc_d_close_link">Close</string>
+    <string name="ittc_d_closed">Closed</string>
+
+    <!-- admit -->
+    <string name="ittc_d_mark_admitted">🎓 Mark admitted</string>
+    <string name="ittc_d_already_admitted">Already admitted.</string>
+    <string name="ittc_d_reopen_first">This lead is closed. Reopen it in the Tracker to admit.</string>
+    <string name="ittc_d_reopen_cancelled">This admission was cancelled. Reopen the lead in the Tracker first.</string>
+    <string name="ittc_d_not_allowed">You are not allowed to mark admissions.</string>
+    <string name="ittc_d_course_req">Course *</string>
+    <string name="ittc_d_no_courses">No courses yet. Add one in Settings → Courses &amp; batches.</string>
+    <string name="ittc_d_star_hint">★ = the lead is interested in it</string>
+    <string name="ittc_d_checking_papers">Checking papers…</string>
+    <string name="ittc_d_papers_all_in">✓ All required papers received</string>
+    <string name="ittc_d_papers_block_hint">Admission needs all required papers. Tick them in the Tracker, or mark “not needed”.</string>
+    <string name="ittc_d_papers_warn_hint">You can still admit. The papers stay on the to-collect list.</string>
+    <string name="ittc_d_batch_req">Batch *</string>
+    <string name="ittc_d_batch_optional">Batch (optional)</string>
+    <string name="ittc_d_no_batches">No batches for this course.</string>
+    <string name="ittc_d_no_batch_yet">No batch yet</string>
+    <string name="ittc_d_starts">Starts %1$s</string>
+    <string name="ittc_d_full_overbook">Full batches can still be chosen (overbooking is on).</string>
+    <string name="ittc_d_full_greyed">Full batches are greyed out.</string>
+    <string name="ittc_d_section_req">Section *</string>
+    <string name="ittc_d_section_n">Section %1$s</string>
+    <string name="ittc_d_fee_label">💰 Fee</string>
+    <string name="ittc_d_fee_discount">%1$s − %2$s discount (from the fee talk)</string>
+    <string name="ittc_d_pay_now">Take a payment now</string>
+    <string name="ittc_d_pay_least">" (at least %1$s)"</string>
+    <string name="ittc_d_amount_up_to">Amount (৳), up to %1$s</string>
+    <string name="ittc_d_paid_on_admission_day">Paid on the admission date.</string>
+    <string name="ittc_d_min_cant_pay">A payment of at least %1$s is needed to admit, and you can\'t take payments.</string>
+    <string name="ittc_d_admission_date">Admission date</string>
+    <string name="ittc_d_student_id_label">Student ID</string>
+    <string name="ittc_d_student_id_req">Student ID *</string>
+    <string name="ittc_d_ref_hint">e.g. 26042</string>
+    <string name="ittc_d_ref_full">⚠️ No free ID: this section’s range is full</string>
+    <string name="ittc_d_ref_auto">Given automatically</string>
+    <string name="ittc_d_ref_kept">Kept from before</string>
+    <string name="ittc_d_ref_type_own">Type a different ID</string>
+    <string name="ittc_d_note_label">Note (optional)</string>
+    <string name="ittc_d_note_example">e.g. Paid admission fee</string>
+    <string name="ittc_d_err_course">Please choose a course.</string>
+    <string name="ittc_d_err_batch">Please choose a batch.</string>
+    <string name="ittc_d_err_section">Please choose a section.</string>
+    <string name="ittc_d_err_ref">Please type the student ID.</string>
+    <string name="ittc_d_err_min_cant">A payment of at least %1$s is needed to admit. Ask someone who takes payments.</string>
+    <string name="ittc_d_err_papers_block">Required papers are missing: %1$s. Tick them first.</string>
+    <string name="ittc_d_admit_anyway_msg">Still missing:\n• %1$s\n\nAdmit anyway?</string>
+    <string name="ittc_d_go_back">Go back</string>
+    <string name="ittc_d_admit_anyway">Admit anyway</string>
+    <string name="ittc_d_at_admission">At admission</string>
+    <string name="ittc_d_is_admitted">%1$s is admitted!</string>
+    <string name="ittc_d_batch_now_full">This batch is now full.</string>
+    <string name="ittc_d_received_receipt">💵 %1$s received · 🧾 %2$s</string>
+    <string name="ittc_d_admitted_pay_failed">⚠ Admitted, but the payment was not saved: %1$s Add it from Payments.</string>
+    <string name="ittc_d_approval_title">🏛 Submitted Online → Received by ITTC</string>
+
+    <plurals name="ittc_d_papers_missing_n">
+        <item quantity="one">%d required paper not received</item>
+        <item quantity="other">%d required papers not received</item>
+    </plurals>
+    <plurals name="ittc_d_papers_not_received_n">
+        <item quantity="one">%d paper not received</item>
+        <item quantity="other">%d papers not received</item>
+    </plurals>
+    <plurals name="ittc_d_papers_to_collect_n">
+        <item quantity="one">📄 %d paper still to collect. See Papers.</item>
+        <item quantity="other">📄 %d papers still to collect. See Papers.</item>
+    </plurals>
+    <plurals name="ittc_d_seats_left_n">
+        <item quantity="one">%d seat left in this batch.</item>
+        <item quantity="other">%d seats left in this batch.</item>
+    </plurals>
+</resources>

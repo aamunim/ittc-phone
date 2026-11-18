@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🔔 ITTC 3.4: the Tracker's notifications, newest first; a tap marks it read and opens the lead -->
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/ittc_c_inbox_coordinator"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <org.fossify.commons.views.MyAppBarLayout
+        android:id="@+id/ittc_c_inbox_appbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/ittc_c_inbox_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@color/color_primary"
+            app:title="@string/ittc_inbox_title"
+            app:titleTextAppearance="@style/AppTheme.ActionBar.TitleTextStyle" />
+
+    </org.fossify.commons.views.MyAppBarLayout>
+
+    <LinearLayout
+        android:id="@+id/ittc_c_inbox_holder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:id="@+id/ittc_c_inbox_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:minHeight="52dp"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/ittc_space_l"
+            android:paddingEnd="@dimen/ittc_space_s">
+
+            <TextView
+                android:id="@+id/ittc_c_inbox_summary"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="@dimen/ittc_text_body" />
+
+            <TextView
+                android:id="@+id/ittc_c_inbox_mark_all"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:minHeight="@dimen/ittc_touch"
+                android:paddingStart="@dimen/ittc_space_l"
+                android:paddingEnd="@dimen/ittc_space_l"
+                android:text="@string/ittc_c_inbox_mark_all"
+                android:textSize="@dimen/ittc_text_body"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/ittc_c_inbox_list"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingStart="@dimen/ittc_space_l"
+                android:paddingEnd="@dimen/ittc_space_l"
+                android:paddingBottom="@dimen/ittc_space_l"
+                android:scrollbars="none" />
+
+            <TextView
+                android:id="@+id/ittc_c_inbox_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="@dimen/ittc_space_xl"
+                android:textSize="@dimen/ittc_text_body"
+                android:visibility="gone" />
+
+            <ProgressBar
+                android:id="@+id/ittc_c_inbox_progress"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="@dimen/ittc_space_l"
+                android:indeterminate="true"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

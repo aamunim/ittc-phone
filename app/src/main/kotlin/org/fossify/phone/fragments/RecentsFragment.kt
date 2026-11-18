@@ -1,14 +1,14 @@
 package org.fossify.phone.fragments
 
 import android.content.Context
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.widget.TextView
-import org.fossify.commons.extensions.applyColorFilter
+import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.baseConfig
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beGoneIf
 import org.fossify.commons.extensions.beVisible
-import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getMyContactsCursor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
@@ -30,6 +30,7 @@ import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.adapters.RecentCallsAdapter
 import org.fossify.phone.databinding.FragmentRecentsBinding
 import org.fossify.phone.extensions.config
+import org.fossify.phone.extensions.getDayCode
 import org.fossify.phone.extensions.runAfterAnimations
 import org.fossify.phone.extensions.startAddContactIntent
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
@@ -38,6 +39,7 @@ import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.IttcRecentsCache
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
+import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.interfaces.RefreshItemsListener
 import org.fossify.phone.models.CallLogItem
 import org.fossify.phone.models.RecentCall
@@ -68,6 +70,7 @@ class RecentsFragment(
         get() = ittcPrefs.getBoolean(IttcCallHistory.KEY_ONE_PER_NUMBER, true)
     private var chipTextColor = 0
     private var chipPrimaryColor = 0
+    private var palette: IttcTheme.Palette? = null
 
     override fun onFinishInflate() {
         super.onFinishInflate()
@@ -77,10 +80,9 @@ class RecentsFragment(
 
     override fun setupFragment() {
         binding.ittcRecentsLeadsOnly.apply {
-            setText(if (leadsOnly) R.string.ittc_leads_only_on else R.string.ittc_leads_only)
             setOnClickListener {
                 leadsOnly = !leadsOnly
-                setText(if (leadsOnly) R.string.ittc_leads_only_on else R.string.ittc_leads_only)
+                renderKindChips()
                 val all = allRecentCalls
                 ensureBackgroundThread {
                     val shown = ittcFilter(all)
@@ -122,13 +124,15 @@ class RecentsFragment(
     }
 
     override fun setupColors(textColor: Int, primaryColor: Int, properPrimaryColor: Int) {
-        binding.ittcRecentsLeadsOnly.setTextColor(properPrimaryColor)
-        // 🎓 ITTC
+        // 🎓 ITTC 3.5: the soft background the day cards sit on, pill chips
+        val p = IttcTheme.of(context)
+        palette = p
+        setBackgroundColor(p.bg)
         chipTextColor = textColor
         chipPrimaryColor = properPrimaryColor
         renderKindChips()
-        binding.recentsPlaceholder.setTextColor(textColor)
-        binding.recentsPlaceholder2.setTextColor(properPrimaryColor)
+        binding.recentsPlaceholder.setTextColor(p.text2)
+        binding.recentsPlaceholder2.setTextColor(p.primary)
 
         recentsAdapter?.apply {
             updateTextColor(textColor)
@@ -281,16 +285,15 @@ class RecentsFragment(
                     },
                     itemClick = {
                         val recentCall = it as RecentCall
-                        // 🎓 ITTC: a tap opens the number's call history (Settings: or calls back, as before)
-                        if (IttcCallHistory.tapCalls(context)) {
-                            activity?.startCallWithConfirmationCheck(recentCall.phoneNumber, recentCall.name)
-                        } else {
-                            IttcNumberActivity.open(
-                                context = context,
-                                number = recentCall.phoneNumber,
-                                name = recentCall.name.takeIf { name -> name != recentCall.phoneNumber }
-                            )
-                        }
+                        // 🎓 ITTC 3.5: a tap calls back at once (as Fossify does); → opens the history
+                        activity?.startCallWithConfirmationCheck(recentCall.phoneNumber, recentCall.name)
+                    },
+                    historyClick = { recentCall ->
+                        IttcNumberActivity.open(
+                            context = context,
+                            number = recentCall.phoneNumber,
+                            name = recentCall.name.takeIf { name -> name != recentCall.phoneNumber }
+                        )
                     },
                     profileIconClick = {
                         val recentCall = it as RecentCall
@@ -447,14 +450,27 @@ class RecentsFragment(
         IttcCallHistory.KIND_OUTGOING to binding.ittcRecentsKindOutgoing,
     )
 
-    /** 🎓 ITTC: the chosen chip filled with the app's colour, the others faint (as in the Leads tab) */
+    /**
+     * 🎓 ITTC 3.5: pill chips as in the Leads tab — the chosen one dark, the others outlined;
+     * "Missed" red, "Leads" (only the calls with a lead) at the end
+     */
     private fun renderKindChips() {
+        val p = palette ?: IttcTheme.of(context).also { palette = it }
         val kind = recentsKind
         kindChips().forEach { (k, chip) ->
-            val on = k == kind
-            chip.background.mutate().applyColorFilter(if (on) chipPrimaryColor else (chipTextColor and 0x00FFFFFF) or 0x22000000)
-            chip.setTextColor(if (on) chipPrimaryColor.getContrastColor() else chipTextColor)
+            styleChip(chip, k == kind, k == IttcCallHistory.KIND_MISSED, p)
         }
+        styleChip(binding.ittcRecentsLeadsOnly, leadsOnly, false, p)
+    }
+
+    private fun styleChip(chip: TextView, on: Boolean, danger: Boolean, p: IttcTheme.Palette) {
+        when {
+            on && danger -> IttcTheme.pill(chip, p.danger, p.surface)
+            on -> IttcTheme.pill(chip, p.text, p.surface)
+            danger -> IttcTheme.pill(chip, p.dangerSoft, p.danger, p.danger.adjustAlpha(0.3f))
+            else -> IttcTheme.pill(chip, p.surface, p.text, p.outline)
+        }
+        chip.setTypeface(null, if (on || danger) Typeface.BOLD else Typeface.NORMAL)
     }
 
     private fun groupCallsByDate(recentCalls: List<RecentCall>): MutableList<CallLogItem> {
@@ -463,8 +479,13 @@ class RecentsFragment(
         // (one date row per day, even if the list is ever out of order: two rows of one day
         // would have the same id)
         val seenDays = HashSet<String>()
+        // 🎓 ITTC 3.5: Today · Yesterday · Earlier (every older day in one group)
+        val now = System.currentTimeMillis()
+        val todayCode = now.getDayCode()
+        val yesterdayCode = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }.timeInMillis.getDayCode()
         for (call in recentCalls) {
-            val currentDayCode = call.dayCode
+            val realDayCode = call.dayCode
+            val currentDayCode = if (realDayCode == todayCode || realDayCode == yesterdayCode) realDayCode else RecentCallsAdapter.EARLIER_DAY_CODE
             if (currentDayCode != lastDayCode && seenDays.add(currentDayCode)) {
                 callLog += CallLogItem.Date(timestamp = call.startTS, dayCode = currentDayCode)
                 lastDayCode = currentDayCode

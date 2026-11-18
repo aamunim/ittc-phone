@@ -5,32 +5,39 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.format.DateUtils
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.extensions.adjustAlpha
-import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getColoredDrawableWithColor
-import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.launchSendSMSIntent
+import org.fossify.commons.extensions.setNavigationBarAppearance
 import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.toast
-import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -42,7 +49,9 @@ import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcLeadApi
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcTheme
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -52,10 +61,14 @@ import java.util.Calendar
  * numbers, call / WhatsApp / SMS / templates, quick changes (note, stage, next call, rating, edit,
  * hand over) and its timeline. Changes go through IttcDirect's queue (sent when online) and show
  * at once; the lead is read again a moment later.
+ * 3.5: the new look — a blue hero, the stage card (the course's stages as steps, the next call),
+ * big actions, a chips row (visit, fee, papers, payment, admit and the rest), the visit / fee and
+ * admission cards (IttcLeadExtras, IttcAdmitCard) and the timeline as cards by day.
  */
 class IttcLeadActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityLeadBinding::inflate)
     private val main = Handler(Looper.getMainLooper())
+    private lateinit var p: IttcTheme.Palette
 
     private var leadId = ""
 
@@ -74,6 +87,11 @@ class IttcLeadActivity : SimpleActivity() {
     /** Signed in to ITTC here (read off the main thread: the session is kept encrypted) */
     private var signedIn = false
 
+    /** The visit / fee and admission cards were filled once (they reload after a change) */
+    private var cardsBound = false
+    /** Back from the admission screen: read the lead again */
+    private var reloadOnResume = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         leadId = intent.getStringExtra(LEAD_ID).orEmpty()
@@ -81,21 +99,27 @@ class IttcLeadActivity : SimpleActivity() {
             finish()
             return
         }
+        p = IttcTheme.of(this)
         setContentView(binding.root)
         binding.apply {
             setupEdgeToEdge(padBottomSystem = listOf(ittcLeadScrollview))
-            setupMaterialScrollListener(ittcLeadScrollview, ittcLeadAppbar)
+            // (no colour change on scroll: the bar stays the hero's blue)
             ittcLeadCall.setOnClickListener { callLead() }
             ittcLeadWhatsapp.setOnClickListener { openWhatsApp(null) }
             ittcLeadSms.setOnClickListener { openSms() }
-            ittcLeadTemplates.setOnClickListener { showTemplates() }
+            ittcLeadNote.setOnClickListener { addNote() }
+            ittcLeadInfo.setOnClickListener { callLead() }
+            ittcLeadStar.setOnClickListener { if (signedIn) changeRating() }
+            ittcLeadMore.setOnClickListener { showMore() }
+            ittcLeadChangeStage.setOnClickListener { changeStage() }
+            ittcLeadNext.setOnClickListener { if (signedIn) nextCall() }
+            ittcLeadStepper.setOnClickListener { if (signedIn) changeStage() }
             ittcLeadNotes.setOnClickListener {
                 notesOpen = !notesOpen
                 ittcLeadNotes.maxLines = if (notesOpen) Int.MAX_VALUE else 6
             }
         }
-        styleActions()
-        updateTextColors(binding.ittcLeadHolder)
+        styleStatic()
         templatesWanted = savedInstanceState == null && intent.getBooleanExtra(SHOW_TEMPLATES, false)
         render()
         load()
@@ -103,7 +127,18 @@ class IttcLeadActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.ittcLeadAppbar, NavigationIcon.Arrow)
+        if (!::p.isInitialized) return
+        setupTopAppBar(binding.ittcLeadAppbar, NavigationIcon.Arrow, topBarColor = p.primary)
+        try {
+            window.setNavigationBarAppearance(p.bg)
+        } catch (_: Throwable) {
+        }
+        if (reloadOnResume) {
+            // (back from the admission screen: the lead and both cards again, even offline)
+            reloadOnResume = false
+            cardsBound = false
+            load()
+        }
     }
 
     override fun onDestroy() {
@@ -187,6 +222,8 @@ class IttcLeadActivity : SimpleActivity() {
                 binding.ittcLeadStatus.text = status
                 binding.ittcLeadStatus.beVisibleIf(status != null)
                 render()
+                // (the visit / fee and admission cards: when the server answered, or once)
+                if (detail != null || !cardsBound) bindCards()
                 if (templatesWanted && lead != null && status == null) {
                     templatesWanted = false
                     showTemplates()
@@ -215,19 +252,80 @@ class IttcLeadActivity : SimpleActivity() {
         put("last_note", p.lastNote)
     }
 
+    /** 🏫 🎓 The visit / fee card (Part C) and the admission card (Part D); never the page over them */
+    private fun bindCards() {
+        val extras = binding.ittcLeadExtras
+        val admit = binding.ittcLeadAdmit
+        if (!signedIn) {
+            extras.removeAllViews()
+            admit.removeAllViews()
+            return
+        }
+        cardsBound = true
+        try {
+            IttcLeadExtras.bind(this, extras, leadId)
+        } catch (e: Throwable) {
+            IttcCrash.record(this, e, "Lead page: visit / fee card")
+        }
+        try {
+            IttcAdmitCard.bind(this, admit, leadId)
+        } catch (e: Throwable) {
+            IttcCrash.record(this, e, "Lead page: admission card")
+        }
+    }
+
+    /** After a sheet saved something: the lead and its cards again */
+    private fun reload() {
+        if (!alive()) return
+        load()
+    }
+
     // ------------------------------------------------------------------
     // 🖼 Showing it
     // ------------------------------------------------------------------
-    private fun styleActions() {
-        val primary = getProperPrimaryColor()
-        listOf(
-            binding.ittcLeadCall to R.drawable.ic_phone_vector,
-            binding.ittcLeadWhatsapp to R.drawable.ic_sms_vector,
-            binding.ittcLeadSms to R.drawable.ic_sms_vector,
-            binding.ittcLeadTemplates to R.drawable.ic_edit_vector,
-        ).forEach { (view, icon) ->
-            val color = if (view == binding.ittcLeadWhatsapp) WHATSAPP_GREEN else primary
-            view.setCompoundDrawablesRelativeWithIntrinsicBounds(null, resources.getColoredDrawableWithColor(icon, color), null, null)
+    private fun dpf(v: Float) = IttcTheme.dp(this, v)
+
+    /** 🎨 The parts whose colours do not change with the lead */
+    private fun styleStatic() {
+        binding.apply {
+            ittcLeadCoordinator.setBackgroundColor(p.bg)
+            ittcLeadHeader.setBackgroundColor(p.primary)
+            ittcLeadName.setTextColor(p.onPrimary)
+            ittcLeadInfo.setTextColor(p.onPrimaryMuted)
+            ittcLeadMeta.setTextColor(p.onPrimaryMuted)
+            ittcLeadMore.setColorFilter(p.onPrimary)
+            ittcLeadStageCard.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 16f)
+            ittcLeadStageDivider.setBackgroundColor(p.divider)
+            ittcLeadNext.setTextColor(p.text2)
+            ittcLeadChangeStage.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 999f, p.outline)
+            ittcLeadChangeStage.setTextColor(p.primary)
+            ittcLeadStatus.setTextColor(p.muted)
+            ittcLeadNotesLabel.setTextColor(p.muted)
+            ittcLeadNotes.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 14f)
+            ittcLeadNotes.setTextColor(p.text2)
+            ittcLeadNumbers.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 14f)
+
+            // the four big actions: Call teal, the others white cards with a coloured icon
+            ittcLeadCall.background = IttcTheme.rounded(this@IttcLeadActivity, p.call, 16f)
+            ittcLeadCall.setTextColor(Color.WHITE)
+            val amber = IttcTheme.stageColors(this@IttcLeadActivity, "interested").second
+            listOf(
+                Triple(ittcLeadCall, R.drawable.ic_phone_vector, Color.WHITE),
+                Triple(ittcLeadWhatsapp, R.drawable.ic_sms_vector, WHATSAPP_GREEN),
+                Triple(ittcLeadSms, R.drawable.ic_sms_vector, p.primary),
+                Triple(ittcLeadNote, R.drawable.ic_edit_vector, amber),
+            ).forEach { (view, icon, color) ->
+                if (view != ittcLeadCall) {
+                    view.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 16f)
+                    view.setTextColor(p.text)
+                }
+                val d = resources.getColoredDrawableWithColor(icon, color)
+                val size = dpf(22f)
+                d.setBounds(0, 0, size, size)
+                view.setCompoundDrawablesRelative(null, d, null, null)
+                touchFeedback(view)
+            }
+            touchFeedback(ittcLeadChangeStage)
         }
     }
 
@@ -236,41 +334,26 @@ class IttcLeadActivity : SimpleActivity() {
         val has = l != null
         binding.apply {
             ittcLeadHeader.beVisibleIf(has)
+            ittcLeadStageCard.beVisibleIf(has)
             ittcLeadActions.beVisibleIf(has)
-            ittcLeadQuick.beVisibleIf(has && signedIn)
-            ittcLeadTemplates.beVisibleIf(signedIn)
+            ittcLeadChipsScroll.beVisibleIf(has)
+            ittcLeadNote.beVisibleIf(signedIn)
+            ittcLeadChangeStage.beVisibleIf(signedIn)
+            ittcLeadStar.beVisibleIf(has && signedIn)
+            ittcLeadMore.beVisibleIf(has)
         }
         if (l == null) {
             binding.ittcLeadNotesLabel.beGone()
             binding.ittcLeadNotes.beGone()
-            binding.ittcLeadTimelineLabel.beGone()
+            binding.ittcLeadNumbers.beGone()
             binding.ittcLeadTimeline.removeAllViews()
             return
         }
-        val text = getProperTextColor()
-        val primary = getProperPrimaryColor()
-        val stage = l.s("stage")
-        val stageObj = meta?.stages?.firstOrNull { it.id == l.s("stage_id") }
-
-        binding.ittcLeadName.text = l.s("name") ?: l.s("phone") ?: ""
-        val info = listOfNotNull(l.s("course"), l.s("batch"), stage).joinToString(" · ")
-        binding.ittcLeadInfo.text = info
-        binding.ittcLeadInfo.beVisibleIf(info.isNotEmpty())
-        binding.ittcLeadInfo.setTextColor(stageObj?.color ?: IttcBridge.stageColor(stage, primary, text.adjustAlpha(0.6f)))
-
-        val next = IttcBridge.parseTimeOf(l.s("next_call"))
-        val attempts = l.optInt("call_attempts", 0)
-        val line = listOfNotNull(
-            l.s("rating")?.let { "★ ${ratingLabel(it)}" },
-            next?.let { getString(R.string.ittc_lp_next, whenText(it)) },
-            attempts.takeIf { it > 0 }?.let { getString(R.string.ittc_lp_attempts, it) },
-            l.s("owner")?.let { getString(R.string.ittc_lp_owner, it) },
-        ).joinToString(" · ")
-        binding.ittcLeadMeta.text = line
-        binding.ittcLeadMeta.beVisibleIf(line.isNotEmpty())
-
+        renderHero(l)
+        renderStepper(l)
+        renderNext(l)
         renderNumbers(l)
-        renderQuick()
+        renderChips()
 
         val notes = l.s("notes") ?: l.s("last_note")
         binding.ittcLeadNotesLabel.beVisibleIf(notes != null)
@@ -278,6 +361,173 @@ class IttcLeadActivity : SimpleActivity() {
         binding.ittcLeadNotes.text = notes
 
         renderTimeline(l)
+    }
+
+    /** 🟦 Avatar, name, "number · course · batch", "Hot · AI chance 72% · Assigned to you" */
+    private fun renderHero(l: JSONObject) {
+        val name = l.s("name") ?: l.s("phone") ?: ""
+        binding.ittcLeadName.text = name
+        val (avBg, avFg) = IttcTheme.avatarColors(this, name)
+        binding.ittcLeadAvatar.text = IttcTheme.initials(l.s("name"))
+        binding.ittcLeadAvatar.setTextColor(avFg)
+        binding.ittcLeadAvatar.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(avBg)
+        }
+
+        val info = listOfNotNull(numbers(l).firstOrNull()?.first, l.s("course"), l.s("batch")).joinToString(" · ")
+        binding.ittcLeadInfo.text = info
+        binding.ittcLeadInfo.beVisibleIf(info.isNotEmpty())
+
+        val owner = when {
+            l.s("assigned_to") != null && l.s("assigned_to") == meta?.meId -> getString(R.string.ittc_b_assigned_you)
+            l.s("owner") != null -> getString(R.string.ittc_b_assigned_to, l.s("owner"))
+            else -> null
+        }
+        val attempts = l.optInt("call_attempts", 0)
+        val line = listOfNotNull(
+            l.s("rating")?.let { ratingLabel(it) },
+            aiChance(l)?.let { getString(R.string.ittc_b_ai_chance, it) },
+            owner,
+            attempts.takeIf { it > 0 }?.let { getString(R.string.ittc_lp_attempts, it) },
+        ).joinToString(" · ")
+        binding.ittcLeadMeta.text = line
+        binding.ittcLeadMeta.beVisibleIf(line.isNotEmpty())
+
+        val rated = l.s("rating") != null
+        binding.ittcLeadStar.setImageResource(if (rated) R.drawable.ic_star_vector else R.drawable.ic_star_outline_vector)
+        binding.ittcLeadStar.setColorFilter(p.onPrimary)
+    }
+
+    /** The AI's admission chance, when the server gives one (0–1 or 0–100) → "72%" */
+    private fun aiChance(l: JSONObject): String? {
+        val key = listOf("ai_chance", "chance").firstOrNull { l.has(it) && !l.isNull(it) } ?: return null
+        val v = l.optDouble(key, Double.NaN)
+        if (v.isNaN() || v < 0) return null
+        val pct = if (v <= 1.0) v * 100 else v
+        return "${Math.round(pct.coerceAtMost(100.0))}%"
+    }
+
+    // ------------------------------------------------------------------
+    // 🧭 The stage steps: first, previous, current, next, last (Admitted) — at most 5
+    // ------------------------------------------------------------------
+    private fun isClosed(name: String): Boolean {
+        val s = name.lowercase()
+        return s.contains("not now") || s.contains("lost") || s.contains("cancel") || s.contains("drop")
+    }
+
+    private fun renderStepper(l: JSONObject) {
+        val box = binding.ittcLeadStepper
+        box.removeAllViews()
+        val curId = l.s("stage_id")
+        val curName = l.s("stage")
+        val all = meta?.stages.orEmpty().filter { it.forCourse(l.s("course_id")) }
+        val list = all.filter { !isClosed(it.name) || it.id == curId }
+        var ci = list.indexOfFirst { it.id == curId }
+        if (ci < 0 && curName != null) ci = list.indexOfFirst { it.name.equals(curName, true) }
+        if (ci < 0) {
+            // (the stage is not among the course's stages: just its name)
+            if (curName != null) box.addView(step(curName, null, STEP_CURRENT), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            box.beVisibleIf(curName != null)
+            binding.ittcLeadStageDivider.beVisibleIf(curName != null)
+            return
+        }
+        box.beVisibleIf(true)
+        binding.ittcLeadStageDivider.beVisibleIf(true)
+        val shown: List<Int> = if (list.size <= 5) {
+            list.indices.toList()
+        } else {
+            val admitted = list.indexOfLast { it.name.contains("admitted", true) && !it.name.contains("cancel", true) }
+            val last = if (admitted >= 0) admitted else list.lastIndex
+            sortedSetOf(0, ci - 1, ci, ci + 1, last).filter { it in list.indices }.take(5)
+        }
+        shown.forEach { i ->
+            val st = list[i]
+            val state = when {
+                i < ci -> STEP_DONE
+                i == ci -> STEP_CURRENT
+                else -> STEP_TODO
+            }
+            box.addView(step(st.name, st.color, state), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+    }
+
+    /** One step: a ticked green dot (done), a big dot in the stage's colour with a ring (now), an
+     * empty ring (to come); the name under it */
+    private fun step(name: String, color: Int?, state: Int): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_HORIZONTAL
+        val (soft, strong) = IttcTheme.stageColors(context, name)
+        val done = IttcTheme.stageColors(context, "admitted").second
+        val dot = FrameLayout(context)
+        val size = when (state) {
+            STEP_CURRENT -> dpf(30f)
+            else -> dpf(22f)
+        }
+        val mark: View = if (state == STEP_DONE) {
+            ImageView(context).apply {
+                setImageResource(R.drawable.ic_check_vector)
+                setColorFilter(Color.WHITE)
+                setPadding(dpf(4f), dpf(4f), dpf(4f), dpf(4f))
+                background = oval(done, 0, 0f)
+            }
+        } else if (state == STEP_CURRENT) {
+            View(context).apply { background = oval(color ?: strong, soft, 4f) }
+        } else {
+            View(context).apply { background = oval(p.surface, p.outline, 2f) }
+        }
+        dot.addView(mark, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
+        addView(dot, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dpf(30f)))
+        addView(TextView(context).apply {
+            text = name
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            gravity = Gravity.CENTER
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            when (state) {
+                STEP_CURRENT -> {
+                    setTextColor(strong)
+                    setTypeface(typeface, Typeface.BOLD)
+                }
+                STEP_DONE -> setTextColor(p.text2)
+                else -> setTextColor(p.muted)
+            }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dpf(4f) })
+    }
+
+    private fun oval(fill: Int, stroke: Int, strokeDp: Float) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(fill)
+        if (stroke != 0) setStroke(dpf(strokeDp), stroke)
+    }
+
+    /** "Next call Today 10:30 AM" (late: red) */
+    private fun renderNext(l: JSONObject) {
+        val next = IttcBridge.parseTimeOf(l.s("next_call"))
+        if (next == null) {
+            binding.ittcLeadNext.text = getString(R.string.ittc_b_no_next_call)
+            return
+        }
+        val late = next < System.currentTimeMillis()
+        val label = getString(R.string.ittc_b_next_call_label)
+        binding.ittcLeadNext.text = SpannableStringBuilder(label).apply {
+            append(" ")
+            val start = length
+            append(dayWhen(next))
+            setSpan(StyleSpan(Typeface.BOLD), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(ForegroundColorSpan(if (late) p.danger else p.text), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    /** "Today 10:30 AM", "Tomorrow 10:00 AM", "Sat, 12 Dec 11:00 AM" */
+    private fun dayWhen(ms: Long): String {
+        val time = DateUtils.formatDateTime(this, ms, DateUtils.FORMAT_SHOW_TIME)
+        return when {
+            DateUtils.isToday(ms) -> getString(R.string.ittc_b_today_at, time)
+            DateUtils.isToday(ms - DateUtils.DAY_IN_MILLIS) -> getString(R.string.ittc_b_tomorrow_at, time)
+            DateUtils.isToday(ms + DateUtils.DAY_IN_MILLIS) -> getString(R.string.ittc_b_yesterday_at, time)
+            else -> whenText(ms)
+        }
     }
 
     /** The lead's numbers: phone, other phone, WhatsApp (each once; a tap calls it) */
@@ -293,21 +543,24 @@ class IttcLeadActivity : SimpleActivity() {
         return out
     }
 
+    /** A card with the numbers, only when there is more than one (one: it is in the hero) */
     private fun renderNumbers(l: JSONObject) {
         val list = binding.ittcLeadNumbers
         list.removeAllViews()
-        val fg = getProperTextColor()
-        val icon = resources.getColoredDrawableWithColor(R.drawable.ic_phone_vector, getProperPrimaryColor())
-        val pad = dp(8)
-        numbers(l).forEach { (number, label) ->
+        val all = numbers(l)
+        list.beVisibleIf(all.size > 1)
+        if (all.size <= 1) return
+        val icon = resources.getColoredDrawableWithColor(R.drawable.ic_phone_vector, p.call)
+        all.forEachIndexed { i, (number, label) ->
+            if (i > 0) list.addView(View(this).apply { setBackgroundColor(p.divider) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1))
             list.addView(TextView(this).apply {
                 this.text = if (label.isEmpty()) number else "$number  ·  $label"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                setTextColor(fg)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setTextColor(p.text)
                 setCompoundDrawablesRelativeWithIntrinsicBounds(icon, null, null, null)
                 compoundDrawablePadding = dp(12)
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, pad, 0, pad)
+                minHeight = dp(48)
                 setBackgroundResource(ripple())
                 setOnClickListener { call(number) }
             })
@@ -317,40 +570,96 @@ class IttcLeadActivity : SimpleActivity() {
     /** Only super admins: my_phone_data lists the people (whom to hand over to) only for them */
     private fun canHandOver(): Boolean = meta?.isSuper == true
 
-    private fun renderQuick() {
-        val box = binding.ittcLeadQuick
-        box.removeAllViews()
+    /** The chips row: admission steps first, then the rest */
+    private fun chipItems(): List<Pair<Int, () -> Unit>> {
+        if (!signedIn) return emptyList()
         val items = mutableListOf<Pair<Int, () -> Unit>>(
-            R.string.ittc_lp_add_note to { addNote() },
-            R.string.ittc_lp_stage to { changeStage() },
-            R.string.ittc_lp_next_call to { nextCall() },
-            R.string.ittc_lp_rating to { changeRating() },
-            R.string.ittc_lp_edit to { editLead() },
+            R.string.ittc_b_book_visit to { bookVisit() },
+            R.string.ittc_b_fee to { feeOffer() },
+            R.string.ittc_b_papers to { papers() },
+            R.string.ittc_b_payment to { payment() },
+            R.string.ittc_b_admit to { admit() },
+            R.string.ittc_b_templates to { showTemplates() },
+            R.string.ittc_b_next_call to { nextCall() },
+            R.string.ittc_b_rating to { changeRating() },
+            R.string.ittc_b_edit to { editLead() },
         )
-        if (canHandOver()) items += R.string.ittc_lp_hand_over to { handOver() }
-        items += R.string.ittc_lp_web to { openWeb() }
-        val m = dp(4)
-        items.chunked(3).forEach { row ->
-            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            row.forEach { (label, action) ->
-                line.addView(
-                    chip(getString(label), false) { action() },
-                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(m, m * 2, m, 0) },
-                )
-            }
-            repeat(3 - row.size) {
-                line.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(m, m * 2, m, 0) })
-            }
-            box.addView(line)
+        if (canHandOver()) items += R.string.ittc_b_hand_over to { handOver() }
+        items += R.string.ittc_b_web to { openWeb() }
+        return items
+    }
+
+    private fun renderChips() {
+        val box = binding.ittcLeadChips
+        box.removeAllViews()
+        val items = chipItems()
+        binding.ittcLeadChipsScroll.beVisibleIf(items.isNotEmpty())
+        items.forEach { (label, action) ->
+            box.addView(
+                TextView(this).apply {
+                    setText(label)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    setPadding(dp(14), 0, dp(14), 0)
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                    IttcTheme.pill(this, p.surface, p.text, p.outline)
+                    touchFeedback(this)
+                    setOnClickListener { action() }
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)).apply { marginEnd = dp(8) },
+            )
         }
     }
 
-    private class Item(val at: Long, val head: String, val text: String, val note: String?)
+    /** ⋮ More: everything the page can do, in one list */
+    private fun showMore() {
+        if (lead == null) return
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        if (signedIn) {
+            items += getString(R.string.ittc_b_change_stage) to { changeStage() }
+            items += getString(R.string.ittc_b_add_note) to { addNote() }
+        }
+        chipItems().forEach { (label, action) -> items += getString(label) to action }
+        if (!signedIn) items += getString(R.string.ittc_b_web) to { openWeb() }
+        pickList(getString(R.string.ittc_b_more), items.map { it.first }) { items[it].second() }
+    }
+
+    // ------------------------------------------------------------------
+    // 🏫 💰 📄 🎓 Visit, fee, papers, payment, admission (the sheets of 3.4 / 3.5)
+    // ------------------------------------------------------------------
+    private fun guarded(where: String, block: () -> Unit) {
+        if (!signedIn) return toast(R.string.ittc_lp_not_signed_in)
+        try {
+            block()
+        } catch (e: Throwable) {
+            IttcCrash.record(this, e, "Lead page: $where")
+            toast(R.string.ittc_lp_no_app)
+        }
+    }
+
+    private fun bookVisit() = guarded("visit") { IttcVisitSheet.show(this, leadId, lead?.s("name")) { reload() } }
+
+    private fun feeOffer() = guarded("fee") { IttcFeeSheet.show(this, leadId) { reload() } }
+
+    private fun papers() = guarded("papers") {
+        IttcPapersSheet.show(this, leadId, lead?.s("name"), lead?.let { it.s("phone") ?: it.s("whatsapp_number") ?: it.s("alt_phone") }) { reload() }
+    }
+
+    private fun payment() = guarded("payment") { IttcPaymentSheet.show(this, leadId) { reload() } }
+
+    private fun admit() = guarded("admit") {
+        reloadOnResume = true
+        IttcAdmitActivity.open(this, leadId)
+    }
+
+    // ------------------------------------------------------------------
+    // 🕘 The timeline: cards by day (TODAY / YESTERDAY / a date), a round icon per kind
+    // ------------------------------------------------------------------
+    private class Item(val at: Long, val by: String?, val text: String, val note: String?, val kind: Int)
 
     private fun renderTimeline(l: JSONObject) {
         val list = binding.ittcLeadTimeline
         list.removeAllViews()
-        binding.ittcLeadTimelineLabel.beVisibleIf(fromServer)
         if (!fromServer) return
         val items = ArrayList<Item>()
         l.optJSONArray("calls")?.let { arr ->
@@ -359,80 +668,171 @@ class IttcLeadActivity : SimpleActivity() {
                 val at = IttcBridge.parseTimeOf(c.s("at")) ?: continue
                 val outcome = c.s("outcome")
                 val dur = c.optInt("duration_sec", 0)
-                val what = if (outcome == "message") "💬 Message" else "📞 ${outcome?.let { OUTCOMES[it] ?: it.replace('_', ' ') } ?: "Call"}"
-                val text = listOfNotNull(what, dur.takeIf { it > 0 }?.let { duration(it) }).joinToString(" · ")
-                items += Item(at, head(at, c.s("by")), text, c.s("notes"))
+                val kind = when (outcome) {
+                    "message" -> K_MESSAGE
+                    "connected" -> K_CALL_OK
+                    null -> if (dur > 0) K_CALL_OK else K_CALL_MISSED
+                    else -> K_CALL_MISSED
+                }
+                val what = if (outcome == "message") getString(R.string.ittc_b_tl_message)
+                else listOfNotNull(
+                    getString(R.string.ittc_b_tl_call),
+                    dur.takeIf { it > 0 }?.let { duration(it) },
+                    outcome?.let { OUTCOMES[it] ?: it.replace('_', ' ') },
+                ).joinToString(" · ")
+                items += Item(at, c.s("by"), what, c.s("notes"), kind)
             }
         }
         l.optJSONArray("activity")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val a = arr.optJSONObject(i) ?: continue
                 val at = IttcBridge.parseTimeOf(a.s("at")) ?: continue
-                items += Item(at, head(at, a.s("by")), describe(a.s("action").orEmpty(), a.optJSONObject("details")), null)
+                val action = a.s("action").orEmpty()
+                val details = a.optJSONObject("details")
+                val note = if (action == "note_added") details?.s("note") else null
+                items += Item(at, a.s("by"), describe(action, details), note, kindOf(action))
             }
         }
         items.sortByDescending { it.at }
-        val fg = getProperTextColor()
-        val faint = fg.adjustAlpha(0.6f)
         if (items.isEmpty()) {
+            list.addView(sectionHead(getString(R.string.ittc_lp_timeline)))
             list.addView(TextView(this).apply {
                 setText(R.string.ittc_lp_timeline_none)
-                setTextColor(faint)
-                setPadding(0, dp(8), 0, dp(8))
+                setTextColor(p.muted)
+                setPadding(0, dp(4), 0, dp(8))
             })
             return
         }
+        val me = myName()
+        var lastDay: String? = null
         items.forEach { item ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, dp(8), 0, dp(8))
+            val day = dayHead(item.at)
+            if (day != lastDay) {
+                list.addView(sectionHead(day))
+                lastDay = day
             }
-            row.addView(TextView(this).apply {
-                this.text = item.head
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setTextColor(faint)
+            list.addView(card(item, me), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(8)
             })
-            row.addView(TextView(this).apply {
-                this.text = item.text
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setTextColor(fg)
-            })
-            item.note?.let { note ->
-                row.addView(TextView(this).apply {
-                    this.text = "“$note”"
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                    setTextColor(fg.adjustAlpha(0.85f))
-                })
-            }
-            list.addView(row)
         }
     }
 
-    private fun head(at: Long, by: String?) = listOfNotNull(whenText(at), by).joinToString(" · ")
+    private fun dayHead(ms: Long): String = when {
+        DateUtils.isToday(ms) -> getString(R.string.ittc_b_today)
+        DateUtils.isToday(ms + DateUtils.DAY_IN_MILLIS) -> getString(R.string.ittc_b_yesterday)
+        else -> DateUtils.formatDateTime(
+            this, ms,
+            DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY,
+        )
+    }.uppercase()
+
+    private fun sectionHead(text: String) = TextView(this).apply {
+        this.text = text
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        setTypeface(typeface, Typeface.BOLD)
+        letterSpacing = 0.04f
+        setTextColor(p.muted)
+        setPadding(0, dp(12), 0, dp(8))
+    }
+
+    /** (icon, its colour, the circle's colour) for a kind */
+    private fun look(kind: Int): Triple<Int, Int, Int> {
+        val (amberBg, amber) = IttcTheme.stageColors(this, "interested")
+        val (purpleBg, purple) = IttcTheme.stageColors(this, "visit")
+        val (greenBg, green) = IttcTheme.stageColors(this, "admitted")
+        return when (kind) {
+            K_CALL_OK -> Triple(R.drawable.ic_call_made_vector, p.call, p.callSoft)
+            K_CALL_MISSED -> Triple(R.drawable.ic_call_missed_vector, p.danger, p.dangerSoft)
+            K_MESSAGE -> Triple(R.drawable.ic_sms_vector, p.primary, p.primarySoft)
+            K_STAGE -> Triple(R.drawable.ic_arrow_right_vector, amber, amberBg)
+            K_NOTE -> Triple(R.drawable.ic_edit_vector, amber, amberBg)
+            K_NEXT -> Triple(R.drawable.ic_clock_vector, p.primary, p.primarySoft)
+            K_PEOPLE -> Triple(R.drawable.ic_people_vector, p.primary, p.primarySoft)
+            K_RATING -> Triple(R.drawable.ic_star_vector, amber, amberBg)
+            K_VISIT -> Triple(R.drawable.ic_place_vector, purple, purpleBg)
+            K_MONEY -> Triple(R.drawable.ic_dollar_vector, green, greenBg)
+            K_ADDED -> Triple(R.drawable.ic_plus_vector, green, greenBg)
+            else -> Triple(R.drawable.ic_info_vector, p.muted, p.surfaceAlt)
+        }
+    }
+
+    private fun kindOf(action: String): Int = when {
+        action == "stage_changed" -> K_STAGE
+        action.startsWith("note") -> K_NOTE
+        action.startsWith("follow_up") -> K_NEXT
+        action == "assigned" -> K_PEOPLE
+        action == "rating_changed" -> K_RATING
+        action.startsWith("visit") -> K_VISIT
+        action.startsWith("payment") || action.startsWith("fee") -> K_MONEY
+        action == "created" || action == "re_enquiry" || action == "admitted" -> K_ADDED
+        else -> K_OTHER
+    }
+
+    private fun card(item: Item, me: String?): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        background = IttcTheme.rounded(context, p.surface, 14f)
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        val (icon, fg, bg) = look(item.kind)
+        addView(ImageView(context).apply {
+            setImageResource(icon)
+            setColorFilter(fg)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = oval(bg, 0, 0f)
+        }, LinearLayout.LayoutParams(dp(32), dp(32)))
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply {
+                text = item.text
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.text)
+            })
+            item.note?.let { note ->
+                addView(TextView(context).apply {
+                    text = "“$note”"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setTextColor(p.text2)
+                    setPadding(0, dp(3), 0, 0)
+                })
+            }
+            addView(TextView(context).apply {
+                text = listOfNotNull(DateUtils.formatDateTime(context, item.at, DateUtils.FORMAT_SHOW_TIME), byName(item.by, me)).joinToString(" · ")
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTextColor(p.muted)
+                setPadding(0, dp(3), 0, 0)
+            })
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(12) })
+    }
+
+    /** "You" for my own changes */
+    private fun byName(by: String?, me: String?): String? {
+        if (by == null) return null
+        return if (by == me) getString(R.string.ittc_b_you) else by
+    }
 
     /** One change in words (the Tracker's common ones; the rest by their name) */
     private fun describe(action: String, d: JSONObject?): String {
         fun stageName(id: String?) = meta?.stages?.firstOrNull { it.id == id }?.name ?: "—"
         fun person(id: String?) = meta?.people?.firstOrNull { it.id == id }?.name ?: "someone"
         return when (action) {
-            "stage_changed" -> "🚩 ${stageName(d?.s("from"))} → ${stageName(d?.s("to"))}"
-            "note_added" -> "📝 “${d?.s("note") ?: "—"}”"
-            "note_edited" -> "📝 Notes edited"
-            "follow_up_set" -> "⏰ Next call " + (IttcBridge.parseTimeOf(d?.s("due_at"))?.let { whenText(it) } ?: "")
-            "follow_up_cancelled" -> "⏰ Next call removed"
-            "assigned" -> d?.s("to")?.let { "👥 → ${person(it)}" } ?: "👥 Unassigned"
-            "rating_changed" -> "⭐ ${d?.s("from") ?: "—"} → ${d?.s("to") ?: "—"}"
-            "created" -> "➕ Lead added"
-            "re_enquiry" -> "➕ Asked again"
-            "details_changed", "fields_changed" -> "✏️ Details changed"
-            "course_added" -> "🎓 Course + ${d?.s("course") ?: "—"}"
-            "course_removed" -> "🎓 Course − ${d?.s("course") ?: "—"}"
-            "tag_added" -> "🏷 + ${d?.s("tag") ?: "—"}"
-            "tag_removed" -> "🏷 − ${d?.s("tag") ?: "—"}"
-            "visit_planned" -> "🏫 Visit planned " + (IttcBridge.parseTimeOf(d?.s("at"))?.let { whenText(it) } ?: "")
-            "visit_done" -> "🏫 Visited the campus"
-            "payment_received" -> "💰 Payment received"
-            else -> "• " + action.replace('_', ' ').replaceFirstChar { it.uppercase() }
+            "stage_changed" -> "Stage: ${stageName(d?.s("from"))} → ${stageName(d?.s("to"))}"
+            "note_added" -> "Note added"
+            "note_edited" -> "Notes edited"
+            "follow_up_set" -> "Next call " + (IttcBridge.parseTimeOf(d?.s("due_at"))?.let { whenText(it) } ?: "")
+            "follow_up_cancelled" -> "Next call removed"
+            "assigned" -> d?.s("to")?.let { "Handed to ${person(it)}" } ?: "Unassigned"
+            "rating_changed" -> "Rating: ${d?.s("from") ?: "—"} → ${d?.s("to") ?: "—"}"
+            "created" -> "Lead added"
+            "re_enquiry" -> "Asked again"
+            "details_changed", "fields_changed" -> "Details changed"
+            "course_added" -> "Course + ${d?.s("course") ?: "—"}"
+            "course_removed" -> "Course − ${d?.s("course") ?: "—"}"
+            "tag_added" -> "Tag + ${d?.s("tag") ?: "—"}"
+            "tag_removed" -> "Tag − ${d?.s("tag") ?: "—"}"
+            "visit_planned" -> "Visit planned " + (IttcBridge.parseTimeOf(d?.s("at"))?.let { whenText(it) } ?: "")
+            "visit_done" -> "Visited the campus"
+            "payment_received" -> "Payment received"
+            else -> action.replace('_', ' ').replaceFirstChar { it.uppercase() }
         }
     }
 
@@ -926,16 +1326,21 @@ class IttcLeadActivity : SimpleActivity() {
     private fun chip(label: String, on: Boolean, onClick: () -> Unit): TextView = TextView(this).apply {
         text = label
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-        val pad = dp(10)
+        val pad = dp(12)
         setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
         gravity = Gravity.CENTER
-        setBackgroundResource(R.drawable.ittc_chip_background)
-        val primary = getProperPrimaryColor()
-        val textColor = getProperTextColor()
-        background.mutate().applyColorFilter(if (on) primary else (textColor and 0x00FFFFFF) or 0x22000000)
-        setTextColor(if (on) primary.getContrastColor() else textColor)
+        if (on) IttcTheme.pill(this, p.primary, p.onPrimary) else IttcTheme.pill(this, p.surfaceAlt, p.text)
         maxLines = 2
+        touchFeedback(this)
         setOnClickListener { onClick() }
+    }
+
+    /** The system's touch ripple over a view with its own background */
+    private fun touchFeedback(view: View) {
+        try {
+            view.foreground = androidx.core.content.ContextCompat.getDrawable(this, ripple())
+        } catch (_: Throwable) {
+        }
     }
 
     private fun ripple(): Int {
@@ -966,6 +1371,23 @@ class IttcLeadActivity : SimpleActivity() {
         private const val LEAD_ID = "ittc_lead_id"
         private const val SHOW_TEMPLATES = "ittc_show_templates"
         private const val WHATSAPP_GREEN = 0xFF25D366.toInt()
+
+        private const val STEP_DONE = 0
+        private const val STEP_CURRENT = 1
+        private const val STEP_TODO = 2
+
+        private const val K_CALL_OK = 0
+        private const val K_CALL_MISSED = 1
+        private const val K_MESSAGE = 2
+        private const val K_STAGE = 3
+        private const val K_NOTE = 4
+        private const val K_NEXT = 5
+        private const val K_PEOPLE = 6
+        private const val K_RATING = 7
+        private const val K_VISIT = 8
+        private const val K_MONEY = 9
+        private const val K_ADDED = 10
+        private const val K_OTHER = 11
 
         private val OUTCOMES = mapOf(
             "connected" to "Connected", "no_answer" to "No answer", "busy" to "Busy",

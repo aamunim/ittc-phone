@@ -98,33 +98,112 @@
         android:layout_marginTop="@dimen/normal_margin"
         android:gravity="center_horizontal"
         android:textSize="@dimen/call_status_text_size"
-        app:layout_constraintBottom_toTopOf="@id/ittc_lead_info"
+        app:layout_constraintBottom_toTopOf="@id/ittc_lead_card"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/caller_name_label"
         android:textDirection="firstStrongLtr"
         tools:text="+1 (123) 456-7890" />
 
-    <!-- 🎓 ITTC: the lead (course · stage · last note), when the number is a lead -->
-    <org.fossify.commons.views.MyTextView
-        android:id="@+id/ittc_lead_info"
+    <!-- 🎓 ITTC: the lead card (ITTC lead badge, stage, course, last note, "Write a note now"),
+         when the number is a lead; colours set in code -->
+    <LinearLayout
+        android:id="@+id/ittc_lead_card"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/activity_margin"
         android:layout_marginTop="@dimen/normal_margin"
-        android:alpha="0.9"
-        android:ellipsize="end"
-        android:gravity="center_horizontal"
-        android:maxLines="3"
-        android:paddingStart="@dimen/medium_margin"
-        android:paddingEnd="@dimen/medium_margin"
-        android:textSize="@dimen/call_status_text_size"
+        android:layout_marginEnd="@dimen/activity_margin"
+        android:orientation="vertical"
+        android:padding="12dp"
         android:visibility="gone"
         app:layout_constraintBottom_toTopOf="@id/call_status_label"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/caller_number"
-        tools:text="🎓 Lead · B.Ed · Interested"
-        tools:visibility="visible" />
+        tools:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/ittc_lead_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:paddingStart="10dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="4dp"
+                android:text="@string/ittc_b_incall_badge"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/ittc_lead_stage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:paddingStart="10dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="4dp"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="Interested"
+                tools:visibility="visible" />
+
+            <TextView
+                android:id="@+id/ittc_lead_course"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:paddingStart="10dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="4dp"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                tools:text="CSE"
+                tools:visibility="visible" />
+        </LinearLayout>
+
+        <!-- the lead's name (number not saved in contacts) and the last note -->
+        <TextView
+            android:id="@+id/ittc_lead_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textSize="13sp"
+            android:visibility="gone"
+            tools:text="Last note: “Will talk with family, call after 10”"
+            tools:visibility="visible" />
+
+        <TextView
+            android:id="@+id/ittc_lead_write_note"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:drawablePadding="8dp"
+            android:gravity="center"
+            android:maxLines="1"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/ittc_b_write_note_now"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <org.fossify.commons.views.MyTextView
         android:id="@+id/call_status_label"
@@ -136,7 +215,7 @@
         app:layout_constraintBottom_toTopOf="@id/hold_status_label"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/ittc_lead_info"
+        app:layout_constraintTop_toBottomOf="@id/ittc_lead_card"
         tools:text="Is Calling" />
 
     <TextView

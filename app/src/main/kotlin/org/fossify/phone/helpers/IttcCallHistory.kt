@@ -38,7 +38,12 @@ object IttcCallHistory {
 
     fun kind(context: Context) = prefs(context).getInt(KEY_KIND, KIND_ALL)
 
-    fun tapCalls(context: Context) = prefs(context).getBoolean(KEY_TAP_CALLS, false)
+    /**
+     * 3.5: a tap on a Recents row always calls (as Fossify does); the history opens from the row's →
+     * button. The old setting ([KEY_TAP_CALLS]) is no longer read.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun tapCalls(context: Context) = true
 
     fun takeDirty(): Boolean {
         val dirty = recentsDirty

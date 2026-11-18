@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 🎓 ITTC Phone 3.2: the ITTC account — sign in (works without the Tracker), status, switches, sign out -->
+<!-- 🎓 ITTC Phone 3.2: the ITTC account — sign in (works without the Tracker), status, switches, sign out.
+     3.5: the card look (a blue hero for who is signed in, cards, pills; colours set in code) -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/ittc_account_coordinator"
@@ -34,14 +35,17 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingBottom="@dimen/activity_margin">
+            android:paddingStart="@dimen/ittc_space_l"
+            android:paddingEnd="@dimen/ittc_space_l"
+            android:paddingBottom="@dimen/ittc_space_xl">
 
             <!-- this build has no ITTC address / key -->
             <org.fossify.commons.views.MyTextView
                 android:id="@+id/ittc_account_not_configured"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:padding="@dimen/activity_margin"
+                android:layout_marginTop="@dimen/ittc_space_s"
+                android:padding="@dimen/ittc_space_l"
                 android:text="@string/ittc_account_not_configured"
                 android:textSize="@dimen/bigger_text_size"
                 android:visibility="gone" />
@@ -51,10 +55,8 @@
                 android:id="@+id/ittc_account_message"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/activity_margin"
-                android:layout_marginTop="@dimen/activity_margin"
-                android:layout_marginEnd="@dimen/activity_margin"
-                android:textColor="@color/md_red_700"
+                android:layout_marginTop="@dimen/ittc_space_s"
+                android:padding="@dimen/ittc_space_m"
                 android:textSize="@dimen/bigger_text_size"
                 android:textStyle="bold"
                 android:visibility="gone" />
@@ -64,34 +66,37 @@
                 android:id="@+id/ittc_account_update_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_margin="@dimen/activity_margin"
-                android:background="@color/md_red_700"
+                android:layout_marginTop="@dimen/ittc_space_s"
                 android:orientation="vertical"
-                android:padding="@dimen/activity_margin"
+                android:padding="@dimen/ittc_space_l"
                 android:visibility="gone">
 
                 <TextView
+                    android:id="@+id/ittc_account_update_title"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/ittc_account_update_needed"
-                    android:textColor="#FFFFFFFF"
                     android:textSize="@dimen/bigger_text_size"
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/ittc_account_update_note"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/tiny_margin"
                     android:text="@string/ittc_account_update_needed_note"
-                    android:textColor="#FFFFFFFF"
                     android:textSize="@dimen/normal_text_size" />
 
-                <Button
+                <TextView
                     android:id="@+id/ittc_account_open_play"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/medium_margin"
-                    android:text="@string/ittc_account_open_play" />
+                    android:layout_height="44dp"
+                    android:layout_marginTop="@dimen/ittc_space_m"
+                    android:gravity="center"
+                    android:paddingStart="18dp"
+                    android:paddingEnd="18dp"
+                    android:text="@string/ittc_account_open_play"
+                    android:textStyle="bold" />
             </LinearLayout>
 
             <!-- signed out: email + password -->
@@ -99,8 +104,9 @@
                 android:id="@+id/ittc_account_signed_out_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ittc_space_s"
                 android:orientation="vertical"
-                android:padding="@dimen/activity_margin"
+                android:padding="@dimen/ittc_space_l"
                 android:visibility="gone">
 
                 <org.fossify.commons.views.MyTextView
@@ -151,14 +157,15 @@
 
                 </org.fossify.commons.views.MyTextInputLayout>
 
-                <Button
+                <TextView
                     android:id="@+id/ittc_account_sign_in"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/activity_margin"
-                    android:minHeight="56dp"
+                    android:layout_height="54dp"
+                    android:layout_marginTop="@dimen/ittc_space_l"
+                    android:gravity="center"
                     android:text="@string/ittc_account_sign_in"
-                    android:textSize="@dimen/bigger_text_size" />
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
 
                 <org.fossify.commons.views.MyTextView
                     android:id="@+id/ittc_account_progress"
@@ -175,161 +182,221 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/medium_margin"
-                    android:textColor="@color/md_red_700"
                     android:textSize="@dimen/normal_text_size"
                     android:visibility="gone" />
             </LinearLayout>
 
-            <!-- signed in: who, how it works now, last update, waiting calls -->
+            <!-- signed in: the blue hero (who), then how it works now, last update, waiting calls -->
             <LinearLayout
                 android:id="@+id/ittc_account_signed_in_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="@dimen/activity_margin"
                 android:visibility="gone">
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/ittc_account_name"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/ittc_account_email_text"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:alpha="0.7"
-                    android:textSize="@dimen/normal_text_size" />
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/ittc_account_role"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:alpha="0.7"
-                    android:textSize="@dimen/normal_text_size" />
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/ittc_account_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/activity_margin"
-                    android:textSize="@dimen/bigger_text_size" />
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/ittc_account_last_updated"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/tiny_margin"
-                    android:alpha="0.7"
-                    android:textSize="@dimen/normal_text_size" />
-
-                <TextView
-                    android:id="@+id/ittc_account_refresh_error"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/tiny_margin"
-                    android:textColor="@color/md_red_700"
-                    android:textSize="@dimen/normal_text_size"
-                    android:visibility="gone" />
 
                 <LinearLayout
-                    android:id="@+id/ittc_account_pending_row"
+                    android:id="@+id/ittc_account_hero"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/medium_margin"
+                    android:layout_marginTop="@dimen/ittc_space_s"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:visibility="gone">
+                    android:padding="@dimen/ittc_space_l">
 
-                    <org.fossify.commons.views.MyTextView
-                        android:id="@+id/ittc_account_pending"
+                    <TextView
+                        android:id="@+id/ittc_account_avatar"
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:gravity="center"
+                        android:maxLines="1"
+                        android:textSize="20sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
                         android:layout_weight="1"
-                        android:textSize="@dimen/normal_text_size" />
+                        android:orientation="vertical">
 
-                    <Button
-                        android:id="@+id/ittc_account_send_now"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/ittc_account_send_now" />
+                        <TextView
+                            android:id="@+id/ittc_account_name"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/ittc_account_email_text"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/ittc_account_role"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:paddingStart="10dp"
+                            android:paddingTop="3dp"
+                            android:paddingEnd="10dp"
+                            android:paddingBottom="3dp"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
                 </LinearLayout>
 
-                <Button
-                    android:id="@+id/ittc_account_update_now"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:id="@+id/ittc_account_status_card"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/medium_margin"
-                    android:text="@string/ittc_account_update_now" />
+                    android:layout_marginTop="@dimen/ittc_space_m"
+                    android:orientation="vertical"
+                    android:padding="@dimen/ittc_space_l">
+
+                    <org.fossify.commons.views.MyTextView
+                        android:id="@+id/ittc_account_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="@dimen/bigger_text_size"
+                        android:textStyle="bold" />
+
+                    <org.fossify.commons.views.MyTextView
+                        android:id="@+id/ittc_account_last_updated"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/tiny_margin"
+                        android:alpha="0.7"
+                        android:textSize="@dimen/normal_text_size" />
+
+                    <TextView
+                        android:id="@+id/ittc_account_refresh_error"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/tiny_margin"
+                        android:textSize="@dimen/normal_text_size"
+                        android:visibility="gone" />
+
+                    <LinearLayout
+                        android:id="@+id/ittc_account_pending_row"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/medium_margin"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:visibility="gone">
+
+                        <org.fossify.commons.views.MyTextView
+                            android:id="@+id/ittc_account_pending"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:textSize="@dimen/normal_text_size" />
+
+                        <TextView
+                            android:id="@+id/ittc_account_send_now"
+                            android:layout_width="wrap_content"
+                            android:layout_height="40dp"
+                            android:layout_marginStart="@dimen/ittc_space_s"
+                            android:gravity="center"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp"
+                            android:text="@string/ittc_account_send_now"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/ittc_account_update_now"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="@dimen/ittc_space_m"
+                        android:gravity="center"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:text="@string/ittc_account_update_now"
+                        android:textStyle="bold" />
+                </LinearLayout>
             </LinearLayout>
 
-            <!-- run without the Tracker (only when the Tracker is installed) -->
+            <!-- the switches, in one card -->
             <LinearLayout
-                android:id="@+id/ittc_account_prefer_direct_holder"
-                style="@style/SettingsHolderSwitchStyle"
+                android:id="@+id/ittc_account_settings_card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ittc_space_m"
                 android:orientation="vertical"
-                android:visibility="gone">
+                android:paddingTop="@dimen/ittc_space_xs"
+                android:paddingBottom="@dimen/ittc_space_xs">
 
-                <org.fossify.commons.views.MyMaterialSwitch
-                    android:id="@+id/ittc_account_prefer_direct"
-                    style="@style/SettingsSwitchStyle"
+                <!-- run without the Tracker (only when the Tracker is installed) -->
+                <LinearLayout
+                    android:id="@+id/ittc_account_prefer_direct_holder"
+                    style="@style/SettingsHolderSwitchStyle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/ittc_account_prefer_direct" />
+                    android:orientation="vertical"
+                    android:visibility="gone">
 
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/ittc_account_prefer_direct_note"
-                    style="@style/SettingsTextValueStyle"
+                    <org.fossify.commons.views.MyMaterialSwitch
+                        android:id="@+id/ittc_account_prefer_direct"
+                        style="@style/SettingsSwitchStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ittc_account_prefer_direct" />
+
+                    <org.fossify.commons.views.MyTextView
+                        android:id="@+id/ittc_account_prefer_direct_note"
+                        style="@style/SettingsTextValueStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="@dimen/bigger_margin"
+                        android:text="@string/ittc_account_prefer_direct_note"
+                        android:textSize="@dimen/smaller_text_size" />
+                </LinearLayout>
+
+                <!-- follow-up reminders (with or without the Tracker) -->
+                <RelativeLayout
+                    android:id="@+id/ittc_account_reminders_holder"
+                    style="@style/SettingsHolderSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <org.fossify.commons.views.MyMaterialSwitch
+                        android:id="@+id/ittc_account_reminders"
+                        style="@style/SettingsSwitchStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ittc_account_reminders" />
+
+                </RelativeLayout>
+
+                <!-- after a call with an unknown number: "Add as a lead" (signed in only) -->
+                <RelativeLayout
+                    android:id="@+id/ittc_account_unknown_after_call_holder"
+                    style="@style/SettingsHolderSwitchStyle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="@dimen/bigger_margin"
-                    android:text="@string/ittc_account_prefer_direct_note"
-                    android:textSize="@dimen/smaller_text_size" />
+                    android:visibility="gone">
+
+                    <org.fossify.commons.views.MyMaterialSwitch
+                        android:id="@+id/ittc_account_unknown_after_call"
+                        style="@style/SettingsSwitchStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ittc_account_unknown_after_call" />
+
+                </RelativeLayout>
             </LinearLayout>
 
-            <!-- follow-up reminders (with or without the Tracker) -->
-            <RelativeLayout
-                android:id="@+id/ittc_account_reminders_holder"
-                style="@style/SettingsHolderSwitchStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <org.fossify.commons.views.MyMaterialSwitch
-                    android:id="@+id/ittc_account_reminders"
-                    style="@style/SettingsSwitchStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/ittc_account_reminders" />
-
-            </RelativeLayout>
-
-            <!-- after a call with an unknown number: "Add as a lead" (signed in only) -->
-            <RelativeLayout
-                android:id="@+id/ittc_account_unknown_after_call_holder"
-                style="@style/SettingsHolderSwitchStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:visibility="gone">
-
-                <org.fossify.commons.views.MyMaterialSwitch
-                    android:id="@+id/ittc_account_unknown_after_call"
-                    style="@style/SettingsSwitchStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/ittc_account_unknown_after_call" />
-
-            </RelativeLayout>
-
-            <Button
+            <TextView
                 android:id="@+id/ittc_account_sign_out"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_margin="@dimen/activity_margin"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="@dimen/ittc_space_l"
+                android:gravity="center"
                 android:text="@string/ittc_account_sign_out"
+                android:textStyle="bold"
                 android:visibility="gone" />
 
         </LinearLayout>

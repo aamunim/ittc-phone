@@ -3,6 +3,7 @@ package org.fossify.phone.activities
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.CallLog.Calls
@@ -14,17 +15,12 @@ import android.widget.TextView
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.FeatureLockedDialog
 import org.fossify.commons.extensions.addBlockedNumber
-import org.fossify.commons.extensions.adjustAlpha
-import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.formatDateOrTime
 import org.fossify.commons.extensions.formatPhoneNumber
 import org.fossify.commons.extensions.formatSecondsToShortTimeString
 import org.fossify.commons.extensions.formatTime
 import org.fossify.commons.extensions.getColoredDrawableWithColor
-import org.fossify.commons.extensions.getContrastColor
-import org.fossify.commons.extensions.getProperPrimaryColor
-import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.hasPermission
 import org.fossify.commons.extensions.isOrWasThankYouInstalled
 import org.fossify.commons.extensions.launchSendSMSIntent
@@ -50,12 +46,14 @@ import org.fossify.phone.extensions.startAddContactIntent
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
+import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.RecentsHelper
 import org.joda.time.DateTime
 
 /**
  * 🎓 ITTC: one number's call history (a tap on a Recents row): who it is, call / SMS / WhatsApp /
  * contact / block, a summary, and every call with the number by day, newest first.
+ * 3.5: the card look — a summary card on top, action tiles (call in teal), a small card per call.
  */
 class IttcNumberActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityNumberBinding::inflate)
@@ -64,7 +62,12 @@ class IttcNumberActivity : SimpleActivity() {
     private var givenName: String? = null
     private var contactName: String? = null
     private var contactUri: Uri? = null
+    /** the lead's name when no contact has the number (for the initials) */
+    private var leadName: String? = null
+    private var shownPhoto: String? = null
     private var entries = listOf<IttcCallHistory.Entry>()
+    /** 🎨 the 3.3 palette (the app's light / dark theme) */
+    private lateinit var palette: IttcTheme.Palette
 
     private data class ContactInfo(val name: String?, val photoUri: String?, val uri: Uri?)
 
@@ -78,6 +81,7 @@ class IttcNumberActivity : SimpleActivity() {
         }
 
         setContentView(binding.root)
+        palette = IttcTheme.of(this)
         binding.apply {
             setupEdgeToEdge(padBottomSystem = listOf(ittcNumberScrollview))
             setupMaterialScrollListener(ittcNumberScrollview, ittcNumberAppbar)
@@ -93,8 +97,31 @@ class IttcNumberActivity : SimpleActivity() {
             ittcNumberDelete.setOnClickListener { askConfirmDelete() }
         }
 
-        showHeader()
         updateTextColors(binding.ittcNumberScrollview)
+        applyPalette()
+        showHeader()
+    }
+
+    /** 🎨 the soft background, the summary card, the tiles (call: teal) */
+    private fun applyPalette() {
+        val p = palette
+        binding.apply {
+            ittcNumberCoordinator.setBackgroundColor(p.bg)
+            ittcNumberScrollview.setBackgroundColor(p.bg)
+            IttcTheme.card(ittcNumberCard, p)
+            ittcNumberDivider.setBackgroundColor(p.divider)
+            ittcNumberName.setTextColor(p.text)
+            ittcNumberNumber.setTextColor(p.muted)
+            ittcNumberSummary.setTextColor(p.text2)
+            ittcNumberPlaceholder.setTextColor(p.muted)
+            ittcNumberCall.background = IttcTheme.rounded(this@IttcNumberActivity, p.call, 16f)
+            ittcNumberCall.setTextColor(p.onPrimary)
+            listOf(ittcNumberSms, ittcNumberWhatsapp, ittcNumberContact, ittcNumberBlock).forEach {
+                it.background = IttcTheme.rounded(this@IttcNumberActivity, p.surface, 16f)
+                it.setTextColor(p.text)
+            }
+            ittcNumberDelete.setTextColor(p.danger)
+        }
     }
 
     override fun onResume() {
@@ -111,14 +138,28 @@ class IttcNumberActivity : SimpleActivity() {
     private fun shownNumber() = if (config.formatPhoneNumbers) number.formatPhoneNumber() else number
 
     private fun showHeader(photoUri: String? = null) {
-        val textColor = getProperTextColor()
-        val primaryColor = getProperPrimaryColor()
+        val p = palette
         binding.apply {
             val name = contactName ?: givenName
             ittcNumberName.text = name ?: shownNumber()
             ittcNumberNumber.text = shownNumber()
             ittcNumberNumber.beVisibleIf(name != null)
-            SimpleContactsHelper(this@IttcNumberActivity).loadContactImage(photoUri.orEmpty(), ittcNumberPhoto, displayName())
+            // (a contact's photo; else the initials in a soft colour, as in Recents)
+            val hasPhoto = !photoUri.isNullOrEmpty()
+            ittcNumberPhoto.beVisibleIf(hasPhoto)
+            ittcNumberInitials.beVisibleIf(!hasPhoto)
+            if (hasPhoto) {
+                SimpleContactsHelper(this@IttcNumberActivity).loadContactImage(photoUri.orEmpty(), ittcNumberPhoto, displayName())
+            } else {
+                val shown = leadName?.takeIf { name == null } ?: displayName()
+                val (bg, fg) = IttcTheme.avatarColors(this@IttcNumberActivity, shown)
+                ittcNumberInitials.background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(bg)
+                }
+                ittcNumberInitials.setTextColor(fg)
+                ittcNumberInitials.text = IttcTheme.initials(if (name == null && leadName == null) null else shown)
+            }
 
             val icons = listOf(
                 ittcNumberCall to R.drawable.ic_phone_vector,
@@ -128,13 +169,16 @@ class IttcNumberActivity : SimpleActivity() {
                 ittcNumberBlock to R.drawable.ic_block_vector,
             )
             icons.forEach { (view, icon) ->
-                val color = if (view == ittcNumberWhatsapp) WHATSAPP_GREEN else primaryColor
+                val color = when (view) {
+                    ittcNumberCall -> p.onPrimary
+                    ittcNumberWhatsapp -> WHATSAPP_GREEN
+                    else -> p.primary
+                }
                 view.setCompoundDrawablesRelativeWithIntrinsicBounds(null, resources.getColoredDrawableWithColor(icon, color), null, null)
-                view.setTextColor(textColor)
             }
             ittcNumberContact.setText(if (contactUri != null) R.string.ittc_hist_contact else R.string.ittc_hist_save)
             ittcNumberDelete.setCompoundDrawablesRelativeWithIntrinsicBounds(
-                resources.getColoredDrawableWithColor(R.drawable.ic_delete_vector, textColor), null, null, null
+                resources.getColoredDrawableWithColor(R.drawable.ic_delete_vector, p.danger), null, null, null
             )
         }
     }
@@ -146,6 +190,7 @@ class IttcNumberActivity : SimpleActivity() {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 contactName = info?.name?.takeIf { it.isNotBlank() }
                 contactUri = info?.uri
+                shownPhoto = info?.photoUri
                 showHeader(info?.photoUri)
             }
         }
@@ -195,14 +240,31 @@ class IttcNumberActivity : SimpleActivity() {
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 showLeadBox(lead, direct, canOpen)
+                val p = palette
+                val unsaved = contactName == null && givenName == null
                 binding.ittcNumberLead.apply {
                     beVisibleIf(lead != null)
                     if (lead != null) {
-                        val unsaved = contactName == null && givenName == null
                         val who = if (unsaved && lead.name.isNotEmpty()) "🎓 ${lead.name}" else getString(R.string.ittc_lead_badge)
-                        text = listOfNotNull(who, lead.course, lead.stage).joinToString(" · ")
-                        setTextColor(IttcBridge.stageColor(lead.stage, getProperPrimaryColor(), getProperTextColor().adjustAlpha(0.6f)))
+                        text = listOfNotNull(who, lead.course).joinToString(" · ")
+                        setTextColor(p.text2)
                     }
+                }
+                // (the stage as a pill, coloured per stage)
+                val stage = lead?.stage?.takeIf { it.isNotBlank() }
+                binding.ittcNumberStage.apply {
+                    beVisibleIf(stage != null)
+                    if (stage != null) {
+                        val (bg, fg) = IttcTheme.stageColors(this@IttcNumberActivity, stage)
+                        IttcTheme.pill(this, bg, fg)
+                        text = stage
+                    }
+                }
+                // (no contact: the lead's name for the initials)
+                val newLeadName = lead?.name?.takeIf { unsaved && it.isNotEmpty() }
+                if (newLeadName != leadName) {
+                    leadName = newLeadName
+                    showHeader(shownPhoto)
                 }
             }
         }
@@ -228,36 +290,34 @@ class IttcNumberActivity : SimpleActivity() {
         }
         val note = lead?.let { listOfNotNull(it.rating?.let { r -> "★ ${r.replaceFirstChar { c -> c.uppercase() }}" }, it.lastNote?.let { n -> "“${n.take(160)}”" }).joinToString("  ") }
         box.beVisibleIf(buttons.isNotEmpty() || !note.isNullOrEmpty())
-        val textColor = getProperTextColor()
-        val primary = getProperPrimaryColor()
-        val density = resources.displayMetrics.density
-        val m = (density * 4).toInt()
-        box.setPadding((density * 12).toInt(), 0, (density * 12).toInt(), (density * 8).toInt())
+        val p = palette
+        val m = IttcTheme.dp(this, 4f)
         if (!note.isNullOrEmpty()) {
             box.addView(TextView(this).apply {
                 text = note
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setTextColor(textColor.adjustAlpha(0.8f))
-                setPadding(m, 0, m, m)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextColor(p.text2)
+                setPadding(0, 0, 0, m)
             })
         }
         if (buttons.isEmpty()) return
+        // (pills: the first filled, the others outlined)
         val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        buttons.forEach { (label, action) ->
+        buttons.forEachIndexed { i, (label, action) ->
             line.addView(
                 TextView(this).apply {
                     setText(label)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                    val pad = (density * 10).toInt()
-                    setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                    val pad = IttcTheme.dp(this@IttcNumberActivity, 12f)
+                    setPadding(pad, 0, pad, 0)
+                    minHeight = IttcTheme.dp(this@IttcNumberActivity, 40f)
                     gravity = Gravity.CENTER
                     maxLines = 1
-                    setBackgroundResource(R.drawable.ittc_chip_background)
-                    background.mutate().applyColorFilter(primary)
-                    setTextColor(primary.getContrastColor())
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    if (i == 0) IttcTheme.pill(this, p.primary, p.onPrimary) else IttcTheme.pill(this, p.surface, p.primary, p.outline)
                     setOnClickListener { action() }
                 },
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(m, m, m, 0) },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(if (i == 0) 0 else m, m, if (i == buttons.size - 1) 0 else m, 0) },
             )
         }
         box.addView(line)
@@ -295,6 +355,7 @@ class IttcNumberActivity : SimpleActivity() {
             ittcNumberPlaceholder.beVisibleIf(calls.isEmpty())
             ittcNumberDelete.beVisibleIf(calls.isNotEmpty())
             ittcNumberSummary.beVisibleIf(calls.isNotEmpty())
+            ittcNumberDivider.beVisibleIf(calls.isNotEmpty())
             ittcNumberSummary.text = summary(calls)
             ittcNumberCalls.removeAllViews()
         }
@@ -310,12 +371,10 @@ class IttcNumberActivity : SimpleActivity() {
         // (the old "Show more" goes; a new one at the end if calls are left)
         list.findViewWithTag<android.view.View>(SHOW_MORE_TAG)?.let { list.removeView(it) }
 
-        val textColor = getProperTextColor()
-        val secondaryTextColor = textColor.adjustAlpha(0.6f)
-        val missedColor = resources.getColor(R.color.color_missed_call, theme)
-        val outgoingIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_made_vector, resources.getColor(R.color.color_outgoing_call, theme))
-        val incomingIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_received_vector, resources.getColor(R.color.color_incoming_call, theme))
-        val missedIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_missed_vector, missedColor)
+        val p = palette
+        val outgoingIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_made_vector, p.call)
+        val incomingIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_received_vector, p.primary)
+        val missedIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_missed_vector, p.danger)
         val showSim = areMultipleSIMsAvailable()
 
         val until = minOf(calls.size, shownRows + PAGE)
@@ -327,13 +386,25 @@ class IttcNumberActivity : SimpleActivity() {
                 val date = ItemRecentsDateBinding.inflate(layoutInflater, list, false)
                 date.dateTextView.apply {
                     text = dayLabel(dayCode, call.startTS)
-                    setTextColor(secondaryTextColor)
+                    setTextColor(p.muted)
                 }
                 list.addView(date.root)
             }
 
             val row = IttcItemNumberCallBinding.inflate(layoutInflater, list, false)
             val missed = call.type == Calls.MISSED_TYPE
+            // (a small card; the direction in a soft circle: outgoing teal, incoming blue, missed red)
+            row.root.background = IttcTheme.rounded(this, p.surface, 14f)
+            row.ittcCallType.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(
+                    when (call.type) {
+                        Calls.OUTGOING_TYPE -> p.callSoft
+                        Calls.MISSED_TYPE -> p.dangerSoft
+                        else -> p.primarySoft
+                    }
+                )
+            }
             row.ittcCallType.setImageDrawable(
                 when (call.type) {
                     Calls.OUTGOING_TYPE -> outgoingIcon
@@ -343,27 +414,29 @@ class IttcNumberActivity : SimpleActivity() {
             )
             row.ittcCallTime.apply {
                 text = call.startTS.formatTime(this@IttcNumberActivity)
-                setTextColor(if (missed) missedColor else textColor)
+                setTextColor(p.muted)
             }
             row.ittcCallKind.apply {
                 setText(
                     when (call.type) {
                         Calls.OUTGOING_TYPE -> R.string.ittc_hist_outgoing
                         Calls.MISSED_TYPE -> R.string.ittc_hist_missed
+                        Calls.REJECTED_TYPE -> R.string.ittc_a_declined
+                        Calls.BLOCKED_TYPE -> R.string.ittc_a_blocked
                         else -> R.string.ittc_hist_incoming
                     }
                 )
-                setTextColor(textColor)
+                setTextColor(if (missed) p.danger else p.text)
             }
             row.ittcCallDuration.apply {
                 val talked = call.type != Calls.MISSED_TYPE && call.type != Calls.REJECTED_TYPE && call.duration > 0
-                text = if (talked) formatSecondsToShortTimeString(call.duration) else ""
-                setTextColor(textColor)
+                text = if (talked) "· " + formatSecondsToShortTimeString(call.duration) else ""
+                setTextColor(p.text2)
             }
             row.ittcCallSim.apply {
                 beVisibleIf(showSim && call.simID != -1)
                 text = getString(R.string.ittc_hist_sim, call.simID)
-                setTextColor(secondaryTextColor)
+                setTextColor(p.muted)
             }
             list.addView(row.root)
         }
@@ -378,7 +451,7 @@ class IttcNumberActivity : SimpleActivity() {
                     tag = SHOW_MORE_TAG
                     text = getString(R.string.ittc_hist_show_more, left)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                    setTextColor(getProperPrimaryColor())
+                    setTextColor(palette.primary)
                     gravity = Gravity.CENTER
                     setPadding(pad, pad, pad, pad)
                     isClickable = true
