@@ -31,7 +31,8 @@ class DialerActivity : SimpleActivity() {
 
             // make sure Simple Dialer is the default Phone app before initiating an outgoing call
             if (!isDefaultDialer()) {
-                launchSetDefaultDialerIntent()
+                // 🎓 ITTC: what the app does with calls and contacts first (Play disclosure)
+                org.fossify.phone.helpers.IttcDisclosure.showOnce(this) { launchSetDefaultDialerIntent() }
             } else {
                 initOutgoingCall()
             }

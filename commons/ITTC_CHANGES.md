@@ -14,6 +14,7 @@ Every change is marked `🎓 ITTC` in the code:
 | `extensions/Activity.kt` | `launchCallIntent` opens this app's own `DialerActivity` (it named `org.fossify.phone`). Launcher-icon colour classes use `appCodePackage()`. |
 | `compose/extensions/ActivityExtensions.kt`, `extensions/Context-styling.kt` | The same for the launcher-icon colours; no "fake version" warning. |
 | `activities/BaseSimpleActivity.kt` | No "You are using a fake version… download the original from fossify.org" warning, and Customize colours is not blocked, for an app id outside `org.fossify`. |
+| `activities/ManageBlockedNumbersActivity.kt`, `helpers/MyContactsContentProvider.kt` | "Is this the phone app" checks use `appCodePackage()`, not the app id (blocking calls, private contacts). |
 | `activities/CustomizationActivity.kt` | The primary colour picker is not closed for an app id outside `org.fossify`. |
 | `build.gradle.kts` | Built as a module of this project (its own version list `gradle/commons.versions.toml`, shown as `clibs`); no publishing, no detekt. |
 

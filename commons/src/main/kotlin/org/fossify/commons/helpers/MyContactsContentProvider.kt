@@ -5,6 +5,7 @@ import android.database.Cursor
 import android.net.Uri
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import org.fossify.commons.extensions.appCodePackage
 import org.fossify.commons.extensions.getIntValue
 import org.fossify.commons.extensions.getStringValue
 import org.fossify.commons.models.PhoneNumber
@@ -28,7 +29,8 @@ class MyContactsContentProvider {
 
         fun getSimpleContacts(context: Context, cursor: Cursor?): ArrayList<SimpleContact> {
             val contacts = ArrayList<SimpleContact>()
-            val packageName = context.packageName.removeSuffix(".debug")
+            // 🎓 ITTC: by the code package (the app id is com.abamunim.ittcphone on Google Play)
+            val packageName = context.appCodePackage()
             if (packageName != "org.fossify.phone" && packageName != "org.fossify.messages" && packageName != "org.fossify.calendar") {
                 return contacts
             }
@@ -64,7 +66,8 @@ class MyContactsContentProvider {
 
         fun getContacts(context: Context, cursor: Cursor?): ArrayList<Contact> {
             val contacts = ArrayList<Contact>()
-            val packageName = context.packageName.removeSuffix(".debug")
+            // 🎓 ITTC: by the code package (the app id is com.abamunim.ittcphone on Google Play)
+            val packageName = context.appCodePackage()
             if (packageName != "org.fossify.phone" && packageName != "org.fossify.messages" && packageName != "org.fossify.calendar") {
                 return contacts
             }

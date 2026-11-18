@@ -21,8 +21,8 @@ on:
       play_status:
         description: 'Release status on Play (draft until the app has been reviewed once)'
         type: choice
-        options: [completed, draft]
-        default: completed
+        options: [draft, completed]
+        default: draft
 
 permissions:
   contents: read
@@ -40,6 +40,9 @@ jobs:
           java-version: "17"
 
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: Version
+        run: echo "ITTC Phone $(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2), version code $((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_STEP_SUMMARY"
 
       - name: To Google Play from main only
         if: github.event_name == 'workflow_dispatch' && inputs.play_track != 'none'
@@ -71,7 +74,8 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.ITTC_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleFossRelease bundleFossRelease
+          # (Google Play wants a new version code on every upload: 1000 + this run's number)
+          ./gradlew --no-daemon -PVERSION_CODE=$((1000 + GITHUB_RUN_NUMBER)) assembleFossRelease bundleFossRelease
 
       - name: Remove the key file
         if: always()

@@ -318,7 +318,8 @@ class DialpadActivity : SimpleActivity() {
                 if (isDefaultDialer()) {
                     getSystemService(TelephonyManager::class.java)?.sendDialerSpecialCode(secretCode)
                 } else {
-                    launchSetDefaultDialerIntent()
+                    // 🎓 ITTC: the disclosure first (Play)
+                    org.fossify.phone.helpers.IttcDisclosure.showOnce(this) { launchSetDefaultDialerIntent() }
                 }
             } else {
                 val intent =

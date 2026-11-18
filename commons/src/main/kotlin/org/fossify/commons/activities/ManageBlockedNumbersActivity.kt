@@ -87,7 +87,8 @@ class ManageBlockedNumbersActivity : BaseSimpleActivity() {
             val isBlockingUnknownNumbers by config.isBlockingUnknownNumbers.collectAsStateWithLifecycle(initialValue = config.blockUnknownNumbers)
             val showCheckmarksOnSwitches by config.showCheckmarksOnSwitchesFlow.collectAsStateWithLifecycle(initialValue = config.showCheckmarksOnSwitches)
             val isDialer = remember {
-                config.appId.startsWith("org.fossify.phone")
+                // 🎓 ITTC: the code package, not the app id (com.abamunim.ittcphone on Google Play)
+                context.appCodePackage().startsWith("org.fossify.phone")
             }
             val isDefaultDialer: Boolean = onEventValue {
                 context.isDefaultDialer()
@@ -223,7 +224,8 @@ class ManageBlockedNumbersActivity : BaseSimpleActivity() {
     }
 
     private fun maybeSetDefaultCallerIdApp() {
-        if (isQPlus() && baseConfig.appId.startsWith("org.fossify.phone")) {
+        // 🎓 ITTC: the code package, not the app id
+        if (isQPlus() && appCodePackage().startsWith("org.fossify.phone")) {
             setDefaultCallerIdApp()
         }
     }
