@@ -18,5 +18,11 @@ Every change is marked `🎓 ITTC` in the code:
 | `activities/CustomizationActivity.kt` | The primary colour picker is not closed for an app id outside `org.fossify`. |
 | `build.gradle.kts` | Built as a module of this project (its own version list `gradle/commons.versions.toml`, shown as `clibs`); no publishing, no detekt. |
 
+| `activities/BaseSimpleActivity.kt` | `launchSetDefaultDialerIntent()` is public (ITTC Phone's Recents asks for the phone-app role after its disclosure). |
+
+Left as they are (not reached by ITTC Phone, harmless): the SAF dialog checks in
+`BaseSimpleActivity` (skipped for ids outside `org.fossify`), the settings-export file name (uses the
+app id), and the e-mail choice in commons' `AboutActivity` (ITTC Phone has its own About).
+
 Nothing else is changed. To move to a newer Commons: copy its `commons/` folder over this one, then
 redo the changes above (search the old copy for `🎓 ITTC`).

@@ -1310,7 +1310,8 @@ abstract class BaseSimpleActivity : EdgeToEdgeActivity() {
     }
 
     @SuppressLint("InlinedApi")
-    protected fun launchSetDefaultDialerIntent() {
+    // 🎓 ITTC: public (a fragment asks for the phone-app role after the disclosure)
+    fun launchSetDefaultDialerIntent() {
         if (isQPlus()) {
             val roleManager = getSystemService(RoleManager::class.java)
             if (

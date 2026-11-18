@@ -55,7 +55,13 @@ a phone (see 3).
   12 testers for 14 days in a row** before it can apply for **Production** (public). Use track
   `alpha` (Closed testing) with the staff as testers, then apply for production access.
 
-## 5. Moving staff to the Play version
+## 5. The order to roll out
+1. **Tracker 2.10.7 first** (it trusts ITTC Phone from Google Play and knows its new app id; an
+   older Tracker shows no leads with the Play ITTC Phone).
+2. Then ITTC Phone on Internal / Closed testing, with staff added as testers.
+3. Then tell staff to move (below).
+
+## 6. Moving staff to the Play version
 While the app is on Internal / Closed testing, staff must first accept the testing invitation
 (Play Console → the track → Testers → copy the **opt-in link** and send it); the store page opens for
 them only after that.

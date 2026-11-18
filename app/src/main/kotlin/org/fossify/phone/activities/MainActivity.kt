@@ -74,34 +74,36 @@ class MainActivity : SimpleActivity() {
         EventBus.getDefault().register(this)
         launchedDialer = savedInstanceState?.getBoolean(OPEN_DIAL_PAD_AT_LAUNCH) ?: false
 
-        if (isDefaultDialer()) {
-            checkContactPermissions()
+        // 🎓 ITTC: first what the app does with calls and contacts (Google Play's "prominent
+        // disclosure") — also when it was made the phone app in Android's settings — then the rest
+        IttcDisclosure.showOnce(this) {
+            if (isDefaultDialer()) {
+                checkContactPermissions()
 
-            if (!config.wasOverlaySnackbarConfirmed && !Settings.canDrawOverlays(this)) {
-                val snackbar = Snackbar.make(
-                    binding.mainHolder,
-                    R.string.allow_displaying_over_other_apps,
-                    Snackbar.LENGTH_INDEFINITE
-                ).setAction(R.string.ok) {
-                    config.wasOverlaySnackbarConfirmed = true
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                if (!config.wasOverlaySnackbarConfirmed && !Settings.canDrawOverlays(this)) {
+                    val snackbar = Snackbar.make(
+                        binding.mainHolder,
+                        R.string.allow_displaying_over_other_apps,
+                        Snackbar.LENGTH_INDEFINITE
+                    ).setAction(R.string.ok) {
+                        config.wasOverlaySnackbarConfirmed = true
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                    }
+
+                    snackbar.setBackgroundTint(getProperBackgroundColor().darkenColor())
+                    snackbar.setTextColor(getProperTextColor())
+                    snackbar.setActionTextColor(getProperTextColor())
+                    snackbar.show()
                 }
 
-                snackbar.setBackgroundTint(getProperBackgroundColor().darkenColor())
-                snackbar.setTextColor(getProperTextColor())
-                snackbar.setActionTextColor(getProperTextColor())
-                snackbar.show()
-            }
-
-            handleFullScreenNotificationsPermission { granted ->
-                if (!granted) {
-                    toast(org.fossify.commons.R.string.notifications_disabled)
+                handleFullScreenNotificationsPermission { granted ->
+                    if (!granted) {
+                        toast(org.fossify.commons.R.string.notifications_disabled)
+                    }
                 }
+            } else {
+                launchSetDefaultDialerIntent()
             }
-        } else {
-            // 🎓 ITTC: first what the app does with calls and contacts (Google Play's
-            // "prominent disclosure"), then Android's "make it the phone app" question
-            IttcDisclosure.showOnce(this) { launchSetDefaultDialerIntent() }
         }
 
         if (isQPlus() && (config.blockUnknownNumbers || config.blockHiddenNumbers)) {

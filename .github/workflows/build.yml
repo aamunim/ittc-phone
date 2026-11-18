@@ -5,6 +5,9 @@
 #    The very first bundle of a new app is uploaded by hand in Play Console (Google's rule):
 #    download "ittc-phone-play" from this run's Artifacts and upload the .aab there.
 #  - GitHub Releases with an APK are no longer made (ITTC Phone comes from Google Play).
+#  - Version code = 1000 + the run number (a new one each run). "Re-run jobs" keeps the number:
+#    after an upload that reached Play, run the workflow again instead. If this file is ever
+#    renamed (the run numbers start again at 1), raise the 1000 below past Play's last code.
 name: Build
 
 on:

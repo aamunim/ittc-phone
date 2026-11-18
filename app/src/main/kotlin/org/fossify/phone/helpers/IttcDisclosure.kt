@@ -13,6 +13,10 @@ import org.fossify.phone.R
 object IttcDisclosure {
     private const val KEY = "disclosure_v1"
 
+    /** Agreed already (another screen can send the person to the main screen first) */
+    fun agreed(context: Context): Boolean =
+        context.getSharedPreferences("ittc", Context.MODE_PRIVATE).getBoolean(KEY, false)
+
     fun showOnce(activity: Activity, then: () -> Unit) {
         val prefs = activity.getSharedPreferences("ittc", Context.MODE_PRIVATE)
         if (prefs.getBoolean(KEY, false)) {
@@ -31,7 +35,8 @@ object IttcDisclosure {
                 .setNegativeButton(R.string.ittc_disclosure_not_now) { _, _ -> activity.finish() }
                 .show()
         } catch (_: Throwable) {
-            then()
+            // (no consent without the dialog: try again next time)
+            activity.finish()
         }
     }
 }

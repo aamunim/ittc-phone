@@ -8,6 +8,7 @@ import org.fossify.commons.extensions.beGoneIf
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.getMyContactsCursor
 import org.fossify.commons.extensions.hasPermission
+import org.fossify.commons.extensions.isDefaultDialer
 import org.fossify.commons.extensions.isVisible
 import org.fossify.commons.extensions.underlineText
 import org.fossify.commons.helpers.ContactsHelper
@@ -166,6 +167,13 @@ class RecentsFragment(
     }
 
     private fun requestCallLogPermission() {
+        // 🎓 ITTC: the call log is asked for only as the phone app (Google Play's rule): not yet →
+        // the disclosure and Android's "make it the phone app" question instead
+        val act = activity ?: return
+        if (!act.isDefaultDialer()) {
+            org.fossify.phone.helpers.IttcDisclosure.showOnce(act) { act.launchSetDefaultDialerIntent() }
+            return
+        }
         activity?.handlePermission(PERMISSION_READ_CALL_LOG) {
             if (it) {
                 binding.recentsPlaceholder.text = context.getString(R.string.no_previous_calls)
