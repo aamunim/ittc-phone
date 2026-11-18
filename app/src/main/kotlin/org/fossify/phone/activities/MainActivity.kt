@@ -223,8 +223,8 @@ class MainActivity : SimpleActivity() {
         Handler().postDelayed({
             if (IttcDisclosure.agreed(this)) {
                 getRecentsFragment()?.refreshItems()
-                // (the Leads tab has read its list by now)
-                IttcTabBadges.leadsChanged()
+                // (the Leads tab has read its list by now, and a call that just ended is in the log)
+                if (!isFinishing && !isDestroyed) ittcRefreshBadges()
             }
         }, 2000)
     }
@@ -1021,6 +1021,8 @@ class MainActivity : SimpleActivity() {
         if (IttcDisclosure.agreed(this)) {
             getRecentsFragment()?.refreshItems()
             ittcRefreshBadges()
+            // (the system writes a missed call to the log a moment after the call ends: count again)
+            binding.mainTabsHolder.postDelayed({ if (!isFinishing && !isDestroyed) ittcRefreshBadges() }, 1500L)
         }
     }
 }
