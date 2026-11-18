@@ -27,14 +27,16 @@ class IttcRingView @JvmOverloads constructor(context: Context, attrs: AttributeS
         strokeWidth = stroke
         strokeCap = Paint.Cap.ROUND
     }
+    private val valueSize = 20f * density
+    private val subSize = 11f * density
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD
-        textSize = 20f * density
+        textSize = valueSize
     }
     private val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        textSize = 11f * density
+        textSize = subSize
     }
     private val oval = RectF()
 
@@ -55,9 +57,14 @@ class IttcRingView @JvmOverloads constructor(context: Context, attrs: AttributeS
 
     /** [done] of [max] (max ≤ 0: no target — only the number) */
     fun set(done: Int, max: Int, valueText: String, subText: String) {
-        value = valueText
-        sub = subText
         val fraction = if (max > 0) (done.toFloat() / max).coerceIn(0f, 1f) else 0f
+        // (nothing new: nothing to draw again)
+        if (valueText == value && subText == sub && fraction == target) return
+        if (valueText != value || subText != sub) {
+            value = valueText
+            sub = subText
+            fitText()
+        }
         if (fraction != target) {
             target = fraction
             animator?.cancel()
@@ -75,6 +82,27 @@ class IttcRingView @JvmOverloads constructor(context: Context, attrs: AttributeS
             }
         }
         invalidate()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        fitText()
+    }
+
+    /**
+     * The texts' sizes: as designed, smaller only when a text would not fit inside the ring (a big
+     * number, a long "of …" in some languages, large fonts). Worked out on a change, not in onDraw.
+     */
+    private fun fitText() {
+        valuePaint.textSize = valueSize
+        subPaint.textSize = subSize
+        val size = minOf(width - paddingLeft - paddingRight, height - paddingTop - paddingBottom).toFloat()
+        val room = size - 2f * stroke - 8f * density
+        if (size <= 0f || room <= 0f) return
+        val valueWidth = valuePaint.measureText(value)
+        if (valueWidth > room) valuePaint.textSize = valueSize * room / valueWidth
+        val subWidth = subPaint.measureText(sub)
+        if (subWidth > room) subPaint.textSize = subSize * room / subWidth
     }
 
     override fun onDetachedFromWindow() {

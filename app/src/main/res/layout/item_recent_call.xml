@@ -93,6 +93,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="6dp"
+        android:ellipsize="end"
         android:maxLines="1"
         android:textSize="12sp"
         android:visibility="gone"
@@ -108,6 +109,7 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="6dp"
         android:layout_marginEnd="@dimen/ittc_space_s"
+        android:ellipsize="end"
         android:maxLines="1"
         android:paddingStart="7dp"
         android:paddingTop="1dp"
@@ -193,14 +195,14 @@
         app:layout_constraintTop_toTopOf="parent"
         tools:text="9:12 AM" />
 
-    <!-- → this number's call history (a tap on the row calls) -->
+    <!-- → this number's call history (a tap on the row calls); a 44 dp touch area, the circle
+         drawn 36 dp (its background is inset in code) -->
     <ImageView
         android:id="@+id/item_recents_history"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:layout_marginStart="@dimen/ittc_space_xs"
+        android:layout_width="@dimen/ittc_touch"
+        android:layout_height="@dimen/ittc_touch"
         android:contentDescription="@string/ittc_a_call_history"
-        android:padding="9dp"
+        android:padding="13dp"
         android:src="@drawable/ic_arrow_right_vector"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"

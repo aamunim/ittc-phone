@@ -20,6 +20,7 @@
     <string name="ittc_account_send_now" translatable="false">Send now</string>
     <string name="ittc_account_update_now" translatable="false">Update now</string>
     <string name="ittc_account_updating" translatable="false">Updating…</string>
+    <string name="ittc_account_sending" translatable="false">Sending…</string>
     <string name="ittc_account_prefer_direct" translatable="false">Run without the Tracker</string>
     <string name="ittc_account_prefer_direct_note" translatable="false">When the Tracker app is installed and signed in, ITTC Phone normally works through it. Turn on to let ITTC Phone send its own lead calls (the Tracker then stops sending them, so nothing is saved twice).</string>
     <string name="ittc_account_reminders" translatable="false">Follow-up reminders</string>

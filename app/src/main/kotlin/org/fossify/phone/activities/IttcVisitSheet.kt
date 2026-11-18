@@ -6,7 +6,6 @@ import android.app.TimePickerDialog
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -101,8 +100,8 @@ object IttcVisitSheet {
         st.sheet.body.removeAllViews()
         title(st)
         st.sheet.body.addView(
-            ProgressBar(st.activity).apply { isIndeterminate = true },
-            LinearLayout.LayoutParams(IttcCUi.dp(st.activity, 32), IttcCUi.dp(st.activity, 32)).apply {
+            IttcCUi.spinner(st.activity),
+            LinearLayout.LayoutParams(IttcCUi.dp(st.activity, 28), IttcCUi.dp(st.activity, 28)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 topMargin = IttcCUi.dp(st.activity, 24)
                 bottomMargin = IttcCUi.dp(st.activity, 24)
@@ -250,8 +249,20 @@ object IttcVisitSheet {
         planned?.plannedAt?.let { body.addView(IttcCUi.text(a, a.getString(R.string.ittc_c_visit_now, IttcCUi.whenText(it)), 13f, p.muted), IttcCUi.topMargin(a, 2)) }
 
         body.addView(IttcCUi.section(a, a.getString(R.string.ittc_c_visit_when)), IttcCUi.topMargin(a, 14))
-        // quick days at 11 am (as the Tracker)
-        val quick = listOf(1 to R.string.ittc_c_visit_q_tomorrow, 2 to R.string.ittc_c_visit_q_2days, 7 to R.string.ittc_c_visit_q_week).map { (days, label) ->
+        // quick days at 11 am (as the Tracker); a pick changes the chips and the date button in place
+        // (the note keeps its text and focus)
+        val quick = ArrayList<Pair<Long, TextView>>()
+        lateinit var pick: TextView
+        // (made here so a new pick clears an old "pick a date" line; placed below the note)
+        val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
+        fun showPicked() {
+            err.visibility = View.GONE
+            val at = st.pickedAt
+            quick.forEach { (time, chip) -> IttcCUi.setChipOn(chip, time == at) }
+            pick.text = at?.let { "📅 " + IttcCUi.whenText(it) } ?: a.getString(R.string.ittc_c_visit_pick)
+            IttcCUi.setStyle(pick, if (at != null) IttcCUi.Style.PRIMARY else IttcCUi.Style.OUTLINE)
+        }
+        listOf(1 to R.string.ittc_c_visit_q_tomorrow, 2 to R.string.ittc_c_visit_q_2days, 7 to R.string.ittc_c_visit_q_week).forEach { (days, label) ->
             val at = Calendar.getInstance().apply {
                 add(Calendar.DAY_OF_YEAR, days)
                 set(Calendar.HOUR_OF_DAY, 11)
@@ -259,27 +270,23 @@ object IttcVisitSheet {
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis
-            IttcCUi.chip(a, a.getString(label), st.pickedAt == at) {
+            quick += at to IttcCUi.chip(a, a.getString(label), st.pickedAt == at) {
                 st.pickedAt = at
-                render(st)
+                showPicked()
             }
         }
-        body.addView(IttcCUi.chipRow(a, quick), IttcCUi.topMargin(a, 8))
-        val pick = IttcCUi.button(
-            a,
-            st.pickedAt?.let { "📅 " + IttcCUi.whenText(it) } ?: a.getString(R.string.ittc_c_visit_pick),
-            if (st.pickedAt != null) IttcCUi.Style.PRIMARY else IttcCUi.Style.OUTLINE,
-        ) {
+        body.addView(IttcCUi.chipRow(a, quick.map { it.second }), IttcCUi.topMargin(a, 8))
+        pick = IttcCUi.button(a, "", IttcCUi.Style.OUTLINE) {
             pickDateTime(a, st.pickedAt ?: planned?.plannedAt) { at ->
                 st.pickedAt = at
-                if (alive(st)) render(st)
+                if (alive(st)) showPicked()
             }
         }
+        showPicked()
         body.addView(pick, IttcCUi.topMargin(a, 10))
 
         val note = keepNote(st, IttcCUi.noteInput(a, a.getString(R.string.ittc_c_visit_note_hint)))
         body.addView(note, IttcCUi.topMargin(a, 12))
-        val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         body.addView(err, IttcCUi.topMargin(a, 8))
 
         val row = IttcCUi.row(a)

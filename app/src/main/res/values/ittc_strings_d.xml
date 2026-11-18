@@ -14,6 +14,8 @@
     <string name="ittc_d_done">Done</string>
     <string name="ittc_d_cancel">Cancel</string>
     <string name="ittc_d_saving">Saving…</string>
+    <string name="ittc_d_no_internet_retry">No internet connection. Please try again.</string>
+    <string name="ittc_d_student_ref_used">That student ID is already used.</string>
     <string name="ittc_d_no_app">No app on this phone could open it (WhatsApp / SMS).</string>
     <string name="ittc_d_student_id">Student ID: %1$s</string>
     <string name="ittc_d_share">Share</string>

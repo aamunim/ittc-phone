@@ -13,6 +13,9 @@ import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
+import org.fossify.commons.extensions.getProperBackgroundColor
+import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.hideKeyboard
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.updateTextColors
@@ -40,6 +43,11 @@ class IttcAccountActivity : SimpleActivity() {
 
     private var working = false
     private var updating = false
+    private var sending = false
+    /** The first state is on screen (the page fades in once, then stays) */
+    private var shownOnce = false
+    /** The app colours updateTextColors last used (applied again only when they change) */
+    private var appliedColors: Triple<Int, Int, Int>? = null
     private var observer: ContentObserver? = null
     private val main = Handler(Looper.getMainLooper())
     private lateinit var p: IttcTheme.Palette
@@ -81,9 +89,16 @@ class IttcAccountActivity : SimpleActivity() {
             }
             ittcAccountOpenPlay.setOnClickListener { openPlay(this@IttcAccountActivity) }
             ittcAccountSendNow.setOnClickListener {
+                if (sending) return@setOnClickListener
+                sending = true
+                ittcAccountSendNow.isEnabled = false
+                ittcAccountSendNow.setText(R.string.ittc_account_sending)
                 IttcDirect.kick(applicationContext)
                 // (the list tells when something was sent; this is for "nothing to send / no internet")
-                main.postDelayed({ refreshUi() }, 3000)
+                main.postDelayed({
+                    doneSending()
+                    refreshUi()
+                }, 3000)
             }
             ittcAccountUpdateNow.setOnClickListener {
                 updating = true
@@ -110,8 +125,17 @@ class IttcAccountActivity : SimpleActivity() {
             }
             ittcAccountSignOut.setOnClickListener { askSignOut() }
         }
-        updateTextColors(binding.ittcAccountScrollview)
+        applyTextColors()
         styleCards()
+        // (shown once the first state is read: no flash of the empty page)
+        binding.ittcAccountHolder.alpha = 0f
+        // (never left hidden, should the first read be slow)
+        main.postDelayed({
+            if (!shownOnce && !isFinishing && !isDestroyed) {
+                shownOnce = true
+                binding.ittcAccountHolder.alpha = 1f
+            }
+        }, 800)
 
         observer = object : ContentObserver(main) {
             override fun onChange(selfChange: Boolean) {
@@ -124,7 +148,17 @@ class IttcAccountActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.ittcAccountAppbar, NavigationIcon.Arrow, topBarColor = p.bg)
+        // (the app's colours may have changed in Settings meanwhile)
+        applyTextColors()
         refreshUi()
+    }
+
+    /** Fossify's text colours on the page's own views, only when the app's colours changed */
+    private fun applyTextColors() {
+        val colors = Triple(getProperTextColor(), getProperPrimaryColor(), getProperBackgroundColor())
+        if (colors == appliedColors) return
+        appliedColors = colors
+        updateTextColors(binding.ittcAccountScrollview)
     }
 
     override fun onDestroy() {
@@ -156,9 +190,11 @@ class IttcAccountActivity : SimpleActivity() {
             IttcTheme.button(ittcAccountSignIn, p.primary, p.onPrimary)
             ittcAccountError.setTextColor(p.danger)
             ittcAccountRefreshError.setTextColor(p.danger)
-            IttcTheme.pill(ittcAccountSendNow, p.surface, p.primary, p.outline)
-            IttcTheme.pill(ittcAccountUpdateNow, p.surface, p.primary, p.outline)
-            IttcTheme.pill(ittcAccountSignOut, p.surface, p.danger, p.outline)
+            // (outlined pills with a ripple inside their round shape when pressed)
+            listOf(ittcAccountSendNow to p.primary, ittcAccountUpdateNow to p.primary, ittcAccountSignOut to p.danger).forEach { (v, fg) ->
+                v.background = IttcTheme.pressable(this@IttcAccountActivity, IttcTheme.rounded(this@IttcAccountActivity, p.surface, 999f, p.outline), fg)
+                v.setTextColor(fg)
+            }
         }
     }
 
@@ -246,8 +282,11 @@ class IttcAccountActivity : SimpleActivity() {
                 ittcAccountPendingRow.beVisibleIf(s.pending > 0)
                 ittcAccountPending.text = getString(R.string.ittc_account_waiting, s.pending)
             }
+            if (!shownOnce) {
+                shownOnce = true
+                ittcAccountHolder.animate().alpha(1f).setDuration(120).start()
+            }
         }
-        updateTextColors(binding.ittcAccountScrollview)
     }
 
     /** "Admin · Team lead" from {role, super, team_lead} */
@@ -263,6 +302,14 @@ class IttcAccountActivity : SimpleActivity() {
         }
         if (me.optBoolean("team_lead", false)) parts += "Team lead"
         return parts.joinToString(" · ")
+    }
+
+    private fun doneSending() {
+        if (!sending) return
+        sending = false
+        if (isFinishing || isDestroyed) return
+        binding.ittcAccountSendNow.isEnabled = true
+        binding.ittcAccountSendNow.setText(R.string.ittc_account_send_now)
     }
 
     private fun doneUpdating() {

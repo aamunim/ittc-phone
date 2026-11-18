@@ -6,7 +6,9 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.graphics.drawable.GradientDrawable
 import android.text.Editable
+import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
@@ -26,6 +28,7 @@ import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcNotify
 import org.fossify.phone.direct.IttcVisitFeeApi
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcUi
 
 /**
  * 🔎 Search every lead I may see (ITTC Phone 3.4, direct mode) — name, phone (any part, e.g. the
@@ -57,6 +60,8 @@ class IttcSearchActivity : SimpleActivity() {
             ittcCSearchEmpty.setTextColor(p.muted)
             ittcCSearchList.layoutManager = LinearLayoutManager(this@IttcSearchActivity)
             ittcCSearchList.adapter = adapter
+            // (the list fills the space below the field whatever it holds)
+            ittcCSearchList.setHasFixedSize(true)
             ittcCSearchList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     if (newState == RecyclerView.SCROLL_STATE_DRAGGING) hideKeyboard()
@@ -142,7 +147,7 @@ class IttcSearchActivity : SimpleActivity() {
             show(mine, emptyList(), getString(R.string.ittc_c_search_type_more))
             return
         }
-        binding.ittcCSearchProgress.visibility = View.VISIBLE
+        IttcUi.fadeIn(binding.ittcCSearchProgress)
         val app = applicationContext
         val which = list
         ensureBackgroundThread {
@@ -172,15 +177,23 @@ class IttcSearchActivity : SimpleActivity() {
 
     private fun show(mine: Int, found: List<IttcVisitFeeApi.Found>, empty: String?) {
         if (mine != seq || isFinishing || isDestroyed) return
-        binding.ittcCSearchProgress.visibility = View.GONE
+        IttcUi.fadeIf(binding.ittcCSearchProgress, false)
         adapter.set(found)
         binding.ittcCSearchEmpty.text = empty.orEmpty()
-        binding.ittcCSearchEmpty.visibility = if (found.isEmpty() && !empty.isNullOrEmpty()) View.VISIBLE else View.GONE
+        IttcUi.fadeIf(binding.ittcCSearchEmpty, found.isEmpty() && !empty.isNullOrEmpty())
     }
 
     // ------------------------------------------------------------------ rows
-    private inner class Holder(val root: LinearLayout, val avatar: TextView, val name: TextView, val line: TextView, val stage: TextView) :
-        RecyclerView.ViewHolder(root)
+    /** (the avatar's and the stage pill's shapes are made once per row; a bind only sets their colours) */
+    private inner class Holder(
+        val root: LinearLayout,
+        val avatar: TextView,
+        val name: TextView,
+        val line: TextView,
+        val stage: TextView,
+        val avatarBg: GradientDrawable,
+        val stageBg: GradientDrawable,
+    ) : RecyclerView.ViewHolder(root)
 
     private inner class Adapter : RecyclerView.Adapter<Holder>() {
         private var items: List<IttcVisitFeeApi.Found> = emptyList()
@@ -202,23 +215,39 @@ class IttcSearchActivity : SimpleActivity() {
                 IttcTheme.card(this, p)
                 isClickable = true
                 isFocusable = true
+                // (the system's pressed ripple over the card, kept to its rounded corners)
+                IttcUi.ripple(this)
                 layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = IttcCUi.dp(c, 4)
                     bottomMargin = IttcCUi.dp(c, 4)
                 }
             }
             val size = IttcCUi.dp(c, 42)
-            val avatar = IttcCUi.text(c, "", 15f, p.text, bold = true).apply { gravity = Gravity.CENTER }
+            val avatarBg = IttcTheme.rounded(c, p.surfaceAlt, 999f)
+            val avatar = IttcCUi.text(c, "", 15f, p.text, bold = true).apply {
+                gravity = Gravity.CENTER
+                background = avatarBg
+            }
             root.addView(avatar, LinearLayout.LayoutParams(size, size).apply { marginEnd = IttcCUi.dp(c, 12) })
             val col = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }
-            val name = IttcCUi.text(c, "", 15f, p.text, bold = true).apply { maxLines = 1 }
-            val line = IttcCUi.text(c, "", 13f, p.muted).apply { maxLines = 1 }
+            val name = IttcCUi.text(c, "", 15f, p.text, bold = true).apply {
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            val line = IttcCUi.text(c, "", 13f, p.muted).apply {
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
             col.addView(name)
             col.addView(line)
             root.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            val stage = IttcCUi.pill(c, "", p.surfaceAlt, p.muted).apply { maxLines = 1 }
+            val stageBg = IttcTheme.rounded(c, p.surfaceAlt, 999f)
+            val stage = IttcCUi.pill(c, "", p.surfaceAlt, p.muted).apply {
+                maxLines = 1
+                background = stageBg
+            }
             root.addView(stage, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = IttcCUi.dp(c, 8) })
-            return Holder(root, avatar, name, line, stage)
+            return Holder(root, avatar, name, line, stage, avatarBg, stageBg)
         }
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
@@ -226,7 +255,7 @@ class IttcSearchActivity : SimpleActivity() {
             val c = holder.root.context
             val (aBg, aFg) = IttcTheme.avatarColors(c, f.name)
             holder.avatar.text = IttcTheme.initials(f.name)
-            holder.avatar.background = IttcTheme.rounded(c, aBg, 999f)
+            holder.avatarBg.setColor(aBg)
             holder.avatar.setTextColor(aFg)
             holder.name.text = f.name.ifBlank { f.phone.orEmpty() }
             holder.line.text = listOfNotNull(f.course, f.owner ?: c.getString(R.string.ittc_c_search_unassigned), f.phone).joinToString(" · ")
@@ -236,7 +265,8 @@ class IttcSearchActivity : SimpleActivity() {
                 holder.stage.visibility = View.VISIBLE
                 holder.stage.text = f.stage
                 val (bg, fg) = IttcTheme.stageColors(c, f.stage)
-                IttcTheme.pill(holder.stage, bg, fg)
+                holder.stageBg.setColor(bg)
+                holder.stage.setTextColor(fg)
             }
             holder.root.setOnClickListener {
                 hideKeyboard()

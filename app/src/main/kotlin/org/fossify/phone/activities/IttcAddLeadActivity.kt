@@ -133,7 +133,11 @@ class IttcAddLeadActivity : SimpleActivity() {
         setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
         minHeight = (resources.displayMetrics.density * 44).toInt()
         gravity = Gravity.CENTER
-        if (on) IttcTheme.pill(this, p.primary, p.onPrimary) else IttcTheme.pill(this, p.surface, p.text, p.outline)
+        val (bg, fg) = if (on) p.primary to p.onPrimary else p.surface to p.text
+        setTextColor(fg)
+        // (a ripple inside the pill when pressed)
+        background = IttcTheme.pressable(context, IttcTheme.rounded(context, bg, 999f, if (on) 0 else p.outline), fg)
+        isSelected = on
         if (on) setTypeface(typeface, android.graphics.Typeface.BOLD)
         maxLines = 2
         setOnClickListener { onClick() }
@@ -146,10 +150,12 @@ class IttcAddLeadActivity : SimpleActivity() {
         binding.ittcAddError.beVisibleIf(!message.isNullOrBlank())
     }
 
+    /** The server's own words (ApiError); never another failure's raw text */
     private fun readable(e: Throwable): String =
         if (e is IttcApi.ApiError && e.status == 0) getString(R.string.ittc_al_no_internet)
         else if (e is IttcApi.ApiError && e.status == 401) getString(R.string.ittc_al_not_signed_in)
-        else e.message ?: getString(R.string.ittc_al_no_internet)
+        else if (e is IttcApi.ApiError && !e.message.isNullOrBlank()) e.message!!
+        else getString(R.string.ittc_al_no_internet)
 
     private fun save() {
         if (saving) return

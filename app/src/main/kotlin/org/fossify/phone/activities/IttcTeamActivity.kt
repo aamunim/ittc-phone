@@ -57,7 +57,9 @@ class IttcTeamActivity : SimpleActivity() {
     private fun load(force: Boolean) {
         if (loading) return
         loading = true
-        render()
+        // (only the status line: the list on screen stays until the answer comes)
+        renderStatus()
+        if (data == null) showPlaceholder(null)
         ensureBackgroundThread {
             var signedOut = false
             val answer = try {
@@ -91,7 +93,7 @@ class IttcTeamActivity : SimpleActivity() {
         binding.ittcTeamPlaceholder.beVisibleIf(text != null)
     }
 
-    private fun render() {
+    private fun renderStatus() {
         binding.ittcTeamStatus.setTextColor(if (IttcToday.offline) p.danger else p.muted)
         binding.ittcTeamStatus.text = when {
             loading -> getString(R.string.ittc_l2_team_loading)
@@ -103,6 +105,10 @@ class IttcTeamActivity : SimpleActivity() {
             )
             else -> null
         }
+    }
+
+    private fun render() {
+        renderStatus()
         val list = binding.ittcTeamList
         list.removeAllViews()
         val d = data

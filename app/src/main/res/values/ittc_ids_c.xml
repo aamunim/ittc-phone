@@ -3,4 +3,6 @@
 <resources>
     <!-- IttcLeadExtras: which load a container is waiting for (an older one that comes late is dropped) -->
     <item name="ittc_c_extras_gen" type="id" />
+    <!-- IttcCUi.setBusy: a button's own label while it shows "Saving…" -->
+    <item name="ittc_c_busy_label" type="id" />
 </resources>

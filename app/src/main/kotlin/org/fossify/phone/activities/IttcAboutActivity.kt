@@ -12,6 +12,7 @@ import org.fossify.phone.BuildConfig
 import org.fossify.phone.R
 import org.fossify.phone.databinding.IttcActivityAboutBinding
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcTheme
 
 /**
  * 🎓 ITTC Phone's own About: the app and its version, a new version, the Tracker, privacy, and —
@@ -19,13 +20,17 @@ import org.fossify.phone.helpers.IttcBridge
  */
 class IttcAboutActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityAboutBinding::inflate)
+    private lateinit var p: IttcTheme.Palette
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        p = IttcTheme.of(this)
         setContentView(binding.root)
         binding.apply {
             setupEdgeToEdge(padBottomSystem = listOf(ittcAboutScrollview))
-            setupMaterialScrollListener(ittcAboutScrollview, ittcAboutAppbar)
+            // (as Account: the soft page background, the links in one card; no colour change on scroll)
+            ittcAboutCoordinator.setBackgroundColor(p.bg)
+            IttcTheme.card(ittcAboutLinks, p)
             ittcAboutVersion.text = getString(R.string.ittc_about_version, BuildConfig.VERSION_NAME)
             // (Google Play updates the app; the store page shows when there is a new version)
             ittcAboutUpdate.setOnClickListener { open(PLAY) }
@@ -48,7 +53,7 @@ class IttcAboutActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.ittcAboutAppbar, NavigationIcon.Arrow)
+        setupTopAppBar(binding.ittcAboutAppbar, NavigationIcon.Arrow, topBarColor = p.bg)
     }
 
     private fun open(url: String) {

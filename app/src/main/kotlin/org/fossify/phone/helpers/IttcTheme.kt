@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.util.TypedValue
 import android.view.View
 import android.widget.TextView
@@ -116,18 +117,38 @@ object IttcTheme {
         view.setTextColor(fg)
     }
 
+    /**
+     * A shape that shows a soft ripple in [fg] when pressed; the ripple is masked by the shape so it keeps
+     * the shape's corners. For clickable views with a custom background (not for static tags).
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun pressable(context: Context, shape: GradientDrawable, fg: Int): RippleDrawable {
+        val ripple = Color.argb(40, Color.red(fg), Color.green(fg), Color.blue(fg))
+        val src = shape
+        val mask = GradientDrawable().apply {
+            this.shape = src.shape
+            // (getCornerRadii() throws on Android 8-11 when the shape used setCornerRadius)
+            val radii = try { src.cornerRadii } catch (_: Throwable) { null }
+            if (radii != null) cornerRadii = radii else cornerRadius = src.cornerRadius
+            setColor(Color.WHITE)
+        }
+        return RippleDrawable(ColorStateList.valueOf(ripple), shape, mask)
+    }
+
     /** A filled round button */
     fun button(view: TextView, bg: Int, fg: Int) {
-        view.background = rounded(view.context, bg, 999f)
+        view.background = pressable(view.context, rounded(view.context, bg, 999f), fg)
         view.backgroundTintList = null
         view.setTextColor(fg)
     }
 
     fun tint(color: Int): ColorStateList = ColorStateList.valueOf(color)
 
+    private val SPACES = Regex("\\s+")
+
     /** Two letters for an avatar ("Rahim Hasan" → "RH"; a number → "#") */
     fun initials(name: String?): String {
-        val words = name.orEmpty().trim().split(Regex("\\s+")).filter { w -> w.firstOrNull()?.isLetter() == true }
+        val words = name.orEmpty().trim().split(SPACES).filter { w -> w.firstOrNull()?.isLetter() == true }
         return when {
             words.isEmpty() -> "#"
             words.size == 1 -> words[0].take(2).uppercase()
@@ -137,18 +158,18 @@ object IttcTheme {
 
     /** A soft avatar colour picked from the name (the same name always gets the same colour) */
     fun avatarColors(context: Context, name: String?): Pair<Int, Int> {
-        val d = of(context).dark
-        val light = listOf(
-            0xFFFDE7D2.toInt() to 0xFF9A4A0B.toInt(), 0xFFE3EDFB.toInt() to 0xFF1E5AA8.toInt(),
-            0xFFDDF3E4.toInt() to 0xFF15803D.toInt(), 0xFFEDE7FB.toInt() to 0xFF5B2DB3.toInt(),
-            0xFFFCE4EC.toInt() to 0xFFA3214F.toInt(), 0xFFE6F4F1.toInt() to 0xFF0B6E62.toInt(),
-        )
-        val dark = listOf(
-            0xFF3A2A12.toInt() to 0xFFF5C77E.toInt(), 0xFF1C2E4A.toInt() to 0xFF9CC3F5.toInt(),
-            0xFF173525.toInt() to 0xFF86D9A4.toInt(), 0xFF2C2148.toInt() to 0xFFC4B0F5.toInt(),
-            0xFF3A1A27.toInt() to 0xFFF2A6C2.toInt(), 0xFF123A35.toInt() to 0xFF7FE0C8.toInt(),
-        )
-        val list = if (d) dark else light
+        val list = if (of(context).dark) AVATAR_DARK else AVATAR_LIGHT
         return list[Math.floorMod(name.orEmpty().hashCode(), list.size)]
     }
+
+    private val AVATAR_LIGHT = listOf(
+        0xFFFDE7D2.toInt() to 0xFF9A4A0B.toInt(), 0xFFE3EDFB.toInt() to 0xFF1E5AA8.toInt(),
+        0xFFDDF3E4.toInt() to 0xFF15803D.toInt(), 0xFFEDE7FB.toInt() to 0xFF5B2DB3.toInt(),
+        0xFFFCE4EC.toInt() to 0xFFA3214F.toInt(), 0xFFE6F4F1.toInt() to 0xFF0B6E62.toInt(),
+    )
+    private val AVATAR_DARK = listOf(
+        0xFF3A2A12.toInt() to 0xFFF5C77E.toInt(), 0xFF1C2E4A.toInt() to 0xFF9CC3F5.toInt(),
+        0xFF173525.toInt() to 0xFF86D9A4.toInt(), 0xFF2C2148.toInt() to 0xFFC4B0F5.toInt(),
+        0xFF3A1A27.toInt() to 0xFFF2A6C2.toInt(), 0xFF123A35.toInt() to 0xFF7FE0C8.toInt(),
+    )
 }

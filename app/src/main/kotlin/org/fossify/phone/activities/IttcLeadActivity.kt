@@ -100,6 +100,16 @@ class IttcLeadActivity : SimpleActivity() {
     private var loadedOnce = false
     private val notifyHold = IttcNotify.ScreenHold()
 
+    /** The server's lead as last shown (text): the same answer again draws nothing again */
+    private var shownDetail: String? = null
+    /** When it was drawn (the next-call colour and Today/Yesterday move with the clock) */
+    private var shownAt = 0L
+    /** The templates are being fetched (a second tap waits for them) */
+    private var templatesLoading = false
+    /** My name, read once per load (for "You" in the timeline) */
+    private var meName: String? = null
+    private var meNameRead = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         leadId = intent.getStringExtra(LEAD_ID).orEmpty()
@@ -174,6 +184,7 @@ class IttcLeadActivity : SimpleActivity() {
         val seq = ++loadSeq
         val id = leadId
         val needKept = lead == null
+        meNameRead = false
         ensureBackgroundThread {
             val inNow = try {
                 IttcDirect.isSignedIn(this)
@@ -196,6 +207,8 @@ class IttcLeadActivity : SimpleActivity() {
                         signedIn = inNow
                         meta = m
                         lead = kept
+                        // (the kept lead is up: no "Loading…" line pushing the page down)
+                        binding.ittcLeadStatus.beGone()
                         render()
                     }
                 }
@@ -210,8 +223,15 @@ class IttcLeadActivity : SimpleActivity() {
                     else -> e.message ?: getString(R.string.ittc_lp_offline)
                 }
                 null
-            } catch (e: Throwable) {
-                status = e.message ?: getString(R.string.ittc_lp_offline)
+            } catch (_: Throwable) {
+                // (not the server's own words: the plain message, never a raw exception)
+                status = getString(R.string.ittc_lp_offline)
+                null
+            }
+            // (its text here, off the main thread: compared with what is shown)
+            val detailText = try {
+                detail?.toString()
+            } catch (_: Throwable) {
                 null
             }
             val pending = if (!queuedHere) 0 else try {
@@ -222,6 +242,8 @@ class IttcLeadActivity : SimpleActivity() {
             runOnUiThread {
                 if (!alive() || seq != loadSeq) return@runOnUiThread
                 loadedOnce = true
+                val same = detail != null && detailText != null && fromServer && detailText == shownDetail && signedIn == inNow && meta == m &&
+                    System.currentTimeMillis() - shownAt < 60_000
                 signedIn = inNow
                 meta = m
                 // (a change made here not sent yet: keep it on screen, say it waits, look again later)
@@ -235,13 +257,16 @@ class IttcLeadActivity : SimpleActivity() {
                     if (detail != null) {
                         lead = detail
                         fromServer = true
+                        shownDetail = detailText
+                        shownAt = System.currentTimeMillis()
                     } else if (lead == null && kept != null) {
                         lead = kept
                     }
                 }
                 binding.ittcLeadStatus.text = status
                 binding.ittcLeadStatus.beVisibleIf(status != null)
-                render()
+                // (the same lead as shown: nothing to draw again; the cards still reload below)
+                if (waiting || !same) render()
                 // (the visit / fee and admission cards: when the server answered, or once)
                 if (detail != null || !cardsBound) bindCards()
                 if (templatesWanted && lead != null && status == null) {
@@ -319,35 +344,38 @@ class IttcLeadActivity : SimpleActivity() {
             ittcLeadStageCard.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 16f)
             ittcLeadStageDivider.setBackgroundColor(p.divider)
             ittcLeadNext.setTextColor(p.text2)
-            ittcLeadChangeStage.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 999f, p.outline)
             ittcLeadChangeStage.setTextColor(p.primary)
             ittcLeadStatus.setTextColor(p.muted)
             ittcLeadNotesLabel.setTextColor(p.muted)
-            ittcLeadNotes.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 14f)
+            ittcLeadNotes.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 16f)
             ittcLeadNotes.setTextColor(p.text2)
-            ittcLeadNumbers.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 14f)
+            ittcLeadNumbers.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 16f)
 
             // the four big actions: Call teal, the others white cards with a coloured icon
-            ittcLeadCall.background = IttcTheme.rounded(this@IttcLeadActivity, p.call, 16f)
-            ittcLeadCall.setTextColor(Color.WHITE)
+            val onCall = if (p.dark) p.onPrimary else Color.WHITE
+            ittcLeadCall.setTextColor(onCall)
             val amber = IttcTheme.stageColors(this@IttcLeadActivity, "interested").second
             listOf(
-                Triple(ittcLeadCall, R.drawable.ic_phone_vector, Color.WHITE),
+                Triple(ittcLeadCall, R.drawable.ic_phone_vector, onCall),
                 Triple(ittcLeadWhatsapp, R.drawable.ic_sms_vector, WHATSAPP_GREEN),
                 Triple(ittcLeadSms, R.drawable.ic_sms_vector, p.primary),
                 Triple(ittcLeadNote, R.drawable.ic_edit_vector, amber),
             ).forEach { (view, icon, color) ->
-                if (view != ittcLeadCall) {
-                    view.background = IttcTheme.rounded(this@IttcLeadActivity, p.surface, 16f)
+                // (a ripple inside the card's own corners when pressed)
+                if (view == ittcLeadCall) {
+                    view.background = IttcTheme.pressable(this@IttcLeadActivity, IttcTheme.rounded(this@IttcLeadActivity, p.call, 16f), onCall)
+                } else {
+                    view.background = IttcTheme.pressable(this@IttcLeadActivity, IttcTheme.rounded(this@IttcLeadActivity, p.surface, 16f), p.text)
                     view.setTextColor(p.text)
                 }
                 val d = resources.getColoredDrawableWithColor(icon, color)
                 val size = dpf(22f)
                 d.setBounds(0, 0, size, size)
                 view.setCompoundDrawablesRelative(null, d, null, null)
-                touchFeedback(view)
             }
-            touchFeedback(ittcLeadChangeStage)
+            ittcLeadChangeStage.background = IttcTheme.pressable(
+                this@IttcLeadActivity, IttcTheme.rounded(this@IttcLeadActivity, p.surface, 999f, p.outline), p.primary,
+            )
         }
     }
 
@@ -489,14 +517,21 @@ class IttcLeadActivity : SimpleActivity() {
         val mark: View = if (state == STEP_DONE) {
             ImageView(context).apply {
                 setImageResource(R.drawable.ic_check_vector)
-                setColorFilter(Color.WHITE)
+                setColorFilter(if (p.dark) p.onPrimary else Color.WHITE)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 setPadding(dpf(4f), dpf(4f), dpf(4f), dpf(4f))
                 background = oval(done, 0, 0f)
             }
         } else if (state == STEP_CURRENT) {
-            View(context).apply { background = oval(color ?: strong, soft, 4f) }
+            View(context).apply {
+                background = oval(color ?: strong, soft, 4f)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
         } else {
-            View(context).apply { background = oval(p.surface, p.outline, 2f) }
+            View(context).apply {
+                background = oval(p.surface, p.outline, 2f)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
         }
         dot.addView(mark, FrameLayout.LayoutParams(size, size, Gravity.CENTER))
         addView(dot, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dpf(30f)))
@@ -624,11 +659,11 @@ class IttcLeadActivity : SimpleActivity() {
                     setPadding(dp(14), 0, dp(14), 0)
                     gravity = Gravity.CENTER
                     maxLines = 1
-                    IttcTheme.pill(this, p.surface, p.text, p.outline)
-                    touchFeedback(this)
+                    setTextColor(p.text)
+                    background = IttcTheme.pressable(context, IttcTheme.rounded(context, p.surface, 999f, p.outline), p.text)
                     setOnClickListener { action() }
                 },
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)).apply { marginEnd = dp(8) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, resources.getDimensionPixelSize(R.dimen.ittc_touch)).apply { marginEnd = dp(8) },
             )
         }
     }
@@ -679,6 +714,9 @@ class IttcLeadActivity : SimpleActivity() {
     // ------------------------------------------------------------------
     private class Item(val at: Long, val by: String?, val text: String, val note: String?, val kind: Int)
 
+    /** The timeline's icon colours (the stage colours read once per timeline) */
+    private class Looks(val amber: Pair<Int, Int>, val purple: Pair<Int, Int>, val green: Pair<Int, Int>)
+
     private fun renderTimeline(l: JSONObject) {
         val list = binding.ittcLeadTimeline
         list.removeAllViews()
@@ -725,7 +763,10 @@ class IttcLeadActivity : SimpleActivity() {
             })
             return
         }
-        val me = myName()
+        val me = myNameOnce()
+        val looks = Looks(
+            IttcTheme.stageColors(this, "interested"), IttcTheme.stageColors(this, "visit"), IttcTheme.stageColors(this, "admitted"),
+        )
         var lastDay: String? = null
         items.forEach { item ->
             val day = dayHead(item.at)
@@ -733,7 +774,7 @@ class IttcLeadActivity : SimpleActivity() {
                 list.addView(sectionHead(day))
                 lastDay = day
             }
-            list.addView(card(item, me), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            list.addView(card(item, me, looks), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dp(8)
             })
         }
@@ -758,10 +799,10 @@ class IttcLeadActivity : SimpleActivity() {
     }
 
     /** (icon, its colour, the circle's colour) for a kind */
-    private fun look(kind: Int): Triple<Int, Int, Int> {
-        val (amberBg, amber) = IttcTheme.stageColors(this, "interested")
-        val (purpleBg, purple) = IttcTheme.stageColors(this, "visit")
-        val (greenBg, green) = IttcTheme.stageColors(this, "admitted")
+    private fun look(kind: Int, looks: Looks): Triple<Int, Int, Int> {
+        val (amberBg, amber) = looks.amber
+        val (purpleBg, purple) = looks.purple
+        val (greenBg, green) = looks.green
         return when (kind) {
             K_CALL_OK -> Triple(R.drawable.ic_call_made_vector, p.call, p.callSoft)
             K_CALL_MISSED -> Triple(R.drawable.ic_call_missed_vector, p.danger, p.dangerSoft)
@@ -790,14 +831,15 @@ class IttcLeadActivity : SimpleActivity() {
         else -> K_OTHER
     }
 
-    private fun card(item: Item, me: String?): LinearLayout = LinearLayout(this).apply {
+    private fun card(item: Item, me: String?, looks: Looks): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        background = IttcTheme.rounded(context, p.surface, 14f)
+        background = IttcTheme.rounded(context, p.surface, 16f)
         setPadding(dp(12), dp(12), dp(12), dp(12))
-        val (icon, fg, bg) = look(item.kind)
+        val (icon, fg, bg) = look(item.kind, looks)
         addView(ImageView(context).apply {
             setImageResource(icon)
             setColorFilter(fg)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             setPadding(dp(8), dp(8), dp(8), dp(8))
             background = oval(bg, 0, 0f)
         }, LinearLayout.LayoutParams(dp(32), dp(32)))
@@ -819,7 +861,7 @@ class IttcLeadActivity : SimpleActivity() {
             }
             addView(TextView(context).apply {
                 text = listOfNotNull(DateUtils.formatDateTime(context, item.at, DateUtils.FORMAT_SHOW_TIME), byName(item.by, me)).joinToString(" · ")
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 setTextColor(p.muted)
                 setPadding(0, dp(3), 0, 0)
             })
@@ -931,13 +973,25 @@ class IttcLeadActivity : SimpleActivity() {
     private fun showTemplates() {
         if (lead == null) return
         if (!signedIn) return toast(R.string.ittc_lp_not_signed_in)
+        // (one fetch at a time: a second tap while it runs opens nothing twice)
+        if (templatesLoading) return
+        templatesLoading = true
+        toast(R.string.ittc_lp_loading)
         ensureBackgroundThread {
             val result = try {
                 Triple(IttcLeadApi.templates(this), IttcLeadApi.institute(this), null as String?)
             } catch (e: Throwable) {
-                Triple(null, null, if (e is IttcApi.ApiError && e.status == 0) getString(R.string.ittc_lp_offline) else e.message ?: "")
+                Triple(
+                    null, null,
+                    when {
+                        e is IttcApi.ApiError && e.status == 0 -> getString(R.string.ittc_lp_offline)
+                        e is IttcApi.ApiError -> e.message ?: ""
+                        else -> ""
+                    },
+                )
             }
             runOnUiThread {
+                templatesLoading = false
                 if (!alive()) return@runOnUiThread
                 val (list, institute, error) = result
                 if (list == null) {
@@ -1060,6 +1114,15 @@ class IttcLeadActivity : SimpleActivity() {
     // ------------------------------------------------------------------
     private fun myName() = IttcDirect.me(this)?.optString("name")?.takeIf { it.isNotBlank() && it != "null" }
 
+    /** [myName], read once per load (the timeline asks for it on every draw) */
+    private fun myNameOnce(): String? {
+        if (!meNameRead) {
+            meName = myName()
+            meNameRead = true
+        }
+        return meName
+    }
+
     /** Queue a change for this lead; [optimistic] shows it now (the lead is read again soon) */
     private fun queue(item: JSONObject, quiet: Boolean = false, optimistic: (JSONObject) -> Unit) {
         IttcDisclosure.showOnce(this) {
@@ -1079,6 +1142,7 @@ class IttcLeadActivity : SimpleActivity() {
                         return@runOnUiThread
                     }
                     queuedHere = true
+                    shownDetail = null
                     lead?.let {
                         try {
                             optimistic(it)
@@ -1351,18 +1415,12 @@ class IttcLeadActivity : SimpleActivity() {
         val pad = dp(12)
         setPadding(pad, pad * 3 / 4, pad, pad * 3 / 4)
         gravity = Gravity.CENTER
-        if (on) IttcTheme.pill(this, p.primary, p.onPrimary) else IttcTheme.pill(this, p.surfaceAlt, p.text)
+        val (bg, fg) = if (on) p.primary to p.onPrimary else p.surfaceAlt to p.text
+        setTextColor(fg)
+        // (a ripple inside the pill's own round corners when pressed)
+        background = IttcTheme.pressable(context, IttcTheme.rounded(context, bg, 999f), fg)
         maxLines = 2
-        touchFeedback(this)
         setOnClickListener { onClick() }
-    }
-
-    /** The system's touch ripple over a view with its own background */
-    private fun touchFeedback(view: View) {
-        try {
-            view.foreground = androidx.core.content.ContextCompat.getDrawable(this, ripple())
-        } catch (_: Throwable) {
-        }
     }
 
     private fun ripple(): Int {

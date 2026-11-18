@@ -70,41 +70,57 @@
                 android:text="@string/ittc_about_tagline"
                 android:textSize="@dimen/bigger_text_size" />
 
-            <org.fossify.commons.views.MyTextView
-                android:id="@+id/ittc_about_update"
-                style="@style/IttcAboutRow"
-                android:layout_marginTop="@dimen/activity_margin"
-                android:text="@string/ittc_about_update" />
-
-            <org.fossify.commons.views.MyTextView
-                android:id="@+id/ittc_about_tracker"
-                style="@style/IttcAboutRow"
-                android:text="@string/ittc_about_tracker" />
-
+            <!-- what is kept private (a note, not a link) -->
             <org.fossify.commons.views.MyTextView
                 android:id="@+id/ittc_about_privacy"
-                style="@style/IttcAboutRow"
-                android:text="@string/ittc_about_privacy" />
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/activity_margin"
+                android:alpha="0.8"
+                android:gravity="center_horizontal"
+                android:text="@string/ittc_about_privacy"
+                android:textSize="@dimen/normal_text_size" />
 
-            <org.fossify.commons.views.MyTextView
-                android:id="@+id/ittc_about_policy"
-                style="@style/IttcAboutRow"
-                android:text="@string/ittc_about_policy" />
+            <!-- the links, in one card (its colour set in code) -->
+            <LinearLayout
+                android:id="@+id/ittc_about_links"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/activity_margin"
+                android:orientation="vertical"
+                android:paddingTop="@dimen/ittc_space_xs"
+                android:paddingBottom="@dimen/ittc_space_xs">
 
-            <org.fossify.commons.views.MyTextView
-                android:id="@+id/ittc_about_source"
-                style="@style/IttcAboutRow"
-                android:text="@string/ittc_about_source" />
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_about_update"
+                    style="@style/IttcAboutRow"
+                    android:text="@string/ittc_about_update" />
 
-            <org.fossify.commons.views.MyTextView
-                android:id="@+id/ittc_about_licence"
-                style="@style/IttcAboutRow"
-                android:text="@string/ittc_about_licence" />
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_about_tracker"
+                    style="@style/IttcAboutRow"
+                    android:text="@string/ittc_about_tracker" />
 
-            <org.fossify.commons.views.MyTextView
-                android:id="@+id/ittc_about_libraries"
-                style="@style/IttcAboutRow"
-                android:text="@string/ittc_about_libraries" />
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_about_policy"
+                    style="@style/IttcAboutRow"
+                    android:text="@string/ittc_about_policy" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_about_source"
+                    style="@style/IttcAboutRow"
+                    android:text="@string/ittc_about_source" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_about_licence"
+                    style="@style/IttcAboutRow"
+                    android:text="@string/ittc_about_licence" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/ittc_about_libraries"
+                    style="@style/IttcAboutRow"
+                    android:text="@string/ittc_about_libraries" />
+            </LinearLayout>
 
             <!-- (the GPL's "appropriate legal notices": the original authors and the licence stay credited) -->
             <org.fossify.commons.views.MyTextView

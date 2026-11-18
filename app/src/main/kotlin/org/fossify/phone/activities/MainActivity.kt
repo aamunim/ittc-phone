@@ -66,6 +66,8 @@ class MainActivity : SimpleActivity() {
     private var storedFontSize = 0
     private var storedStartNameWithSurname = false
     var cachedContacts = ArrayList<Contact>()
+    /** Goes up each time cachedContacts is filled again (Recents drops its per-row contact matches then) */
+    var cachedContactsVersion = 0
 
     // 🎓 ITTC 3.6: the dial pad on the main screen; the contacts it searches (a list never changed
     // after it is set, safe to read off the main thread); a tab change counts only after a touch
@@ -136,6 +138,7 @@ class MainActivity : SimpleActivity() {
         setupTabs()
         Contact.sorting = config.sorting
         setupIttcDialpad(savedInstanceState)
+        storedFontSize = config.fontSize
     }
 
     override fun onResume() {
@@ -214,6 +217,7 @@ class MainActivity : SimpleActivity() {
             }
         }
         storedShowTabs = config.showTabs
+        storedFontSize = config.fontSize
         storedStartNameWithSurname = config.startNameWithSurname
         config.lastUsedViewPagerPage = binding.viewPager.currentItem
     }
@@ -445,8 +449,20 @@ class MainActivity : SimpleActivity() {
             setTextColor(color)
             setTypeface(null, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
-        view.findViewById<View>(R.id.ittc_tab_pill)?.background =
-            if (active) org.fossify.phone.helpers.IttcTheme.rounded(this, accent.adjustAlpha(0.16f), 999f) else null
+        view.findViewById<View>(R.id.ittc_tab_pill)?.background = if (active) ittcTabPill(accent.adjustAlpha(0.16f)) else null
+    }
+
+    // 🎓 ITTC: the chosen tab's pill, made once per colour (only one tab shows it at a time)
+    private var ittcTabPillDrawable: android.graphics.drawable.GradientDrawable? = null
+    private var ittcTabPillColor = 0
+
+    private fun ittcTabPill(color: Int): android.graphics.drawable.GradientDrawable {
+        val cached = ittcTabPillDrawable
+        if (cached != null && ittcTabPillColor == color) return cached
+        return org.fossify.phone.helpers.IttcTheme.rounded(this, color, 999f).also {
+            ittcTabPillDrawable = it
+            ittcTabPillColor = color
+        }
     }
 
     private fun getInactiveTabIndexes(activeIndex: Int) = (0 until binding.mainTabsHolder.tabCount).filter { it != activeIndex }
@@ -902,6 +918,7 @@ class MainActivity : SimpleActivity() {
             try {
                 cachedContacts.clear()
                 cachedContacts.addAll(contacts)
+                cachedContactsVersion++
             } catch (ignored: Exception) {
             }
             // 🎓 ITTC 3.6: for the dial pad's search (its own copy, never changed after)

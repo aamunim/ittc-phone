@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
+import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -66,12 +67,15 @@ object IttcLeadExtras {
         val app = activity.applicationContext
         ensureBackgroundThread {
             val result: Any = try {
+                // (the visits and the fee talks are read alongside the lead, not after it)
+                val visits = alongside { IttcVisitFeeApi.visits(app, leadId) }
+                val negotiations = alongside { IttcVisitFeeApi.negotiations(app, leadId) }
                 val info = IttcVisitFeeApi.leadInfo(app, leadId) ?: throw IttcApi.ApiError(404, activity.getString(R.string.ittc_c_lead_not_found))
                 Loaded(
                     info = info,
-                    visits = IttcVisitFeeApi.visits(app, leadId),
+                    visits = visits(),
                     visitSetting = IttcVisitFeeApi.visitSetting(app),
-                    negotiations = IttcVisitFeeApi.negotiations(app, leadId),
+                    negotiations = negotiations(),
                     feesAllowed = IttcVisitFeeApi.canUseFees(app),
                 )
             } catch (t: Throwable) {
@@ -91,6 +95,26 @@ object IttcLeadExtras {
                 } catch (_: Throwable) {
                 }
             }
+        }
+    }
+
+    /**
+     * Start [work] on its own thread now; the returned function waits for it and gives its answer
+     * (or throws its failure, as if it had run here).
+     */
+    private fun <T> alongside(work: () -> T): () -> T {
+        var outcome: Result<T>? = null
+        val thread = Thread {
+            outcome = try {
+                Result.success(work())
+            } catch (t: Throwable) {
+                Result.failure(t)
+            }
+        }
+        thread.start()
+        return {
+            thread.join()
+            outcome!!.getOrThrow()
         }
     }
 
@@ -284,19 +308,8 @@ internal object IttcCUi {
             minHeight = dp(c, 44)
             setPadding(dp(c, 14), dp(c, 8), dp(c, 14), dp(c, 8))
             maxLines = 2
-            when (style) {
-                Style.PRIMARY -> IttcTheme.button(this, p.primary, p.onPrimary)
-                Style.CALL -> IttcTheme.button(this, p.call, if (p.dark) p.onPrimary else Color.WHITE)
-                Style.DANGER -> IttcTheme.button(this, p.dangerSoft, p.danger)
-                Style.OUTLINE -> {
-                    background = IttcTheme.rounded(c, p.surface, 999f, p.outline)
-                    setTextColor(p.primary)
-                }
-                Style.GHOST -> {
-                    background = null
-                    setTextColor(p.muted)
-                }
-            }
+            ellipsize = TextUtils.TruncateAt.END
+            setStyle(this, style)
             isClickable = true
             isFocusable = true
             setOnClickListener {
@@ -307,21 +320,59 @@ internal object IttcCUi {
         }
     }
 
+    /** A [button]'s colours for [style] (also to change it in place) */
+    fun setStyle(v: TextView, style: Style) {
+        val c = v.context
+        val p = IttcTheme.of(c)
+        when (style) {
+            Style.PRIMARY -> IttcTheme.button(v, p.primary, p.onPrimary)
+            Style.CALL -> IttcTheme.button(v, p.call, if (p.dark) p.onPrimary else Color.WHITE)
+            Style.DANGER -> IttcTheme.button(v, p.dangerSoft, p.danger)
+            Style.OUTLINE -> {
+                v.background = IttcTheme.pressable(c, IttcTheme.rounded(c, p.surface, 999f, p.outline), p.primary)
+                v.setTextColor(p.primary)
+            }
+            Style.GHOST -> {
+                v.background = null
+                v.setTextColor(p.muted)
+            }
+        }
+    }
+
+    /** While a request runs: faded, not tappable, "Saving…" (its own label back after) */
     fun setBusy(v: TextView, busy: Boolean) {
         v.isEnabled = !busy
         v.alpha = if (busy) 0.5f else 1f
+        if (busy) {
+            if (v.getTag(R.id.ittc_c_busy_label) == null) v.setTag(R.id.ittc_c_busy_label, v.text)
+            v.text = v.context.getString(R.string.ittc_d_saving)
+        } else {
+            (v.getTag(R.id.ittc_c_busy_label) as? CharSequence)?.let { v.text = it }
+            v.setTag(R.id.ittc_c_busy_label, null)
+        }
     }
 
     /** A choice chip (on: filled primary) */
     fun chip(c: Context, label: String, on: Boolean, onClick: () -> Unit): TextView {
-        val p = IttcTheme.of(c)
-        return text(c, label, 13f, if (on) p.onPrimary else p.text, bold = on).apply {
+        return text(c, label, 13f, IttcTheme.of(c).text).apply {
             gravity = Gravity.CENTER
-            minHeight = dp(c, 40)
+            minHeight = c.resources.getDimensionPixelSize(R.dimen.ittc_touch)
             setPadding(dp(c, 14), dp(c, 6), dp(c, 14), dp(c, 6))
-            background = if (on) IttcTheme.rounded(c, p.primary, 999f) else IttcTheme.rounded(c, p.surface, 999f, p.outline)
+            setChipOn(this, on)
             setOnClickListener { onClick() }
         }
+    }
+
+    /** A [chip]'s look for on / off (also to change it in place, without drawing the sheet again) */
+    fun setChipOn(v: TextView, on: Boolean) {
+        val c = v.context
+        val p = IttcTheme.of(c)
+        val fg = if (on) p.onPrimary else p.text
+        v.setTextColor(fg)
+        v.setTypeface(Typeface.create(v.typeface, if (on) Typeface.BOLD else Typeface.NORMAL))
+        val shape = if (on) IttcTheme.rounded(c, p.primary, 999f) else IttcTheme.rounded(c, p.surface, 999f, p.outline)
+        v.background = IttcTheme.pressable(c, shape, fg)
+        v.isSelected = on
     }
 
     /** Chips that wrap: a horizontal scroller (simple and light) */
@@ -342,9 +393,10 @@ internal object IttcCUi {
             setTextColor(p.text)
             setHintTextColor(p.muted)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            // (the same field as IttcDUi.input: filled, 48 dp, the same padding)
             background = IttcTheme.rounded(c, p.surfaceAlt, 12f, p.outline)
-            setPadding(dp(c, 14), dp(c, 10), dp(c, 14), dp(c, 10))
-            minHeight = dp(c, 44)
+            setPadding(dp(c, 14), dp(c, 12), dp(c, 14), dp(c, 12))
+            minHeight = dp(c, 48)
             if (lines > 1) {
                 minLines = lines
                 maxLines = 6
@@ -363,14 +415,20 @@ internal object IttcCUi {
         val p = IttcTheme.of(c)
         return card(c).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(ProgressBar(c).apply { isIndeterminate = true }, LinearLayout.LayoutParams(dp(c, 28), dp(c, 28)))
+            addView(spinner(c), LinearLayout.LayoutParams(dp(c, 28), dp(c, 28)))
             addView(text(c, c.getString(R.string.ittc_c_loading), 13f, p.muted).apply { gravity = Gravity.CENTER }, topMargin(c, 6))
         }
     }
 
+    /** An indeterminate spinner in the accent colour (size it 28 dp where it is added) */
+    fun spinner(c: Context): ProgressBar = ProgressBar(c).apply {
+        isIndeterminate = true
+        indeterminateTintList = IttcTheme.tint(IttcTheme.of(c).primary)
+    }
+
     fun section(c: Context, label: String): TextView {
         val p = IttcTheme.of(c)
-        return text(c, label.uppercase(Locale.ENGLISH), 12f, p.muted, bold = true).apply { letterSpacing = 0.06f }
+        return text(c, label.uppercase(Locale.ENGLISH), 12f, p.muted, bold = true).apply { letterSpacing = 0.04f }
     }
 
     fun divider(c: Context): View = View(c).apply {
@@ -442,10 +500,10 @@ internal object IttcCUi {
             .apply { activity.setupDialogStuff(view, this, titleText = title) { _: AlertDialog -> } }
     }
 
-    /** The readable message of a failure (the server's own words) */
+    /** The readable message of a failure (the server's own words; never another failure's raw text) */
     fun errorText(c: Context, t: Throwable): String = when {
         t is IttcApi.ApiError && t.status == 0 -> c.getString(R.string.ittc_c_no_internet)
-        !t.message.isNullOrBlank() -> t.message!!
+        t is IttcApi.ApiError && !t.message.isNullOrBlank() -> t.message!!
         else -> c.getString(R.string.ittc_c_failed)
     }
 

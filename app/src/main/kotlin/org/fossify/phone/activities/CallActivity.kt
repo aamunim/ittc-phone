@@ -204,16 +204,16 @@ class CallActivity : SimpleActivity() {
         }
 
         dialpadInclude.apply {
-            dialpad0Holder.setOnClickListener { dialpadPressed('0') }
-            dialpad1Holder.setOnClickListener { dialpadPressed('1') }
-            dialpad2Holder.setOnClickListener { dialpadPressed('2') }
-            dialpad3Holder.setOnClickListener { dialpadPressed('3') }
-            dialpad4Holder.setOnClickListener { dialpadPressed('4') }
-            dialpad5Holder.setOnClickListener { dialpadPressed('5') }
-            dialpad6Holder.setOnClickListener { dialpadPressed('6') }
-            dialpad7Holder.setOnClickListener { dialpadPressed('7') }
-            dialpad8Holder.setOnClickListener { dialpadPressed('8') }
-            dialpad9Holder.setOnClickListener { dialpadPressed('9') }
+            dialpad0Holder.setOnClickListener { dialpadPressed('0', it) }
+            dialpad1Holder.setOnClickListener { dialpadPressed('1', it) }
+            dialpad2Holder.setOnClickListener { dialpadPressed('2', it) }
+            dialpad3Holder.setOnClickListener { dialpadPressed('3', it) }
+            dialpad4Holder.setOnClickListener { dialpadPressed('4', it) }
+            dialpad5Holder.setOnClickListener { dialpadPressed('5', it) }
+            dialpad6Holder.setOnClickListener { dialpadPressed('6', it) }
+            dialpad7Holder.setOnClickListener { dialpadPressed('7', it) }
+            dialpad8Holder.setOnClickListener { dialpadPressed('8', it) }
+            dialpad9Holder.setOnClickListener { dialpadPressed('9', it) }
 
             arrayOf(
                 dialpad0Holder,
@@ -235,8 +235,8 @@ class CallActivity : SimpleActivity() {
             }
 
             dialpad0Holder.setOnLongClickListener { dialpadPressed('+'); true }
-            dialpadAsteriskHolder.setOnClickListener { dialpadPressed('*') }
-            dialpadHashtagHolder.setOnClickListener { dialpadPressed('#') }
+            dialpadAsteriskHolder.setOnClickListener { dialpadPressed('*', it) }
+            dialpadHashtagHolder.setOnClickListener { dialpadPressed('#', it) }
             dialpadClearChar.setOnClickListener { clearChar(it) }
             dialpadClearChar.setOnLongClickListener { clearInput() }
         }
@@ -444,9 +444,11 @@ class CallActivity : SimpleActivity() {
         }
     }
 
-    private fun dialpadPressed(char: Char) {
+    private fun dialpadPressed(char: Char, view: View? = null) {
         CallManager.keypad(char)
         binding.dialpadInput.addCharacter(char)
+        // (the key's buzz, as the dial pads give it: the "vibrate on key press" setting)
+        if (view != null && config.dialpadVibration) view.performHapticFeedback()
     }
 
     private fun changeCallAudioRoute() {
@@ -598,6 +600,8 @@ class CallActivity : SimpleActivity() {
             callerNameLabel.text = name.ifEmpty { getString(R.string.unknown_caller) }
             if (number.isNotEmpty() && number != name) {
                 callerNumber.text = number
+                // (shown again: an earlier update — e.g. a conference — may have hidden it)
+                callerNumber.beVisible()
 
                 if (numberLabel.isNotEmpty()) {
                     callerNumber.text = "$number - $numberLabel"

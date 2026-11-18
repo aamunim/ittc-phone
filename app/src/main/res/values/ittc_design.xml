@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 🎨 ITTC Phone 3.3 design tokens (light; dark in values-night/ittc_design.xml). Every ITTC screen
-     takes its colours, radii and spacing from here. -->
+<!-- 🎨 ITTC Phone 3.3 design tokens (light only: there is no values-night; dark colours live in code,
+     IttcTheme.DARK, picked from the app's own theme). Every ITTC screen takes its radii and spacing from here. -->
 <resources>
     <color name="ittc_primary">#1E5AA8</color>
     <color name="ittc_primary_soft">#E3EDFB</color>

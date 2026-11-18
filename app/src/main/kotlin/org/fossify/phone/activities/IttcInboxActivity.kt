@@ -4,7 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -40,6 +42,10 @@ class IttcInboxActivity : SimpleActivity() {
     private var items: List<Item> = emptyList()
     @Volatile private var loading = 0
     private val notifyHold = IttcNotify.ScreenHold()
+    /** When the list last came from the server (elapsedRealtime; 0: never): a quick return reads nothing again */
+    private var loadedAt = 0L
+    /** "3 Nov" (the main thread only) */
+    private val dayFormat = SimpleDateFormat("d MMM", Locale.ENGLISH)
 
     private class Item(
         val id: String,
@@ -62,7 +68,9 @@ class IttcInboxActivity : SimpleActivity() {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
         val p = IttcTheme.of(this)
+        adapter.p = p
         binding.apply {
+            ittcCInboxProgress.indeterminateTintList = IttcTheme.tint(p.primary)
             setupEdgeToEdge(padBottomSystem = listOf(ittcCInboxList))
             setupMaterialScrollListener(ittcCInboxList, ittcCInboxAppbar)
             ittcCInboxHolder.setBackgroundColor(p.bg)
@@ -78,8 +86,11 @@ class IttcInboxActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.ittcCInboxAppbar, NavigationIcon.Arrow)
-        IttcNotify.clearPosted(this)
         notifyHold.resume(this)
+        // (back within 20 s, e.g. from a lead it opened: the list on screen is fresh enough; nothing is
+        // cleared from the shade then, so a notification that came meanwhile isn't lost)
+        if (loadedAt > 0 && SystemClock.elapsedRealtime() - loadedAt < 20_000) return
+        IttcNotify.clearPosted(this)
         load()
     }
 
@@ -112,6 +123,7 @@ class IttcInboxActivity : SimpleActivity() {
                 binding.ittcCInboxProgress.visibility = View.GONE
                 if (list != null) {
                     items = list
+                    loadedAt = SystemClock.elapsedRealtime()
                     // (the badge follows what the list says, up to 100)
                     ensureBackgroundThread { IttcNotify.setUnread(app, list.count { !it.read }) }
                 }
@@ -139,6 +151,14 @@ class IttcInboxActivity : SimpleActivity() {
 
     private fun showList(empty: String?) {
         adapter.notifyDataSetChanged()
+        val unread = showSummary()
+        binding.ittcCInboxEmpty.text = empty.orEmpty()
+        binding.ittcCInboxEmpty.visibility = if (items.isEmpty() && !empty.isNullOrEmpty()) View.VISIBLE else View.GONE
+        if (items.isNotEmpty() && empty != null) toast(empty)
+    }
+
+    /** The "2 unread" line and Mark all read; returns the unread count */
+    private fun showSummary(): Int {
         val unread = items.count { !it.read }
         binding.ittcCInboxSummary.text = when {
             items.isEmpty() -> ""
@@ -146,16 +166,17 @@ class IttcInboxActivity : SimpleActivity() {
             else -> resources.getQuantityString(R.plurals.ittc_c_inbox_unread, unread, unread)
         }
         binding.ittcCInboxMarkAll.visibility = if (unread > 0) View.VISIBLE else View.GONE
-        binding.ittcCInboxEmpty.text = empty.orEmpty()
-        binding.ittcCInboxEmpty.visibility = if (items.isEmpty() && !empty.isNullOrEmpty()) View.VISIBLE else View.GONE
-        if (items.isNotEmpty() && empty != null) toast(empty)
+        return unread
     }
 
     // ------------------------------------------------------------------ read
-    private fun tapped(item: Item) {
+    private fun tapped(index: Int) {
+        val item = items.getOrNull(index) ?: return
         if (!item.read) {
             item.read = true
-            showList(null)
+            // (only this row and the summary line: not the whole list)
+            adapter.notifyItemChanged(index)
+            showSummary()
             val app = applicationContext
             ensureBackgroundThread {
                 try {
@@ -198,15 +219,21 @@ class IttcInboxActivity : SimpleActivity() {
     }
 
     // ------------------------------------------------------------------ rows
-    private class Holder(val root: LinearLayout, val icon: TextView, val title: TextView, val body: TextView, val time: TextView, val dot: View) :
-        RecyclerView.ViewHolder(root)
+    private class Holder(
+        val root: LinearLayout, val icon: TextView, val title: TextView, val body: TextView, val time: TextView, val dot: View,
+        /** The row's two looks, made once per row (a ripple inside the card's corners when pressed) */
+        val readBg: Drawable, val unreadBg: Drawable,
+    ) : RecyclerView.ViewHolder(root)
 
     private inner class Adapter : RecyclerView.Adapter<Holder>() {
+        /** The palette (set in onCreate, before the list is shown) */
+        lateinit var p: IttcTheme.Palette
+
         override fun getItemCount() = items.size
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
             val c = parent.context
-            val p = IttcTheme.of(c)
+            val p = this.p
             val root = LinearLayout(c).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.TOP
@@ -236,13 +263,20 @@ class IttcInboxActivity : SimpleActivity() {
             val body = IttcCUi.text(c, "", 13f, p.text2).apply { maxLines = 4 }
             col.addView(body, IttcCUi.topMargin(c, 2))
             root.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            return Holder(root, icon, title, body, time, dot)
+            val holder = Holder(
+                root, icon, title, body, time, dot,
+                readBg = IttcTheme.pressable(c, IttcTheme.rounded(c, p.surface, 16f), p.text),
+                unreadBg = IttcTheme.pressable(c, IttcTheme.rounded(c, p.primarySoft, 16f), p.primary),
+            )
+            root.setOnClickListener {
+                val at = holder.adapterPosition
+                if (at != RecyclerView.NO_POSITION) tapped(at)
+            }
+            return holder
         }
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val item = items[position]
-            val c = holder.root.context
-            val p = IttcTheme.of(c)
             holder.icon.text = iconOf(item.kind)
             holder.title.text = item.title
             holder.title.setTypeface(null, if (item.read) Typeface.NORMAL else Typeface.BOLD)
@@ -252,8 +286,7 @@ class IttcInboxActivity : SimpleActivity() {
             holder.time.text = ago(item.createdAt)
             holder.dot.visibility = if (item.read) View.GONE else View.VISIBLE
             // (unread: a soft blue card; read: the plain surface)
-            holder.root.background = IttcTheme.rounded(c, if (item.read) p.surface else p.primarySoft, 16f)
-            holder.root.setOnClickListener { tapped(item) }
+            holder.root.background = if (item.read) holder.readBg else holder.unreadBg
         }
     }
 
@@ -289,7 +322,7 @@ class IttcInboxActivity : SimpleActivity() {
             min < 60 -> getString(R.string.ittc_c_min_ago, min.toInt())
             min < 24 * 60 && android.text.format.DateUtils.isToday(at) -> getString(R.string.ittc_c_hours_ago, (min / 60).toInt())
             android.text.format.DateUtils.isToday(at + 24 * 3600_000L) -> getString(R.string.ittc_c_yesterday)
-            else -> SimpleDateFormat("d MMM", Locale.ENGLISH).format(Date(at))
+            else -> dayFormat.format(Date(at))
         }
     }
 

@@ -134,7 +134,7 @@ class IttcAdmitActivity : SimpleActivity() {
             runOnUiThread {
                 if (!alive()) return@runOnUiThread
                 holder.removeAllViews()
-                r.onFailure { e -> message(IttcAdmitApi.errorText(e, getString(R.string.ittc_d_could_not_load)), retry = true) }
+                r.onFailure { e -> message(IttcAdmitApi.errorText(this@IttcAdmitActivity, e, getString(R.string.ittc_d_could_not_load)), retry = true) }
                 r.onSuccess { list ->
                     @Suppress("UNCHECKED_CAST")
                     val l = list[0] as IttcAdmitApi.LeadState?
@@ -453,6 +453,16 @@ class IttcAdmitActivity : SimpleActivity() {
             )
             toggle.minHeight = IttcTheme.dp(this, 44f)
             toggle.gravity = Gravity.CENTER_VERTICAL
+            toggle.isSelected = payNow
+            // (the box glyph is read as "selected", not as a symbol)
+            toggle.contentDescription = getString(R.string.ittc_d_pay_now) + if (min > 0) getString(R.string.ittc_d_pay_least, IttcAdmitApi.money(min)) else ""
+            if (min > 0) {
+                // (a first payment is required: it can't be switched off, and looks so)
+                toggle.isEnabled = false
+                toggle.alpha = 0.6f
+            } else {
+                toggle.background = IttcTheme.pressable(this, IttcTheme.rounded(this, p.surfaceAlt, 12f), p.text)
+            }
             toggle.setOnClickListener {
                 if (min == 0.0 && !saving) {
                     payNow = !payNow
@@ -651,12 +661,12 @@ class IttcAdmitActivity : SimpleActivity() {
                             }
                             if (paid == null) payError = getString(R.string.ittc_d_pay_not_confirmed)
                         } else {
-                            payError = IttcAdmitApi.errorText(e, getString(R.string.ittc_d_could_not_save))
+                            payError = IttcAdmitApi.errorText(this@IttcAdmitActivity, e, getString(R.string.ittc_d_could_not_save))
                         }
                     }
                 }
             } catch (e: Throwable) {
-                error = IttcAdmitApi.errorText(e, getString(R.string.ittc_d_could_not_save_admission))
+                error = IttcAdmitApi.errorText(this@IttcAdmitActivity, e, getString(R.string.ittc_d_could_not_save_admission))
             }
             runOnUiThread {
                 if (!alive()) return@runOnUiThread
@@ -693,9 +703,12 @@ class IttcAdmitActivity : SimpleActivity() {
         }
         if (paid != null) {
             card.addView(IttcDUi.text(this, getString(R.string.ittc_d_received_receipt, IttcAdmitApi.money(amount), paid.receiptNo), 14f, p.call, bold = true).apply { gravity = Gravity.CENTER }, IttcDUi.lp(this, top = 10f))
-            card.addView(IttcDUi.button(this, getString(R.string.ittc_d_share_receipt), IttcDUi.Btn.CALL) {
-                IttcReceipt.shareById(this, leadId, paid.id, paid.receiptNo)
-            }, IttcDUi.lp(this, top = 10f))
+            lateinit var share: View
+            share = IttcDUi.button(this, getString(R.string.ittc_d_share_receipt), IttcDUi.Btn.CALL) {
+                // (dimmed while the receipt is made; a second tap meanwhile does nothing)
+                IttcReceipt.shareById(this, leadId, paid.id, paid.receiptNo, share)
+            }
+            card.addView(share, IttcDUi.lp(this, top = 10f))
         }
         payError?.let {
             card.addView(IttcDUi.text(this, getString(R.string.ittc_d_admitted_pay_failed, it), 13f, p.danger).apply { gravity = Gravity.CENTER }, IttcDUi.lp(this, top = 10f))

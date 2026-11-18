@@ -40,6 +40,7 @@ import org.fossify.phone.helpers.IttcRecentsCache
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcUi
 import org.fossify.phone.interfaces.RefreshItemsListener
 import org.fossify.phone.models.CallLogItem
 import org.fossify.phone.models.RecentCall
@@ -107,6 +108,11 @@ class RecentsFragment(
             }
         }
         renderKindChips()
+        // 🎓 ITTC: the system's pressed ripple over the pills
+        kindChips().forEach { (_, chip) -> IttcUi.ripple(chip) }
+        IttcUi.ripple(binding.ittcRecentsLeadsOnly)
+        // (the list fills the page whatever it holds: a change in the rows never re-measures the page)
+        binding.recentsList.setHasFixedSize(true)
 
         val placeholderResId = if (context.hasPermission(PERMISSION_READ_CALL_LOG)) {
             R.string.no_previous_calls
@@ -137,6 +143,8 @@ class RecentsFragment(
         recentsAdapter?.apply {
             updateTextColor(textColor)
             initDrawables()
+            // rows on screen again with the new colours / settings / lead stages (no change animation here)
+            notifyItemRangeChanged(0, itemCount)
         }
     }
 
@@ -247,11 +255,8 @@ class RecentsFragment(
     }
 
     private fun showOrHidePlaceholder(show: Boolean) {
-        if (show && !binding.progressIndicator.isVisible()) {
-            binding.recentsPlaceholder.beVisible()
-        } else {
-            binding.recentsPlaceholder.beGone()
-        }
+        // 🎓 ITTC: fades in (to the layout's 0.8) instead of popping up
+        IttcUi.fadeIf(binding.recentsPlaceholder, show && !binding.progressIndicator.isVisible(), 0.8f)
     }
 
     private fun gotRecents(recents: List<CallLogItem>) {
@@ -388,7 +393,8 @@ class RecentsFragment(
     private fun maybeFilterPrivateCalls(calls: List<RecentCall>, privateContacts: List<Contact>): List<RecentCall> {
         val ignoredSources = context.baseConfig.ignoredContactSources
         return if (SMT_PRIVATE in ignoredSources) {
-            val privateNumbers = privateContacts.flatMap { it.phoneNumbers }.map { it.value }
+            // (a set: one look-up per call, not a walk through every number)
+            val privateNumbers = privateContacts.flatMap { it.phoneNumbers }.mapTo(HashSet()) { it.value }
             calls.filterNot { it.phoneNumber in privateNumbers }
         } else {
             calls
@@ -398,11 +404,17 @@ class RecentsFragment(
     private fun updateNamesIfEmpty(calls: List<RecentCall>, contacts: List<Contact>, privateContacts: List<Contact>): List<RecentCall> {
         if (calls.isEmpty()) return mutableListOf()
 
-        val contactsWithNumbers = contacts.filter { it.phoneNumbers.isNotEmpty() }
+        // 🎓 ITTC: each contact by its first number (the first contact wins, as the walk through the
+        // list found it), made once and only when a call needs a name
+        val byFirstNumber by lazy(LazyThreadSafetyMode.NONE) {
+            val map = HashMap<String, Contact>()
+            contacts.forEach { if (it.phoneNumbers.isNotEmpty()) map.putIfAbsent(it.phoneNumbers.first().normalizedNumber, it) }
+            map
+        }
         return calls.map { call ->
             if (call.phoneNumber == call.name) {
                 val privateContact = privateContacts.firstOrNull { it.doesContainPhoneNumber(call.phoneNumber) }
-                val contact = contactsWithNumbers.firstOrNull { it.phoneNumbers.first().normalizedNumber == call.phoneNumber }
+                val contact = byFirstNumber[call.phoneNumber]
 
                 when {
                     privateContact != null -> withUpdatedName(call = call, name = privateContact.getNameToDisplay())

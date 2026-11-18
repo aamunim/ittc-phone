@@ -1,6 +1,7 @@
 package org.fossify.phone.direct
 
 import android.content.Context
+import org.fossify.phone.R
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -700,11 +701,16 @@ object IttcAdmitApi {
 
     fun time(s: String?): Long? = org.fossify.phone.helpers.IttcBridge.parseTimeOf(s)
 
-    /** The server's message, or a plain one */
-    fun errorText(e: Throwable, fallback: String): String = when {
-        e is IttcApi.ApiError && e.status == 0 -> "No internet connection. Please try again."
-        e is IttcApi.ApiError && e.message?.contains("leads_student_ref_unique") == true -> "That student ID is already used."
-        else -> e.message?.takeIf { it.isNotBlank() } ?: fallback
+    /**
+     * The server's message, or a plain one. Only the server's own words (ApiError) and the app's own
+     * messages (IllegalStateException, thrown with a readable text) are shown; any other failure's
+     * raw text never reaches the screen.
+     */
+    fun errorText(context: Context, e: Throwable, fallback: String): String = when {
+        e is IttcApi.ApiError && e.status == 0 -> context.getString(R.string.ittc_d_no_internet_retry)
+        e is IttcApi.ApiError && e.message?.contains("leads_student_ref_unique") == true -> context.getString(R.string.ittc_d_student_ref_used)
+        e is IttcApi.ApiError || e is IllegalStateException -> e.message?.takeIf { it.isNotBlank() } ?: fallback
+        else -> fallback
     }
 
     private fun JSONObject.str(k: String): String? =
