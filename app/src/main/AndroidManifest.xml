@@ -150,7 +150,7 @@
         <!-- 🎓 ITTC direct mode (signed in to ITTC without the Tracker) -->
         <activity
             android:name=".activities.IttcAccountActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
             android:label="@string/ittc_account_title"
             android:parentActivityName=".activities.MainActivity"
@@ -158,7 +158,7 @@
 
         <activity
             android:name=".activities.IttcLeadActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
             android:label="@string/ittc_lead_title"
             android:parentActivityName=".activities.MainActivity"
@@ -166,7 +166,7 @@
 
         <activity
             android:name=".activities.IttcAddLeadActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
             android:label="@string/ittc_add_lead_title"
             android:parentActivityName=".activities.MainActivity"
@@ -174,7 +174,7 @@
 
         <activity
             android:name=".activities.IttcTeamActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
             android:label="@string/ittc_team_title"
             android:parentActivityName=".activities.MainActivity" />
@@ -182,7 +182,7 @@
         <!-- 🎓 ITTC 3.4–3.5: search, notifications inbox, admission -->
         <activity
             android:name=".activities.IttcSearchActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
             android:label="@string/ittc_search_title"
             android:parentActivityName=".activities.MainActivity"
@@ -190,14 +190,14 @@
 
         <activity
             android:name=".activities.IttcInboxActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
             android:label="@string/ittc_inbox_title"
             android:parentActivityName=".activities.MainActivity" />
 
         <activity
             android:name=".activities.IttcAdmitActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
             android:label="@string/ittc_admit_title"
             android:parentActivityName=".activities.MainActivity"

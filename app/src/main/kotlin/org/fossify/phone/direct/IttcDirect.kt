@@ -235,6 +235,8 @@ object IttcDirect {
         lastLeadsText = null
         IttcBridge.clearCaches()
         IttcLeadApi.forget()
+        IttcAdmitApi.forget()
+        IttcVisitFeeApi.forget()
         IttcToday.clear(app)
         org.fossify.phone.helpers.IttcDialer.stop(app)
         prefs(app).edit().remove("me").remove("settings").remove("last_refresh").remove("last_check")
