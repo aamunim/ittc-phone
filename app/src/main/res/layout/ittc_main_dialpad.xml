@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.6: the dial pad on the main screen, above the tab bar (as on MIUI): the number typed
+     (with ⌫), twelve round keys (one view each: the digit and its letters as one text), then ≡,
+     the green call key and "hide". Colours and key texts are set in IttcMainDialpad. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:clickable="true"
+    android:elevation="6dp"
+    android:focusable="false"
+    android:layoutDirection="ltr"
+    android:orientation="vertical"
+    android:paddingTop="@dimen/ittc_space_xs"
+    android:paddingBottom="@dimen/ittc_space_s"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:id="@+id/ittc_dp_number_row"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/ittc_space_m"
+        android:paddingEnd="@dimen/ittc_space_m"
+        android:visibility="gone">
+
+        <Space
+            android:layout_width="48dp"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/ittc_dp_number"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:autoSizeMaxTextSize="34sp"
+            android:autoSizeMinTextSize="18sp"
+            android:autoSizeTextType="uniform"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:textDirection="ltr"
+            android:textSize="34sp" />
+
+        <ImageView
+            android:id="@+id/ittc_dp_backspace"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/ittc_dp_backspace"
+            android:padding="12dp"
+            android:src="@drawable/ic_clear_outline_vector" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ittc_dp_row_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ittc_dp_key_gap"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/ittc_dp_key_1"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/one" />
+
+        <TextView
+            android:id="@+id/ittc_dp_key_2"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/two" />
+
+        <TextView
+            android:id="@+id/ittc_dp_key_3"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/three" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ittc_dp_row_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ittc_dp_key_gap"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/ittc_dp_key_4"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/four" />
+
+        <TextView
+            android:id="@+id/ittc_dp_key_5"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/five" />
+
+        <TextView
+            android:id="@+id/ittc_dp_key_6"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/six" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ittc_dp_row_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ittc_dp_key_gap"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/ittc_dp_key_7"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/seven" />
+
+        <TextView
+            android:id="@+id/ittc_dp_key_8"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/eight" />
+
+        <TextView
+            android:id="@+id/ittc_dp_key_9"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/nine" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ittc_dp_row_4"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ittc_dp_key_gap"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/ittc_dp_key_star"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/asterisk" />
+
+        <TextView
+            android:id="@+id/ittc_dp_key_0"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/zero" />
+
+        <TextView
+            android:id="@+id/ittc_dp_key_hash"
+            style="@style/IttcDialKey"
+            android:contentDescription="@string/hashtag" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/ittc_dp_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/ittc_space_s"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/ittc_dp_menu"
+            android:layout_width="@dimen/ittc_dp_key"
+            android:layout_height="@dimen/ittc_dp_key"
+            android:layout_marginStart="@dimen/ittc_dp_key_side"
+            android:layout_marginEnd="@dimen/ittc_dp_key_side"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/ittc_dp_options"
+            android:padding="16dp"
+            android:src="@drawable/ittc_ic_menu" />
+
+        <ImageView
+            android:id="@+id/ittc_dp_call"
+            android:layout_width="@dimen/ittc_dp_key"
+            android:layout_height="@dimen/ittc_dp_key"
+            android:layout_marginStart="@dimen/ittc_dp_key_side"
+            android:layout_marginEnd="@dimen/ittc_dp_key_side"
+            android:contentDescription="@string/call_number"
+            android:padding="15dp"
+            android:src="@drawable/ic_phone_vector" />
+
+        <ImageView
+            android:id="@+id/ittc_dp_hide"
+            android:layout_width="@dimen/ittc_dp_key"
+            android:layout_height="@dimen/ittc_dp_key"
+            android:layout_marginStart="@dimen/ittc_dp_key_side"
+            android:layout_marginEnd="@dimen/ittc_dp_key_side"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/ittc_dp_hide"
+            android:padding="16dp"
+            android:src="@drawable/ic_dialpad_vector" />
+    </LinearLayout>
+</LinearLayout>

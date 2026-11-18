@@ -46,4 +46,10 @@
     <dimen name="ittc_text_body">14sp</dimen>
     <dimen name="ittc_text_title">16sp</dimen>
     <dimen name="ittc_text_headline">21sp</dimen>
+
+    <!-- 🎓 ITTC 3.6: the main screen's dial pad (a key, the room beside and between keys) and the tab bar -->
+    <dimen name="ittc_dp_key">60dp</dimen>
+    <dimen name="ittc_dp_key_side">18dp</dimen>
+    <dimen name="ittc_dp_key_gap">4dp</dimen>
+    <dimen name="ittc_tab_height">66dp</dimen>
 </resources>

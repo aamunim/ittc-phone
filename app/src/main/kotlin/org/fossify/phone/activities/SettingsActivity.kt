@@ -294,6 +294,16 @@ class SettingsActivity : SimpleActivity() {
 
     private fun setupDialPadOpen() {
         binding.apply {
+            // 🎓 ITTC 3.6: on: the main screen's own dial pad is open at start, so "open the dial pad
+            // screen at start" (Fossify's) is hidden and not used; off: as before
+            settingsIttcOpenWithDialpad.isChecked = config.ittcOpenWithDialpad
+            settingsOpenDialpadAtLaunchHolder.beVisibleIf(!config.ittcOpenWithDialpad)
+            settingsIttcOpenWithDialpadHolder.setOnClickListener {
+                settingsIttcOpenWithDialpad.toggle()
+                config.ittcOpenWithDialpad = settingsIttcOpenWithDialpad.isChecked
+                settingsOpenDialpadAtLaunchHolder.beVisibleIf(!config.ittcOpenWithDialpad)
+            }
+
             settingsOpenDialpadAtLaunch.isChecked = config.openDialPadAtLaunch
             settingsOpenDialpadAtLaunchHolder.setOnClickListener {
                 settingsOpenDialpadAtLaunch.toggle()

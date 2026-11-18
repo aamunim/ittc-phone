@@ -63,6 +63,20 @@ abstract class MyViewPagerFragment<BINDING : MyViewPagerFragment.InnerBinding>(c
         }
     }
 
+    // 🎓 ITTC 3.6: the list dragged by hand (the main screen then folds its dial pad), hooked once
+    private var ittcScrollHooked = false
+
+    fun ittcOnUserScroll(action: () -> Unit) {
+        if (ittcScrollHooked) return
+        val list = innerBinding.fragmentList ?: innerBinding.recentsList ?: return
+        ittcScrollHooked = true
+        list.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(recyclerView: androidx.recyclerview.widget.RecyclerView, newState: Int) {
+                if (newState == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_DRAGGING) action()
+            }
+        })
+    }
+
     abstract fun setupFragment()
 
     abstract fun setupColors(textColor: Int, primaryColor: Int, properPrimaryColor: Int)

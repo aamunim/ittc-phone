@@ -44,6 +44,50 @@
             app:layout_constraintBottom_toTopOf="@+id/main_tabs_holder"
             app:layout_constraintTop_toBottomOf="@+id/ittc_update_banner" />
 
+        <!-- 🎓 ITTC 3.6: what the main screen's dial pad matches (leads, unsaved recent numbers,
+             then contacts), over the list while a number is typed -->
+        <LinearLayout
+            android:id="@+id/ittc_dial_results"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:clickable="true"
+            android:focusable="false"
+            android:orientation="vertical"
+            android:visibility="gone"
+            app:layout_constraintBottom_toTopOf="@+id/ittc_main_dialpad"
+            app:layout_constraintTop_toBottomOf="@+id/ittc_update_banner">
+
+            <TextView
+                android:id="@+id/ittc_dial_lead"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:maxLines="2"
+                android:paddingStart="@dimen/activity_margin"
+                android:paddingTop="@dimen/medium_margin"
+                android:paddingEnd="@dimen/activity_margin"
+                android:paddingBottom="@dimen/medium_margin"
+                android:textSize="@dimen/bigger_text_size"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/ittc_dial_matches"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <org.fossify.commons.views.MyRecyclerView
+                android:id="@+id/ittc_dial_list"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:clipToPadding="false"
+                android:scrollbars="none"
+                app:layoutManager="org.fossify.commons.views.MyLinearLayoutManager" />
+        </LinearLayout>
+
         <org.fossify.commons.views.MyFloatingActionButton
             android:id="@+id/main_dialpad_button"
             android:layout_width="wrap_content"
@@ -60,13 +104,34 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:rippleColor="@color/pressed_item_foreground" />
 
+        <!-- 🎓 ITTC 3.6: the dial pad, open at start, above the tab bar -->
+        <include
+            android:id="@+id/ittc_main_dialpad"
+            layout="@layout/ittc_main_dialpad"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:layout_constraintBottom_toTopOf="@+id/ittc_tabs_divider" />
+
+        <!-- 🎓 ITTC 3.6: the tab bar's thin top line -->
+        <View
+            android:id="@+id/ittc_tabs_divider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            app:layout_constraintBottom_toTopOf="@+id/main_tabs_holder" />
+
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/main_tabs_holder"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:layout_constraintBottom_toBottomOf="parent"
+            app:tabGravity="fill"
             app:tabIndicator="@null"
-            app:tabMinWidth="150dp"
+            app:tabMinWidth="0dp"
+            app:tabMode="fixed"
+            app:tabPaddingBottom="0dp"
+            app:tabPaddingEnd="0dp"
+            app:tabPaddingStart="0dp"
+            app:tabPaddingTop="0dp"
             app:tabRippleColor="@null" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>

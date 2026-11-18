@@ -9,6 +9,7 @@ const val SPEED_DIAL = "speed_dial"
 const val REMEMBER_SIM_PREFIX = "remember_sim_"
 const val GROUP_SUBSEQUENT_CALLS = "group_subsequent_calls"
 const val OPEN_DIAL_PAD_AT_LAUNCH = "open_dial_pad_at_launch"
+const val ITTC_OPEN_WITH_DIALPAD = "ittc_open_with_dialpad" // 🎓 ITTC 3.6
 const val DISABLE_PROXIMITY_SENSOR = "disable_proximity_sensor"
 const val DISABLE_SWIPE_TO_ANSWER = "disable_swipe_to_answer"
 const val SHOW_TABS = "show_tabs"

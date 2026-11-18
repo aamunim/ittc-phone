@@ -108,6 +108,12 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getBoolean(OPEN_DIAL_PAD_AT_LAUNCH, false)
         set(openDialPad) = prefs.edit().putBoolean(OPEN_DIAL_PAD_AT_LAUNCH, openDialPad).apply()
 
+    // 🎓 ITTC 3.6: the dial pad open on the main screen when the app starts (as on MIUI); off: the
+    // round button opens it, as before
+    var ittcOpenWithDialpad: Boolean
+        get() = prefs.getBoolean(ITTC_OPEN_WITH_DIALPAD, true)
+        set(open) = prefs.edit().putBoolean(ITTC_OPEN_WITH_DIALPAD, open).apply()
+
     var disableProximitySensor: Boolean
         get() = prefs.getBoolean(DISABLE_PROXIMITY_SENSOR, false)
         set(disableProximitySensor) = prefs.edit().putBoolean(DISABLE_PROXIMITY_SENSOR, disableProximitySensor).apply()

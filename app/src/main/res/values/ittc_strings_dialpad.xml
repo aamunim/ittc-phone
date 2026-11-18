@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.6: the dial pad on the main screen (open at start, above the tab bar) -->
+<resources>
+    <!-- Settings -->
+    <string name="ittc_dp_open_with_dialpad" translatable="false">Open with the dial pad (on the main screen)</string>
+
+    <!-- The pad's own keys -->
+    <string name="ittc_dp_options" translatable="false">Dial pad options</string>
+    <string name="ittc_dp_hide" translatable="false">Hide the dial pad</string>
+    <string name="ittc_dp_backspace" translatable="false">Delete (hold: clear)</string>
+
+    <!-- ≡ menu -->
+    <string name="ittc_dp_paste" translatable="false">Paste number</string>
+    <string name="ittc_dp_add_contact" translatable="false">Add to contacts</string>
+    <string name="ittc_dp_call_with_sim" translatable="false">Call with SIM…</string>
+    <string name="ittc_dp_full_screen" translatable="false">Full screen dial pad</string>
+
+    <!-- What the keys match, above the pad -->
+    <string name="ittc_dp_lead_hint" translatable="false">Lead · %s</string>
+    <string name="ittc_dp_recent_hint" translatable="false">Recent · %s</string>
+    <string name="ittc_dp_no_match" translatable="false">No matches · tap to add %s to contacts</string>
+</resources>

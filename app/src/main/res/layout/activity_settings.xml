@@ -285,6 +285,22 @@
 
             </RelativeLayout>
 
+            <!-- 🎓 ITTC 3.6: the dial pad open on the main screen at start -->
+            <RelativeLayout
+                android:id="@+id/settings_ittc_open_with_dialpad_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_ittc_open_with_dialpad"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ittc_dp_open_with_dialpad" />
+
+            </RelativeLayout>
+
             <RelativeLayout
                 android:id="@+id/settings_open_dialpad_at_launch_holder"
                 style="@style/SettingsHolderSwitchStyle"
