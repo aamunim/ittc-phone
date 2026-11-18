@@ -179,6 +179,30 @@
             android:label="@string/ittc_team_title"
             android:parentActivityName=".activities.MainActivity" />
 
+        <!-- 🎓 ITTC 3.4–3.5: search, notifications inbox, admission -->
+        <activity
+            android:name=".activities.IttcSearchActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_search_title"
+            android:parentActivityName=".activities.MainActivity"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
+        <activity
+            android:name=".activities.IttcInboxActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_inbox_title"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <activity
+            android:name=".activities.IttcAdmitActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_admit_title"
+            android:parentActivityName=".activities.MainActivity"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
             android:name=".direct.IttcOutboxJob"
             android:exported="false"

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎨 ITTC Phone 3.3 design tokens (light; dark in values-night/ittc_design.xml). Every ITTC screen
+     takes its colours, radii and spacing from here. -->
+<resources>
+    <color name="ittc_primary">#1E5AA8</color>
+    <color name="ittc_primary_soft">#E3EDFB</color>
+    <color name="ittc_on_primary">#FFFFFF</color>
+    <color name="ittc_on_primary_muted">#DCE8F7</color>
+    <color name="ittc_call">#0E8A7A</color>
+    <color name="ittc_call_soft">#E6F4F1</color>
+    <color name="ittc_danger">#B42318</color>
+    <color name="ittc_danger_strong">#D92D20</color>
+    <color name="ittc_danger_soft">#FFF4F4</color>
+    <color name="ittc_bg">#F4F7FB</color>
+    <color name="ittc_surface">#FFFFFF</color>
+    <color name="ittc_surface_alt">#EEF2F7</color>
+    <color name="ittc_outline">#D5DEEA</color>
+    <color name="ittc_divider">#EEF2F7</color>
+    <color name="ittc_text">#12213A</color>
+    <color name="ittc_text_2">#3E4D63</color>
+    <color name="ittc_text_muted">#5B6B82</color>
+    <color name="ittc_accent_ring">#7FE0C8</color>
+    <color name="ittc_incall_bg">#10203A</color>
+    <!-- stage pills: background / text -->
+    <color name="ittc_stage_new_bg">#E3EDFB</color>
+    <color name="ittc_stage_new_fg">#1E5AA8</color>
+    <color name="ittc_stage_interested_bg">#FFF1DB</color>
+    <color name="ittc_stage_interested_fg">#8A4B00</color>
+    <color name="ittc_stage_visit_bg">#EDE7FB</color>
+    <color name="ittc_stage_visit_fg">#5B2DB3</color>
+    <color name="ittc_stage_admitted_bg">#DDF3E4</color>
+    <color name="ittc_stage_admitted_fg">#15803D</color>
+    <color name="ittc_stage_closed_bg">#EEF2F7</color>
+    <color name="ittc_stage_closed_fg">#5B6B82</color>
+
+    <dimen name="ittc_radius_card">16dp</dimen>
+    <dimen name="ittc_radius_hero">20dp</dimen>
+    <dimen name="ittc_radius_pill">999dp</dimen>
+    <dimen name="ittc_space_xs">4dp</dimen>
+    <dimen name="ittc_space_s">8dp</dimen>
+    <dimen name="ittc_space_m">12dp</dimen>
+    <dimen name="ittc_space_l">16dp</dimen>
+    <dimen name="ittc_space_xl">24dp</dimen>
+    <dimen name="ittc_touch">44dp</dimen>
+    <dimen name="ittc_text_caption">12sp</dimen>
+    <dimen name="ittc_text_body">14sp</dimen>
+    <dimen name="ittc_text_title">16sp</dimen>
+    <dimen name="ittc_text_headline">21sp</dimen>
+</resources>
