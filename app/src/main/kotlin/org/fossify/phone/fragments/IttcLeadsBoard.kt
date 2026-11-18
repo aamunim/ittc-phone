@@ -28,6 +28,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.SimpleItemAnimator
 import androidx.recyclerview.widget.SnapHelper
 import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.beVisibleIf
@@ -392,6 +393,10 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         override fun onViewRecycled(holder: ColumnHolder) {
             holder.saveScroll()
         }
+
+        override fun onViewAttachedToWindow(holder: ColumnHolder) {
+            holder.resetAlpha()
+        }
     }
 
     private inner class ColumnHolder(val vb: IttcItemBoardColumnBinding) : RecyclerView.ViewHolder(vb.root) {
@@ -417,6 +422,19 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
                 setRecycledViewPool(pool)
                 setHasFixedSize(true)
                 this.adapter = cards
+                // (a card redrawn in place: no cross-fade, no second copy keeping an old look)
+                (this.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
+            }
+        }
+
+        /** Every card shown here at rest (the dragged lead's faded while a drag runs) */
+        fun resetAlpha() {
+            val list = vb.ittcBoardColList
+            val id = dragging?.lead?.leadId
+            for (i in 0 until list.childCount) {
+                (list.getChildViewHolder(list.getChildAt(i)) as? CardHolder)?.let { h ->
+                    h.vb.ittcBoardCard.alpha = if (id != null && h.lead?.leadId == id) DRAGGED_ALPHA else 1f
+                }
             }
         }
 
@@ -426,6 +444,14 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
 
         fun bind(col: Column, full: Boolean) {
             val p = host.palette()
+            // (the screen turned: the width for the new one)
+            val width = columnWidth()
+            vb.root.layoutParams?.let { lp ->
+                if (lp.width != width) {
+                    lp.width = width
+                    vb.root.layoutParams = lp
+                }
+            }
             val (sBg, sFg) = if (col.stage != null) colorsOf(col.name) else p.surfaceAlt to p.muted
             if (full || gen != lookGen) {
                 // (light: white cards on a soft column; dark: the lighter cards on the darker column)
@@ -841,6 +867,11 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         b.ittcLeadsBoardList.removeCallbacks(autoScroll)
         dragSource?.alpha = 1f
         dragSource = null
+        // (the lead may have been drawn in another card view meanwhile: all of them at rest)
+        val list = b.ittcLeadsBoardList
+        for (i in 0 until list.childCount) {
+            (list.getChildViewHolder(list.getChildAt(i)) as? ColumnHolder)?.resetAlpha()
+        }
         setTarget(null)
         showDragUi(false)
         snapNow()
@@ -848,7 +879,18 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
 
     /** The tab is going away / the board is hidden: no drag left half done */
     fun cancelDrag() {
+        if (dragging == null) return
+        try {
+            dragSource?.cancelDragAndDrop()
+        } catch (_: Throwable) {
+        }
         endDrag()
+    }
+
+    /** The screen turned (the activity keeps its views): columns at the new width, then stopped at one */
+    fun configurationChanged() {
+        columnsAdapter.notifyDataSetChanged()
+        b.ittcLeadsBoardList.post { snapNow() }
     }
 
     companion object {

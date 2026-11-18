@@ -3,6 +3,7 @@ package org.fossify.phone.fragments
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
@@ -200,9 +201,18 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         IttcBridge.unwatchLeads(context, observer)
         observer = null
         removeCallbacks(reloadNow)
+        // (3.9: no drag left half done, no Undo bar timer)
+        boardOrNull?.cancelDrag()
+        removeCallbacks(hideMovedNow)
         // (still counted as attached during this call: say it)
         syncLive(attached = false)
         super.onDetachedFromWindow()
+    }
+
+    // ▦ 3.9: the screen turned (the main screen keeps its views): the board's columns at the new width
+    override fun onConfigurationChanged(newConfig: Configuration?) {
+        super.onConfigurationChanged(newConfig)
+        boardOrNull?.configurationChanged()
     }
 
     // (the app went to the background / came back: live updates only while it is on screen)
@@ -1137,7 +1147,10 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     }
 
     /** A stage move shown here before the server's list has it */
-    private class PendingMove(val stageId: String, val stage: String, val due: Long?, val at: Long)
+    private class PendingMove(val stageId: String, val stage: String, val due: Long?, val at: Long) {
+        /** when it was seen gone from the outbox (sent); 0: still there / not looked yet */
+        var goneAt = 0L
+    }
 
     private val pendingMoves = HashMap<String, PendingMove>()
 
@@ -1146,9 +1159,17 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         if (pendingMoves.isEmpty()) return list
         val now = System.currentTimeMillis()
         val settled = HashSet<String>()
+        // (still in the outbox: shown however long it waits; sent: until the list has it, or a while after it left)
+        pendingMoves.forEach { (id, pm) ->
+            if (id in queued) {
+                pm.goneAt = 0L
+            } else if (pm.goneAt == 0L) {
+                pm.goneAt = now
+            }
+        }
         val out = list.map { l ->
             val pm = pendingMoves[l.leadId] ?: return@map l
-            if (l.stageId == pm.stageId || (l.leadId !in queued && now - pm.at > PENDING_SHOWN_MS)) {
+            if (l.stageId == pm.stageId || (pm.goneAt != 0L && now - pm.goneAt > PENDING_SHOWN_MS)) {
                 settled += l.leadId
                 l
             } else {
@@ -1158,7 +1179,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         val entries = pendingMoves.entries.iterator()
         while (entries.hasNext()) {
             val e = entries.next()
-            if (e.key in settled || now - e.value.at > PENDING_MAX_MS) entries.remove()
+            // (the 10 min cap: only for one that has left the outbox, e.g. a lead gone from the list)
+            if (e.key in settled || (e.key !in queued && now - e.value.at > PENDING_MAX_MS)) entries.remove()
         }
         return out
     }
