@@ -476,11 +476,14 @@ object IttcDirect {
             val leadsText = leads.toString()
             val changedLeads = leadsText != lastLeadsText
             lastLeadsText = leadsText
-            writeAtomic(file(app, LEADS), leadsText)
+            // (the same list again: nothing rewritten or read again)
+            if (changedLeads) {
+                writeAtomic(file(app, LEADS), leadsText)
+                leadsCache = null
+                ownCache = null
+            }
             writeAtomic(file(app, META), data.toString())
             data.optJSONObject("settings")?.let { p.edit().putString("settings", it.toString()).apply() }
-            leadsCache = null
-            ownCache = null
             metaCache = null
             if (dir != null) {
                 writeAtomic(file(app, DIR), dir.toString())
@@ -738,7 +741,10 @@ object IttcDirect {
         if (!isSignedIn(app)) return 0
         val items = synchronized(outboxLock) { readArray(file(app, OUTBOX)) }
         val now = System.currentTimeMillis()
+        val gen = generation
         for (i in 0 until items.length()) {
+            // (signed out / someone else signed in meanwhile: the rest never goes with their token)
+            if (gen != generation || !isSignedIn(app)) return pendingCount(app)
             val item = items.optJSONObject(i) ?: continue
             val qid = item.optString("qid")
             val result = try {
@@ -748,6 +754,8 @@ object IttcDirect {
                     e.status == 0 -> return pendingCount(app) // no internet: all wait
                     // refused: it would never go (busy / rate-limited / timed out / not found while the
                     // server reloads: later)
+                    // (an account made inactive: kept — the session check signs out and keeps them)
+                    e.message?.contains("not active", true) == true -> Keep
                     e.status in 400..499 && e.status !in setOf(401, 404, 408, 425, 429) -> Done
                     else -> Keep
                 }
