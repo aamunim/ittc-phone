@@ -66,6 +66,10 @@ class IttcLeadActivity : SimpleActivity() {
     private var loadSeq = 0
     private var templatesWanted = false
     private var notesOpen = false
+    /** A change was queued here: while the queue still holds something, what is shown (the change
+     * made at once) stays rather than the server's older copy */
+    private var queuedHere = false
+    private val retryLoad = Runnable { if (alive()) load() }
 
     /** Signed in to ITTC here (read off the main thread: the session is kept encrypted) */
     private var signedIn = false
@@ -156,15 +160,29 @@ class IttcLeadActivity : SimpleActivity() {
                 status = e.message ?: getString(R.string.ittc_lp_offline)
                 null
             }
+            val pending = if (!queuedHere) 0 else try {
+                IttcDirect.pendingCount(this)
+            } catch (_: Throwable) {
+                0
+            }
             runOnUiThread {
                 if (!alive() || seq != loadSeq) return@runOnUiThread
                 signedIn = inNow
                 meta = m
-                if (detail != null) {
-                    lead = detail
-                    fromServer = true
-                } else if (lead == null && kept != null) {
-                    lead = kept
+                // (a change made here not sent yet: keep it on screen, say it waits, look again later)
+                val waiting = queuedHere && pending > 0 && lead != null
+                if (waiting) {
+                    status = getString(R.string.ittc_lp_waiting)
+                    main.removeCallbacks(retryLoad)
+                    main.postDelayed(retryLoad, 15_000)
+                } else {
+                    if (queuedHere && pending == 0) queuedHere = false
+                    if (detail != null) {
+                        lead = detail
+                        fromServer = true
+                    } else if (lead == null && kept != null) {
+                        lead = kept
+                    }
                 }
                 binding.ittcLeadStatus.text = status
                 binding.ittcLeadStatus.beVisibleIf(status != null)
@@ -296,8 +314,8 @@ class IttcLeadActivity : SimpleActivity() {
         }
     }
 
-    private fun canHandOver(): Boolean =
-        meta?.isSuper == true || IttcDirect.me(this)?.optBoolean("team_lead") == true
+    /** Only super admins: my_phone_data lists the people (whom to hand over to) only for them */
+    private fun canHandOver(): Boolean = meta?.isSuper == true
 
     private fun renderQuick() {
         val box = binding.ittcLeadQuick
@@ -638,6 +656,7 @@ class IttcLeadActivity : SimpleActivity() {
                         toast(R.string.ittc_lp_no_app)
                         return@runOnUiThread
                     }
+                    queuedHere = true
                     lead?.let {
                         try {
                             optimistic(it)

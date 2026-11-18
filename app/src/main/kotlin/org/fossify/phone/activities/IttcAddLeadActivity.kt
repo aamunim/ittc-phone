@@ -220,6 +220,18 @@ class IttcAddLeadActivity : SimpleActivity() {
                         return@runOnUiThread
                     }
                     toast(R.string.ittc_al_saved)
+                    // (added right after a call with the number: that call goes to the new lead too)
+                    val startedAt = intent.getLongExtra(STARTED_AT, 0L)
+                    if (startedAt > 0) {
+                        val app = applicationContext
+                        val callNumber = intent.getStringExtra(NUMBER)?.takeIf { it.isNotBlank() } ?: phone
+                        ensureBackgroundThread {
+                            try {
+                                IttcDirect.queueCallAt(app, callNumber, startedAt)
+                            } catch (_: Throwable) {
+                            }
+                        }
+                    }
                     IttcDirect.refreshAsync(applicationContext, force = true)
                     IttcLeadActivity.open(this, id)
                     finish()
@@ -255,14 +267,19 @@ class IttcAddLeadActivity : SimpleActivity() {
     companion object {
         private const val NUMBER = "ittc_number"
         private const val NAME = "ittc_name"
+        private const val STARTED_AT = "ittc_started_at"
 
-        /** "Add a lead", the phone (and a name, e.g. the contact's) filled in */
-        fun open(context: Context, number: String?, name: String?) {
+        /**
+         * "Add a lead", the phone (and a name, e.g. the contact's) filled in; [startedAt] (> 0: right
+         * after a call with the number) sends that call for the new lead once it is added
+         */
+        fun open(context: Context, number: String?, name: String?, startedAt: Long = 0L) {
             try {
                 context.startActivity(
                     Intent(context, IttcAddLeadActivity::class.java)
                         .putExtra(NUMBER, number)
                         .putExtra(NAME, name)
+                        .putExtra(STARTED_AT, startedAt)
                         .apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) },
                 )
             } catch (_: Throwable) {

@@ -8,6 +8,7 @@
     <string name="ittc_lp_loading" translatable="false">Loading…</string>
     <string name="ittc_lp_offline" translatable="false">Offline — showing saved info</string>
     <string name="ittc_lp_not_found" translatable="false">This lead is not available to you.</string>
+    <string name="ittc_lp_waiting" translatable="false">Waiting to send (no internet)</string>
     <string name="ittc_lp_not_signed_in" translatable="false">Sign in to ITTC to see this lead.</string>
     <string name="ittc_lp_call" translatable="false">Call</string>
     <string name="ittc_lp_whatsapp" translatable="false">WhatsApp</string>

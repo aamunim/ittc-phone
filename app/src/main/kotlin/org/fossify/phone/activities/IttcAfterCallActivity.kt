@@ -161,6 +161,7 @@ class IttcAfterCallActivity : SimpleActivity() {
 
     private fun showUnknown(number: String) {
         val primary = getProperPrimaryColor()
+        val startedAt = intent.getLongExtra(STARTED_AT, 0L)
         contactName = null
         outcome = null
         stages = emptyList()
@@ -171,7 +172,7 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcAddLead.setTextColor(primary.getContrastColor())
             ittcAcAddLead.setOnClickListener {
                 try {
-                    IttcAddLeadActivity.open(this@IttcAfterCallActivity, number, contactName, intent.getLongExtra(STARTED_AT, 0L))
+                    IttcAddLeadActivity.open(this@IttcAfterCallActivity, number, contactName, startedAt)
                 } catch (e: Throwable) {
                     IttcCrash.record(this@IttcAfterCallActivity, e, "After-call: add as a lead")
                 }
