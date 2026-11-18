@@ -85,6 +85,7 @@ class MainActivity : SimpleActivity() {
     private var ittcDialContacts: List<Contact> = emptyList()
     private var ittcUserTouched = false
     private var ittcLastTab = -1
+    private var ittcMovingPager = false
     private var ittcStoredOpenWithDialpad = true
 
     // 🎓 ITTC 3.8: the kinds of the tabs shown, in their order (Call History, Leads, Contacts,
@@ -627,6 +628,12 @@ class MainActivity : SimpleActivity() {
                 }
             },
             tabSelectedAction = {
+                // (moving the pager below re-selects this same tab from onPageSelected: that inner call only
+                // hands the search text to the page now shown, so the pill's animation isn't cut short)
+                if (ittcMovingPager) {
+                    getCurrentFragment()?.onSearchQueryChanged(binding.mainMenu.getCurrentQuery())
+                    return@onTabSelectionChanged
+                }
                 val changed = ittcLastTab != it.position
                 // 🎓 ITTC 3.6: another tab (chosen by hand, not the one picked at start) hides the dial pad
                 if (ittcLastTab != -1 && changed && ittcUserTouched) {
@@ -636,7 +643,12 @@ class MainActivity : SimpleActivity() {
                 }
                 ittcLastTab = it.position
                 getCurrentFragment()?.onSearchQueryChanged(binding.mainMenu.getCurrentQuery())
-                binding.viewPager.currentItem = it.position
+                ittcMovingPager = true
+                try {
+                    binding.viewPager.currentItem = it.position
+                } finally {
+                    ittcMovingPager = false
+                }
                 ittcStyleTab(it, true, animate = changed && ittcUserTouched)
                 ittcSearchForTab(kindAt(it.position))
 
