@@ -63,6 +63,7 @@ object IttcDirect {
     fun setPreferDirect(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("prefer_direct", on).apply()
         modeAt = 0
+        lastLeadsText = null
         syncTrackerFlag(context)
         changed(context)
     }
@@ -80,7 +81,8 @@ object IttcDirect {
             (preferDirect(context) || !IttcBridge.trackerSignedIn(context)) &&
             // (a Tracker older than 2.11 on the phone sends every call with its own id: working by
             // itself then would save each lead call twice)
-            (prefs(context).getString("tracker_device_id", null) != null || !IttcBridge.trackerInstalled(context))
+            (prefs(context).getString("tracker_device_id", null) != null || !IttcBridge.trackerSignedIn(context) ||
+                !IttcBridge.trackerInstalled(context))
         modeActive = active
         modeAt = now
         return active
@@ -130,7 +132,10 @@ object IttcDirect {
     fun callDeviceId(context: Context): String = prefs(context).getString("tracker_device_id", null) ?: deviceId(context)
 
     fun setTrackerDeviceId(context: Context, id: String) {
-        if (prefs(context).getString("tracker_device_id", null) != id) prefs(context).edit().putString("tracker_device_id", id).apply()
+        if (prefs(context).getString("tracker_device_id", null) != id) {
+            prefs(context).edit().putString("tracker_device_id", id).apply()
+            modeAt = 0
+        }
     }
 
     /** Too old for the admin's lowest version: it must be updated from Google Play */
@@ -419,23 +424,25 @@ object IttcDirect {
         var f = force
         var d = directory
         while (true) {
+            var more = false
             try {
                 if (!(f && !d && System.currentTimeMillis() - lastDone < 3_000)) refreshOnce(app, f, d)
             } finally {
+                // (one decision under one lock: either this runner takes the next ask, or it is done)
                 synchronized(refreshLock) {
-                    if (!again) {
+                    if (again) {
+                        again = false
+                        f = againForce
+                        d = againDirectory
+                        againForce = false
+                        againDirectory = false
+                        more = true
+                    } else {
                         refreshing = false
                     }
                 }
             }
-            synchronized(refreshLock) {
-                if (!refreshing) return
-                again = false
-                f = againForce
-                d = againDirectory
-                againForce = false
-                againDirectory = false
-            }
+            if (!more) return
         }
     }
 
@@ -489,7 +496,11 @@ object IttcDirect {
             }
             // (Recents asks again and the alarms are set again only when something changed)
             if (changedLeads || dir != null) IttcBridge.forgetRecents()
-            if (changedLeads) IttcReminders.schedule(app, leads(app))
+            // (also every hour: a follow-up more than a day away gets its alarm when it comes near)
+            if ((changedLeads || now - lastScheduled > 3600_000L) && isActive(app)) {
+                lastScheduled = now
+                IttcReminders.schedule(app, leads(app))
+            }
         } catch (e: Throwable) {
             p.edit().putString("refresh_error", e.message ?: "Could not update").apply()
         }
@@ -506,8 +517,10 @@ object IttcDirect {
         }
 
     @Volatile private var lastLeadsText: String? = null
+    @Volatile private var lastScheduled = 0L
 
     private var pendingRefresh: Runnable? = null
+    private var pendingDue = 0L
 
     /**
      * Refresh soon. With a delay, several asks close together make one (the live pings);
@@ -520,12 +533,17 @@ object IttcDirect {
             return
         }
         main.post {
+            val due = System.currentTimeMillis() + delayMs
+            // (one already waiting that comes as soon: it does for this ask too — a stream of pings
+            // never pushes it back)
+            if (pendingRefresh != null && pendingDue <= due) return@post
             pendingRefresh?.let { main.removeCallbacks(it) }
             val r = Runnable {
                 pendingRefresh = null
                 io.execute { refresh(app, force, directory) }
             }
             pendingRefresh = r
+            pendingDue = due
             main.postDelayed(r, delayMs)
         }
     }
@@ -668,6 +686,15 @@ object IttcDirect {
     }
 
     fun pendingCount(context: Context): Int = synchronized(outboxLock) { readArray(file(context, OUTBOX)).length() }
+
+    /** Changes to this lead still waiting (calls waiting for their call-log row not counted) */
+    fun pendingFor(context: Context, leadId: String): Int = synchronized(outboxLock) {
+        val arr = readArray(file(context, OUTBOX))
+        (0 until arr.length()).count { i ->
+            val o = arr.optJSONObject(i)
+            o != null && o.optString("lead_id") == leadId && o.optString("kind") !in setOf("call", "call_at")
+        }
+    }
 
     /** Send what is waiting (off the main thread); if something is left, Android runs it again with internet */
     fun kick(context: Context) {

@@ -161,7 +161,7 @@ class IttcLeadActivity : SimpleActivity() {
                 null
             }
             val pending = if (!queuedHere) 0 else try {
-                IttcDirect.pendingCount(this)
+                IttcDirect.pendingFor(this, id)
             } catch (_: Throwable) {
                 0
             }

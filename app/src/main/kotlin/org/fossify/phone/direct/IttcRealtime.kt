@@ -67,7 +67,6 @@ internal object IttcRealtime {
             )
             synchronized(this@IttcRealtime) {
                 if (socket !== webSocket) return
-                failures = 0
                 beat?.cancel(false)
                 // (the server closes a quiet socket: a heartbeat every 25 s; a fresh token now and then)
                 beat = timer.scheduleAtFixedRate({
@@ -95,7 +94,11 @@ internal object IttcRealtime {
                 }
                 // (the channel ended — token ran out, server restart: join again with a fresh token)
                 "phx_close", "phx_error" -> reopen(app, webSocket, 5_000)
-                "phx_reply" -> if (o.optJSONObject("payload")?.optString("status") == "error") reopen(app, webSocket, 30_000, failed = true)
+                "phx_reply" -> when (o.optJSONObject("payload")?.optString("status")) {
+                    "error" -> reopen(app, webSocket, 30_000, failed = true)
+                    // (joined: the waits start small again)
+                    "ok" -> synchronized(this@IttcRealtime) { failures = 0 }
+                }
             }
         }
 
