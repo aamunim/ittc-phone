@@ -191,8 +191,10 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             cols.indices.forEach { i -> if (cols[i] != old[i]) columnsAdapter.notifyItemChanged(i, PAYLOAD_DATA) }
         }
         renderChips()
-        // (the first time: which column is in sight, once they are laid out)
-        if (current < 0) b.ittcLeadsBoardList.post { updateCurrent() }
+        // (the first time, or the columns changed: which column is in sight, once they are laid out)
+        if (current < 0 || old.size != cols.size || old.indices.any { old[it].id != cols[it].id }) {
+            b.ittcLeadsBoardList.post { updateCurrent() }
+        }
     }
 
     // ------------------------------------------------------------------ chips

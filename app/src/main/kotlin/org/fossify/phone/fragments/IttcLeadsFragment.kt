@@ -703,6 +703,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             binding.ittcLeadsPlaceholder.text = "⚠️ The Leads tab could not be shown (${e.javaClass.simpleName}: ${e.message})"
             binding.ittcLeadsPlaceholder.beVisibleIf(true)
             binding.ittcLeadsList.beVisibleIf(false)
+            binding.ittcLeadsBoard.beVisibleIf(false)
         }
     }
 
