@@ -37,6 +37,8 @@ object IttcVisitSheet {
         var setting: IttcVisitFeeApi.VisitSetting? = null
         var mode = Mode.VIEW
         var pickedAt: Long? = null
+        /** The note being typed (kept when the sheet is drawn again, e.g. after picking a day) */
+        var note = ""
         var busy = false
         var changed = false
         val planned get() = visits.firstOrNull { it.status == "planned" }
@@ -213,8 +215,23 @@ object IttcVisitSheet {
         }
     }
 
+    /** The note field shows [State.note] and keeps it up to date */
+    private fun keepNote(st: State, input: android.widget.EditText): android.widget.EditText {
+        input.setText(st.note)
+        input.setSelection(input.text?.length ?: 0)
+        input.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(e: android.text.Editable?) {
+                st.note = e?.toString().orEmpty()
+            }
+        })
+        return input
+    }
+
     private fun go(st: State, mode: Mode) {
         if (st.busy) return
+        if (st.mode != mode) st.note = ""
         st.mode = mode
         st.pickedAt = null
         render(st)
@@ -260,7 +277,7 @@ object IttcVisitSheet {
         }
         body.addView(pick, IttcCUi.topMargin(a, 10))
 
-        val note = IttcCUi.noteInput(a, a.getString(R.string.ittc_c_visit_note_hint))
+        val note = keepNote(st, IttcCUi.noteInput(a, a.getString(R.string.ittc_c_visit_note_hint)))
         body.addView(note, IttcCUi.topMargin(a, 12))
         val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         body.addView(err, IttcCUi.topMargin(a, 8))
@@ -302,7 +319,7 @@ object IttcVisitSheet {
             IttcCUi.text(a, a.getString(if (visited) R.string.ittc_c_visit_came_hint else R.string.ittc_c_visit_missed_hint), 13f, p.muted),
             IttcCUi.topMargin(a, 4),
         )
-        val note = IttcCUi.noteInput(a, a.getString(if (visited) R.string.ittc_c_visit_came_note_hint else R.string.ittc_c_visit_missed_note_hint))
+        val note = keepNote(st, IttcCUi.noteInput(a, a.getString(if (visited) R.string.ittc_c_visit_came_note_hint else R.string.ittc_c_visit_missed_note_hint)))
         body.addView(note, IttcCUi.topMargin(a, 12))
         val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         body.addView(err, IttcCUi.topMargin(a, 8))

@@ -56,10 +56,15 @@ object IttcAdmitApi {
 
     @Volatile private var settingsCache: Pair<Long, Settings>? = null
 
-    /** The Tracker's settings (Admission, Fee & discount, Admission flow), kept 5 min; defaults where unset / unreadable */
-    fun settings(context: Context): Settings {
+    /**
+     * The Tracker's settings (Admission, Fee & discount, Admission flow), kept 5 min; defaults where
+     * unset. A failed read is never kept: [strict] throws it (the Admit screen shows it with Retry),
+     * otherwise the defaults are used this once.
+     */
+    fun settings(context: Context, strict: Boolean = false): Settings {
         settingsCache?.let { (at, s) -> if (System.currentTimeMillis() - at < CACHE_MS) return s }
         val values = HashMap<String, Any?>()
+        var failed = false
         try {
             val arr = IttcApi.select(
                 context,
@@ -70,7 +75,8 @@ object IttcAdmitApi {
                 values[o.optString("key")] = if (o.isNull("value")) null else o.opt("value")
             }
         } catch (e: IttcApi.ApiError) {
-            if (e.status == 0) throw e
+            if (e.status == 0 || strict) throw e
+            failed = true
         }
         val adm = values["admission"] as? JSONObject ?: JSONObject()
         val fees = values["fees"] as? JSONObject ?: JSONObject()
@@ -105,7 +111,7 @@ object IttcAdmitApi {
             instituteAddress = inst.str("address").orEmpty(),
             institutePhone = inst.str("phone").orEmpty(),
         )
-        settingsCache = System.currentTimeMillis() to s
+        if (!failed) settingsCache = System.currentTimeMillis() to s
         return s
     }
 
@@ -185,11 +191,11 @@ object IttcAdmitApi {
 
     /** null: not found / not visible */
     fun lead(context: Context, leadId: String): LeadState? {
-        val o = IttcApi.select(context, "leads?select=$LEAD_COLUMNS&id=eq.$leadId&limit=1").optJSONObject(0) ?: return null
+        val o = IttcApi.select(context, "leads?select=$LEAD_COLUMNS&id=eq.${enc(leadId)}&limit=1").optJSONObject(0) ?: return null
         val stageId = o.str("stage_id")
         val kind = stageId?.let {
             try {
-                IttcApi.select(context, "pipeline_stages?select=kind&id=eq.$it&limit=1").optJSONObject(0)?.str("kind")
+                IttcApi.select(context, "pipeline_stages?select=kind&id=eq.${enc(it)}&limit=1").optJSONObject(0)?.str("kind")
             } catch (e: IttcApi.ApiError) {
                 if (e.status == 0) throw e
                 null
@@ -200,7 +206,7 @@ object IttcAdmitApi {
             else -> "open"
         }
         val courses = try {
-            val arr = IttcApi.select(context, "lead_courses?select=course_id&lead_id=eq.$leadId")
+            val arr = IttcApi.select(context, "lead_courses?select=course_id&lead_id=eq.${enc(leadId)}")
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.str("course_id") }
         } catch (e: IttcApi.ApiError) {
             if (e.status == 0) throw e
@@ -238,7 +244,7 @@ object IttcAdmitApi {
     fun lastReturn(context: Context, leadId: String, since: Long?): Pair<String, String>? = try {
         val o = IttcApi.select(
             context,
-            "lead_activity?select=details,created_at&lead_id=eq.$leadId&action=eq.ittc_undone&order=created_at.desc&limit=1",
+            "lead_activity?select=details,created_at&lead_id=eq.${enc(leadId)}&action=eq.ittc_undone&order=created_at.desc&limit=1",
         ).optJSONObject(0)
         val at = time(o?.str("created_at"))
         val d = o?.optJSONObject("details")
@@ -253,7 +259,7 @@ object IttcAdmitApi {
     fun nameOf(context: Context, table: String, id: String?): String? {
         if (id == null) return null
         return try {
-            IttcApi.select(context, "$table?select=name&id=eq.$id&limit=1").optJSONObject(0)?.str("name")
+            IttcApi.select(context, "$table?select=name&id=eq.${enc(id)}&limit=1").optJSONObject(0)?.str("name")
         } catch (e: IttcApi.ApiError) {
             if (e.status == 0) throw e
             null
@@ -263,7 +269,7 @@ object IttcAdmitApi {
     fun personName(context: Context, id: String?): String? {
         if (id == null) return null
         return try {
-            IttcApi.select(context, "profiles?select=full_name&id=eq.$id&limit=1").optJSONObject(0)?.str("full_name")
+            IttcApi.select(context, "profiles?select=full_name&id=eq.${enc(id)}&limit=1").optJSONObject(0)?.str("full_name")
         } catch (_: Throwable) {
             null
         }
@@ -323,7 +329,7 @@ object IttcAdmitApi {
     fun sections(context: Context, batchId: String): List<Named> = try {
         val arr = IttcApi.select(
             context,
-            "batch_sections?select=id,name&batch_id=eq.$batchId&is_active=eq.true&order=sort_order.asc,name.asc",
+            "batch_sections?select=id,name&batch_id=eq.${enc(batchId)}&is_active=eq.true&order=sort_order.asc,name.asc",
         )
         (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { o -> o.str("id")?.let { Named(it, o.str("name").orEmpty()) } } }
     } catch (e: IttcApi.ApiError) {
@@ -368,12 +374,12 @@ object IttcAdmitApi {
 
     /** The fee for admitting to a course: the negotiated one, or the course's full fee (as the Tracker) */
     fun admissionFee(context: Context, leadId: String, courseId: String): Fee {
-        val list = IttcApi.select(context, "course_fees?select=amount&course_id=eq.$courseId")
+        val list = IttcApi.select(context, "course_fees?select=amount&course_id=eq.${enc(courseId)}")
         val courseTotal = (0 until list.length()).sumOf { list.optJSONObject(it)?.num("amount") ?: 0.0 }
         val n = IttcApi.select(
             context,
             "lead_negotiations?select=id,status,final_total,list_total,fee_discounts(amount,status,expires_at)" +
-                "&lead_id=eq.$leadId&course_id=eq.$courseId&order=started_at.asc",
+                "&lead_id=eq.${enc(leadId)}&course_id=eq.${enc(courseId)}&order=started_at.asc",
         ).optJSONObject(0) ?: return Fee(courseTotal, 0.0, courseTotal, false)
         val locked = n.str("status") == "locked"
         val listTotal = if (locked) n.num("list_total") ?: courseTotal else courseTotal
@@ -434,6 +440,8 @@ object IttcAdmitApi {
         val voided: Boolean,
         val refund: Boolean,
         val collegeNo: String?,
+        /** when it was entered (0: unknown) */
+        val createdAt: Long = 0L,
     )
 
     data class Installment(val seq: Int, val dueDate: String, val amount: Double)
@@ -464,7 +472,7 @@ object IttcAdmitApi {
     }
 
     fun payments(context: Context, leadId: String): Payments {
-        val p = IttcApi.select(context, "fee_payments?select=*&lead_id=eq.$leadId&order=paid_at.desc")
+        val p = IttcApi.select(context, "fee_payments?select=*&lead_id=eq.${enc(leadId)}&order=paid_at.desc")
         val list = (0 until p.length()).mapNotNull { i ->
             val o = p.optJSONObject(i) ?: return@mapNotNull null
             Payment(
@@ -479,10 +487,11 @@ object IttcAdmitApi {
                 voided = o.str("voided_at") != null,
                 refund = o.str("kind") == "refund",
                 collegeNo = o.str("college_receipt_no"),
+                createdAt = time(o.str("created_at")) ?: 0L,
             )
         }
         val inst = try {
-            val a = IttcApi.select(context, "fee_installments?select=seq,due_date,amount&lead_id=eq.$leadId&order=seq.asc")
+            val a = IttcApi.select(context, "fee_installments?select=seq,due_date,amount&lead_id=eq.${enc(leadId)}&order=seq.asc")
             (0 until a.length()).mapNotNull { i ->
                 a.optJSONObject(i)?.let { o -> Installment(o.optInt("seq"), o.str("due_date").orEmpty(), o.num("amount") ?: 0.0) }
             }
@@ -522,6 +531,21 @@ object IttcAdmitApi {
             JSONObject()
         }
         return PayResult(o.str("id"), o.str("receipt_no").orEmpty(), o.num("due"))
+    }
+
+    /**
+     * After a network error on record_payment (the reply was lost, the payment may be in): a
+     * payment of [amount] entered by me since [sinceMs] (less 2 minutes for the clocks), or null.
+     * Throws when the list can't be read either.
+     */
+    fun findJustRecorded(context: Context, leadId: String, amount: Double, sinceMs: Long): PayResult? {
+        val me = IttcAuth.session(context)?.userId
+        val from = sinceMs - 2 * 60_000L
+        val hit = payments(context, leadId).payments.firstOrNull {
+            !it.voided && !it.refund && Math.abs(it.amount - amount) < 0.005 &&
+                (me == null || it.receivedBy == me) && (if (it.createdAt > 0) it.createdAt else it.paidAt) >= from
+        } ?: return null
+        return PayResult(hit.id, hit.receiptNo, null)
     }
 
     // ================================================================== papers
@@ -571,7 +595,7 @@ object IttcAdmitApi {
     fun openRequests(context: Context, leadId: String): List<DocRequest> = try {
         val arr = IttcApi.select(
             context,
-            "docready_requests?select=id,token,expires_at,closed_at,sent_via&lead_id=eq.$leadId&order=created_at.desc&limit=10",
+            "docready_requests?select=id,token,expires_at,closed_at,sent_via&lead_id=eq.${enc(leadId)}&order=created_at.desc&limit=10",
         )
         val now = System.currentTimeMillis()
         (0 until arr.length()).mapNotNull { i ->
@@ -631,6 +655,11 @@ object IttcAdmitApi {
         return (if (neg) "-৳" else "৳") + out
     }
 
+    /** Bengali digits (০-৯) as 0-9, the rest as it is */
+    fun asciiDigits(s: CharSequence): String = buildString(s.length) {
+        s.forEach { ch -> append(if (ch in '০'..'৯') '0' + (ch - '০') else ch) }
+    }
+
     /** "18 Nov 2026" */
     fun day(ms: Long): String = SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(Date(ms))
 
@@ -646,11 +675,28 @@ object IttcAdmitApi {
     fun isToday(ms: Long): Boolean =
         java.time.Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now()
 
-    /** A chosen day with the time now (as the Tracker's date pickers keep the time) */
+    /**
+     * A chosen day with the time now (as the Tracker's date pickers keep the time). A past day gets
+     * 10 minutes more (never past its midnight), so a day exactly "backdate_days" ago still passes
+     * the server's check after the trip there.
+     */
     private fun isoAt(dayMs: Long): String {
-        val d = java.time.Instant.ofEpochMilli(dayMs).atZone(ZoneId.systemDefault()).toLocalDate()
-        return ZonedDateTime.of(d, LocalTime.now(), ZoneId.systemDefault()).toOffsetDateTime().toString()
+        val zone = ZoneId.systemDefault()
+        val d = java.time.Instant.ofEpochMilli(dayMs).atZone(zone).toLocalDate()
+        val now = LocalTime.now()
+        val t = if (d.isBefore(LocalDate.now(zone))) {
+            now.plusMinutes(10).let { if (it.isBefore(now)) LocalTime.of(23, 59, 59) else it }
+        } else now
+        return ZonedDateTime.of(d, t, zone).toOffsetDateTime().toString()
     }
+
+    /** An id in a query (encoded: a bad one can't change the query) */
+    private fun enc(s: String): String = android.net.Uri.encode(s)
+
+    private val UUID_RE = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+    /** A lead / row id as the server makes them (ids from notification data are checked with this) */
+    fun isUuid(s: String?): Boolean = s != null && UUID_RE.matches(s)
 
     fun time(s: String?): Long? = org.fossify.phone.helpers.IttcBridge.parseTimeOf(s)
 

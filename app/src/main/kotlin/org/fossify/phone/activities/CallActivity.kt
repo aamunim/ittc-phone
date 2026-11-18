@@ -697,6 +697,16 @@ class CallActivity : SimpleActivity() {
     }
 
     private fun ittcWriteNote() {
+        // (never a crash on the in-call screen for a note)
+        try {
+            ittcWriteNoteNow()
+        } catch (_: Throwable) {
+            ittcNoteDialog = null
+            ittcNoteInput = null
+        }
+    }
+
+    private fun ittcWriteNoteNow() {
         val number = ittcNoteNumber ?: return
         if (ittcNoteDialog?.isShowing == true || isFinishing || isDestroyed) return
         val pad = resources.getDimensionPixelSize(R.dimen.activity_margin)

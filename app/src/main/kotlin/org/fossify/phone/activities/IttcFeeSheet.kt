@@ -12,6 +12,7 @@ import android.widget.TextView
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
+import org.fossify.phone.direct.IttcAdmitApi
 import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcVisitFeeApi
 import org.fossify.phone.direct.IttcVisitFeeApi.Negotiation
@@ -468,7 +469,7 @@ object IttcFeeSheet {
         body.addView(preview, IttcCUi.topMargin(a, 8))
         val base = if (st.feeId == null) t.list else n.courseFees.firstOrNull { it.id == st.feeId }?.amount ?: 0.0
         fun amountOf(text: String): Double {
-            val v = text.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
+            val v = IttcAdmitApi.asciiDigits(text).filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
             return ((if (st.percent) base * v / 100 else v) * 100).roundToLong() / 100.0
         }
         fun updatePreview() {
@@ -524,7 +525,7 @@ object IttcFeeSheet {
         lateinit var save: TextView
         save = IttcCUi.button(a, a.getString(R.string.ittc_c_disc_send), IttcCUi.Style.PRIMARY) {
             val amount = amountOf(st.value)
-            val v = st.value.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
+            val v = IttcAdmitApi.asciiDigits(st.value).filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
             when {
                 amount <= 0 -> showErr(err, a.getString(R.string.ittc_c_disc_type))
                 amount > base -> showErr(err, a.getString(R.string.ittc_c_disc_too_much, IttcVisitFeeApi.money(base)))
@@ -564,7 +565,7 @@ object IttcFeeSheet {
         val row = IttcCUi.row(a)
         lateinit var save: TextView
         save = IttcCUi.button(a, a.getString(R.string.ittc_c_save), IttcCUi.Style.PRIMARY) {
-            val v = amount.text?.toString().orEmpty().filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
+            val v = IttcAdmitApi.asciiDigits(amount.text?.toString().orEmpty()).filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
             val text = note.text?.toString()?.trim().orEmpty()
             when {
                 !isNote && v <= 0 -> showErr(err, a.getString(R.string.ittc_c_said_amount_needed))

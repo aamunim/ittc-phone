@@ -15,7 +15,6 @@ import android.text.format.DateUtils
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -38,6 +37,7 @@ import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcRealtime
 import org.fossify.phone.direct.IttcReminders
 import org.fossify.phone.extensions.startCallIntent
+import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDialer
@@ -789,6 +789,22 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         activity?.startCallIntent(number)
     }
 
+    /** IttcTheme.initials without a regex per row (lists bind many rows) */
+    private fun initialsOf(name: String?): String {
+        val words = name.orEmpty().split(' ', '\t', '\n', '\u00A0').filter { w -> w.firstOrNull()?.isLetter() == true }
+        return when {
+            words.isEmpty() -> "#"
+            words.size == 1 -> words[0].take(2).uppercase()
+            else -> (words[0].take(1) + words[1].take(1)).uppercase()
+        }
+    }
+
+    /** A swipe's call: asks first when "confirm before calling" is on (as Recents) */
+    private fun callConfirmed(l: IttcBridge.PhoneLead) {
+        val number = l.callNumber?.takeIf { it.isNotBlank() } ?: return
+        activity?.startCallWithConfirmationCheck(number, l.name.ifEmpty { number })
+    }
+
     private fun showOptions(l: IttcBridge.PhoneLead) {
         val act = activity ?: return
         val items = ArrayList<Pair<String, () -> Unit>>()
@@ -819,15 +835,6 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     /** Swipe right: call; swipe left: the next call (direct) / the lead (Tracker) */
     private fun setupSwipes() {
         val list = binding.ittcLeadsList
-        // (a row takes its own sideways moves: the tabs' pager would take them first otherwise)
-        list.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
-            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                if (e.actionMasked == MotionEvent.ACTION_DOWN && rv.findChildViewUnder(e.x, e.y) != null) {
-                    rv.parent?.requestDisallowInterceptTouchEvent(true)
-                }
-                return false
-            }
-        })
         ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT) {
             override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder) = false
 
@@ -838,6 +845,17 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             }
 
             override fun getSwipeThreshold(vh: RecyclerView.ViewHolder) = 0.35f
+
+            // (once a row is really being swiped, the tabs' pager must not take the move; until then it may)
+            override fun onSelectedChanged(vh: RecyclerView.ViewHolder?, actionState: Int) {
+                super.onSelectedChanged(vh, actionState)
+                if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE) list.parent?.requestDisallowInterceptTouchEvent(true)
+            }
+
+            override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
+                super.clearView(rv, vh)
+                rv.parent?.requestDisallowInterceptTouchEvent(false)
+            }
 
             // (a quick flick is not enough: no call by accident)
             override fun getSwipeEscapeVelocity(defaultValue: Float) = defaultValue * 4
@@ -850,7 +868,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 if (pos != RecyclerView.NO_POSITION) adapter.notifyItemChanged(pos)
                 if (l == null) return
                 learnSwipe()
-                if (direction == ItemTouchHelper.RIGHT) call(l.callNumber) else nextCallFor(l)
+                if (direction == ItemTouchHelper.RIGHT) callConfirmed(l) else nextCallFor(l)
             }
 
             override fun onChildDraw(
@@ -1034,7 +1052,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 val (avBg, avFg) = IttcTheme.avatarColors(context, title)
                 holder.avatar.setColor(avBg)
                 ittcLeadAvatar.setTextColor(avFg)
-                ittcLeadAvatar.text = IttcTheme.initials(l.name)
+                ittcLeadAvatar.text = initialsOf(l.name)
 
                 ittcLeadName.text = if (l.rating.equals("hot", true)) "$title 🔥" else title
                 ittcLeadName.setTextColor(p.text)

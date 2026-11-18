@@ -23,6 +23,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
 import org.fossify.phone.databinding.IttcCActivitySearchBinding
 import org.fossify.phone.direct.IttcDirect
+import org.fossify.phone.direct.IttcNotify
 import org.fossify.phone.direct.IttcVisitFeeApi
 import org.fossify.phone.helpers.IttcTheme
 
@@ -38,6 +39,7 @@ class IttcSearchActivity : SimpleActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var pending: Runnable? = null
     @Volatile private var seq = 0
+    private val notifyHold = IttcNotify.ScreenHold()
     private var list = "recent"
     private val adapter = Adapter()
 
@@ -83,6 +85,12 @@ class IttcSearchActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.ittcCSearchAppbar, NavigationIcon.Arrow)
+        notifyHold.resume(this)
+    }
+
+    override fun onPause() {
+        notifyHold.pause()
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -129,7 +137,8 @@ class IttcSearchActivity : SimpleActivity() {
             show(mine, emptyList(), getString(R.string.ittc_c_signed_out))
             return
         }
-        if (text.isNotEmpty() && text.length < 2 && text.none { it.isDigit() }) {
+        // ("@" alone or one letter: not a search yet)
+        if (text.isNotEmpty() && text.count { it.isLetterOrDigit() } < 2) {
             show(mine, emptyList(), getString(R.string.ittc_c_search_type_more))
             return
         }

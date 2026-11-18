@@ -307,6 +307,8 @@ class RecentsFragment(
                 )
 
                 binding.recentsList.adapter = recentsAdapter
+                // 🎓 ITTC: a row drawn again (a lead came in, the corners) changes in place, no cross-fade flicker
+                (binding.recentsList.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
                 recentsAdapter?.updateItems(recents)
             } else {
                 recentsAdapter?.updateItems(recents)

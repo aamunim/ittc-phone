@@ -389,17 +389,18 @@ object IttcVisitFeeApi {
      */
     fun search(context: Context, text: String, limit: Int = 40): List<Found> {
         val clean = text.replace(Regex("[%,()*\"\\\\]"), " ").replace(Regex("\\s+"), " ").trim()
-        if (clean.isEmpty()) return emptyList()
+        if (clean.count { it.isLetterOrDigit() } < 2) return emptyList()
         val digits = searchDigits(clean)
         val username = clean.trimStart('@').lowercase()
         val parts = arrayListOf(
             "name.ilike.*$clean*",
-            "whatsapp_username.ilike.*$username*",
             "student_ref.ilike.*$clean*",
+            "nu_admission_id.ilike.*$clean*",
             "guardian_name.ilike.*$clean*",
             "email.ilike.*$clean*",
             "area.ilike.*$clean*",
         )
+        if (username.length >= 2) parts += "whatsapp_username.ilike.*$username*"
         if (digits.length >= 3) {
             parts += listOf(
                 "phone.ilike.*$digits*",

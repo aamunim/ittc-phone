@@ -17,6 +17,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
 import org.fossify.phone.databinding.IttcDActivityAdmitBinding
 import org.fossify.phone.direct.IttcAdmitApi
+import org.fossify.phone.direct.IttcApi
 import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.helpers.IttcTheme
 import java.util.Calendar
@@ -122,7 +123,7 @@ class IttcAdmitActivity : SimpleActivity() {
         ensureBackgroundThread {
             val r = try {
                 val l = IttcAdmitApi.lead(applicationContext, leadId)
-                val s = IttcAdmitApi.settings(applicationContext)
+                val s = IttcAdmitApi.settings(applicationContext, strict = true)
                 val m = IttcAdmitApi.may(applicationContext)
                 val c = if (l != null && l.isOpen && m.admit) IttcAdmitApi.courses(applicationContext) else emptyList()
                 val preview = if (l != null && l.isOpen && m.admit && s.idMode == "auto") IttcAdmitApi.previewRef(applicationContext, null, null, null) else null
@@ -463,7 +464,6 @@ class IttcAdmitActivity : SimpleActivity() {
                 val form = payForm ?: IttcDPayForm(this, s, f.final, null, admitted = false).also { payForm = it }
                 form.amountInput.hint = getString(R.string.ittc_d_amount_up_to, IttcAdmitApi.money(f.final))
                 form.addTo(box, withDate = false, withNote = false)
-                box.addView(IttcDUi.hint(this, getString(R.string.ittc_d_paid_on_admission_day)), IttcDUi.lp(this, top = 4f))
             }
         }
         if (min > 0 && !mayPay()) {
@@ -485,7 +485,9 @@ class IttcAdmitActivity : SimpleActivity() {
                 val ms = Calendar.getInstance().apply { set(y, m, d, 12, 0, 0) }.timeInMillis
                 admittedDay = if (IttcAdmitApi.isToday(ms)) null else ms
                 drawDay()
-            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).apply {
+                datePicker.maxDate = System.currentTimeMillis()
+            }.show()
         } catch (_: Throwable) {
         }
     }
@@ -601,17 +603,49 @@ class IttcAdmitActivity : SimpleActivity() {
             var error: String? = null
             var paid: IttcAdmitApi.PayResult? = null
             var payError: String? = null
+            var payFirst = payArgs != null
             try {
-                result = IttcAdmitApi.markAdmitted(app, leadId, course, batch, section, day, ref, note)
-                // the payment, now that the student is admitted
-                if (payArgs != null) {
+                result = try {
+                    IttcAdmitApi.markAdmitted(app, leadId, course, batch, section, day, ref, note)
+                } catch (e: IttcApi.ApiError) {
+                    if (e.status != 0) throw e
+                    // The reply was lost: it may have been saved. Look again before saying it failed.
+                    val now = try {
+                        IttcAdmitApi.lead(app, leadId)
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    if (now == null || !now.admitted) throw e
+                    // admitted: the first payment only if none is in yet
+                    if (payFirst) {
+                        payFirst = try {
+                            IttcAdmitApi.payments(app, leadId).payments.none { !it.voided && !it.refund }
+                        } catch (_: Throwable) {
+                            false.also { payError = getString(R.string.ittc_d_pay_not_confirmed) }
+                        }
+                    }
+                    IttcAdmitApi.AdmitResult(now.studentRef, null)
+                }
+                // the payment, now that the student is admitted (paid now, as the Tracker's AdmitSheet)
+                if (payArgs != null && payFirst) {
+                    val amount = payArgs[0] as Double
+                    val started = System.currentTimeMillis()
                     try {
                         paid = IttcAdmitApi.recordPayment(
-                            app, leadId, payArgs[0] as Double, payArgs[1] as String, payArgs[2] as String?, day,
+                            app, leadId, amount, payArgs[1] as String, payArgs[2] as String?, null,
                             getString(R.string.ittc_d_at_admission), payArgs[3] as String?,
                         )
                     } catch (e: Throwable) {
-                        payError = IttcAdmitApi.errorText(e, getString(R.string.ittc_d_could_not_save))
+                        if (e is IttcApi.ApiError && e.status == 0) {
+                            paid = try {
+                                IttcAdmitApi.findJustRecorded(app, leadId, amount, started)
+                            } catch (_: Throwable) {
+                                null
+                            }
+                            if (paid == null) payError = getString(R.string.ittc_d_pay_not_confirmed)
+                        } else {
+                            payError = IttcAdmitApi.errorText(e, getString(R.string.ittc_d_could_not_save))
+                        }
                     }
                 }
             } catch (e: Throwable) {

@@ -214,6 +214,15 @@ class RecentCallsAdapter(
         bindViewHolder(holder)
     }
 
+    // 🎓 ITTC: after a new list only the corners / dividers of the rows on screen are drawn again (no full rebind, no flicker)
+    override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isNotEmpty() && payloads.all { it === PAYLOAD_CORNERS }) {
+            if (holder is RecentCallViewHolder && position in 0 until itemCount) holder.bindCorners(position)
+            return
+        }
+        super.onBindViewHolder(holder, position, payloads)
+    }
+
     override fun onViewRecycled(holder: ViewHolder) {
         super.onViewRecycled(holder)
         if (!activity.isDestroyed && !activity.isFinishing) {
@@ -229,7 +238,7 @@ class RecentCallsAdapter(
         super.submitList(list) {
             layoutManager.onRestoreInstanceState(recyclerViewState)
             // 🎓 ITTC: a row's card corners depend on its neighbours: the rows on screen again
-            if (cardMode && !activity.isFinishing && !activity.isDestroyed) notifyItemRangeChanged(0, itemCount)
+            if (cardMode && !activity.isFinishing && !activity.isDestroyed) notifyItemRangeChanged(0, itemCount, PAYLOAD_CORNERS)
         }
     }
 
@@ -608,6 +617,21 @@ class RecentCallsAdapter(
             }
         }
 
+        /** (one card per day: the first row rounded on top, the last at the bottom; a divider between) */
+        fun bindCorners(position: Int) {
+            if (!cardMode) return
+            val list = currentList
+            val first = list.getOrNull(position - 1) !is RecentCall
+            val last = list.getOrNull(position + 1) !is RecentCall
+            val want = cardCorners(first, last)
+            if (corners !== want) {
+                corners = want
+                card.cornerRadii = want
+            }
+            binding.itemRecentsDivider.beVisibleIf(!first)
+            if (!first) binding.itemRecentsDivider.setBackgroundColor(palette.divider)
+        }
+
         fun bind(call: RecentCall, position: Int) = bindView(
             item = call,
             allowSingleClick = refreshItemsListener != null && !call.isUnknownNumber,
@@ -618,21 +642,12 @@ class RecentCallsAdapter(
                 val selected = selectedKeys.contains(call.id)
                 itemRecentsHolder.isSelected = selected
                 if (cardMode) {
-                    // (one card per day: the first row rounded on top, the last at the bottom)
-                    val first = currentList.getOrNull(position - 1) !is RecentCall
-                    val last = currentList.getOrNull(position + 1) !is RecentCall
-                    val want = cardCorners(first, last)
-                    if (corners !== want) {
-                        corners = want
-                        card.cornerRadii = want
-                    }
+                    bindCorners(position)
                     val fill = if (selected) p.primarySoft else p.surface
                     if (cardColor != fill) {
                         cardColor = fill
                         card.setColor(fill)
                     }
-                    itemRecentsDivider.beVisibleIf(!first)
-                    if (!first) itemRecentsDivider.setBackgroundColor(p.divider)
                 } else {
                     root.setupViewBackground(activity)
                     itemRecentsDivider.beVisibleIf(false)
@@ -896,6 +911,9 @@ class RecentCallsAdapter(
     companion object {
         private const val VIEW_TYPE_DATE = 0
         private const val VIEW_TYPE_CALL = 1
+
+        /** 🎓 ITTC: "only the corners and dividers" (a bind payload) */
+        private val PAYLOAD_CORNERS = Any()
 
         /** 🎓 ITTC 3.5: the day code of the one "Earlier" group (before yesterday) */
         const val EARLIER_DAY_CODE = "0000-00-00"

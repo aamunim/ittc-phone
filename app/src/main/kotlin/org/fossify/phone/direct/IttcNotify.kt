@@ -36,10 +36,16 @@ object IttcNotify {
 
     @Volatile private var socket: WebSocket? = null
     @Volatile private var wanted = false
+    /** Screens that want the live watch now (MainActivity, a lead, search, the inbox) */
+    private var users = 0
+    @Volatile private var appContext: Context? = null
     @Volatile private var openedAt = 0L
     private var failures = 0
     private var ref = 0
+    /** (heartbeats and timed reopens only: never waits for the network) */
     private val timer = Executors.newSingleThreadScheduledExecutor()
+    /** (network work: tokens, the count, opening the socket — off the timer and the socket's reader) */
+    private val worker = Executors.newSingleThreadExecutor()
     private var beat: ScheduledFuture<*>? = null
     private var retry: ScheduledFuture<*>? = null
     private val main = Handler(Looper.getMainLooper())
@@ -56,7 +62,7 @@ object IttcNotify {
     /** Ask the server for the unread count (off the main thread); [done] runs on the main thread */
     fun refreshAsync(context: Context, done: ((Int) -> Unit)? = null) {
         val app = context.applicationContext
-        timer.execute {
+        worker.execute {
             val n = try {
                 if (IttcDirect.isActive(app)) countNow(app) else unreadCached(app)
             } catch (_: Throwable) {
@@ -91,24 +97,77 @@ object IttcNotify {
     }
 
     // ------------------------------------------------------------------ live
-    /** The app is open: watch for new notifications (safe to call again, from any thread) */
+    /**
+     * A screen of the app is open: watch for new notifications. Counted, as [IttcRealtime]'s users:
+     * each start is matched by one [stop] (in onResume / onPause); watched while any screen wants it.
+     */
     fun start(context: Context) {
         val app = context.applicationContext
-        wanted = true
-        timer.execute { open(app) }
+        appContext = app
+        synchronized(this) {
+            users++
+            wanted = true
+        }
+        worker.execute { open(app) }
     }
 
-    /** The app is closed, or signed out: no more watching */
+    /** One screen less wants it (closed when none does); signed out: closed, whoever wanted it */
     fun stop() {
-        synchronized(this) {
-            wanted = false
-            beat?.cancel(false)
-            retry?.cancel(false)
-            val s = socket
-            socket = null
-            try {
-                s?.close(1000, null)
+        val app = appContext ?: return
+        // (on the worker, after any start before it: reading the session must not block the main thread)
+        worker.execute {
+            val signedIn = try {
+                IttcAuth.isSignedIn(app)
             } catch (_: Throwable) {
+                false
+            }
+            synchronized(this) {
+                users = if (signedIn) (users - 1).coerceAtLeast(0) else 0
+                if (users > 0) return@execute
+                wanted = false
+                beat?.cancel(false)
+                retry?.cancel(false)
+                val s = socket
+                socket = null
+                try {
+                    s?.close(1000, null)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+    }
+
+    /**
+     * For a screen other than MainActivity: [resume] in onResume (starts when signed in, read off
+     * the main thread), [pause] in onPause — never more than one start held per screen.
+     */
+    class ScreenHold {
+        private var resumed = false
+        private var held = false
+
+        fun resume(context: Context) {
+            resumed = true
+            val app = context.applicationContext
+            IttcNotify.worker.execute {
+                val ok = try {
+                    IttcDirect.isSignedIn(app)
+                } catch (_: Throwable) {
+                    false
+                }
+                if (ok) IttcNotify.main.post {
+                    if (resumed && !held) {
+                        held = true
+                        IttcNotify.start(app)
+                    }
+                }
+            }
+        }
+
+        fun pause() {
+            resumed = false
+            if (held) {
+                held = false
+                IttcNotify.stop()
             }
         }
     }
@@ -153,9 +212,11 @@ object IttcNotify {
                 }, 25, 25, TimeUnit.SECONDS)
             }
             // (what came while it was closed: the count only, no old pop-ups)
-            try {
-                countNow(app)
-            } catch (_: Throwable) {
+            worker.execute {
+                try {
+                    countNow(app)
+                } catch (_: Throwable) {
+                }
             }
         }
 
@@ -198,7 +259,7 @@ object IttcNotify {
             }
             if (wanted) {
                 retry?.cancel(false)
-                retry = timer.schedule({ open(app) }, wait, TimeUnit.MILLISECONDS)
+                retry = timer.schedule({ worker.execute { open(app) } }, wait, TimeUnit.MILLISECONDS)
             }
         }
     }

@@ -23,6 +23,7 @@ import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
 import org.fossify.phone.direct.IttcAdmitApi
+import org.fossify.phone.direct.IttcApi
 import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.helpers.IttcTheme
 import java.io.File
@@ -59,7 +60,7 @@ object IttcPaymentSheet {
                         val r = try {
                             val lead = IttcAdmitApi.lead(app, leadId)
                             Result.success(
-                                lead?.let { Data(it, IttcAdmitApi.settings(app), IttcAdmitApi.may(app), if (it.admitted) IttcAdmitApi.payments(app, leadId) else null) },
+                                lead?.let { Data(it, IttcAdmitApi.settings(app), IttcAdmitApi.may(app), if (it.admitted || it.admittedAt != null) IttcAdmitApi.payments(app, leadId) else null) },
                             )
                         } catch (e: Throwable) {
                             Result.failure(e)
@@ -95,7 +96,9 @@ object IttcPaymentSheet {
         val lead = d.lead
         body.addView(IttcDUi.hint(activity, listOfNotNull(lead.name, lead.studentRef?.let { activity.getString(R.string.ittc_d_student_id, it) }).joinToString(" · ")))
 
-        if (!lead.admitted) {
+        // a cancelled admission still shows its payments / refunds (no new ones)
+        val cancelledWithPays = !lead.admitted && d.pays?.payments?.isNotEmpty() == true
+        if (!lead.admitted && !cancelledWithPays) {
             val box = IttcDUi.box(activity)
             val final = lead.feeFinal
             box.addView(IttcDUi.text(activity, if (final != null && final > 0) activity.getString(R.string.ittc_d_fee_is, IttcAdmitApi.money(final)) else activity.getString(R.string.ittc_d_fee_unknown), 16f, p.text, bold = true))
@@ -161,7 +164,7 @@ object IttcPaymentSheet {
         }
 
         // ---- take a payment (the people the Tracker lets; the server checks again)
-        if (d.may.pay && d.settings.payOn && due > 0) {
+        if (lead.admitted && d.may.pay && d.settings.payOn && due > 0) {
             body.addView(IttcDUi.divider(activity), IttcDUi.lp(activity, top = 14f))
             body.addView(IttcDUi.label(activity, activity.getString(R.string.ittc_d_take_payment)), IttcDUi.lp(activity, top = 12f))
             val next = plan.firstOrNull { it.state != "paid" }?.let { it.item.amount - it.covered }
@@ -179,13 +182,26 @@ object IttcPaymentSheet {
                     busy = true
                     save.alpha = 0.5f
                     val app = activity.applicationContext
+                    val amountNow = form.amount()
+                    val started = System.currentTimeMillis()
                     ensureBackgroundThread {
-                        val r = try {
+                        val r: Result<IttcAdmitApi.PayResult> = try {
                             Result.success(
-                                IttcAdmitApi.recordPayment(app, lead.id, form.amount(), form.method!!, form.txn(), form.dayMs(), form.note(), form.college()),
+                                IttcAdmitApi.recordPayment(app, lead.id, amountNow, form.method!!, form.txn(), form.dayMs(), form.note(), form.college()),
                             )
                         } catch (e: Throwable) {
-                            Result.failure(e)
+                            if (e is IttcApi.ApiError && e.status == 0) {
+                                // The reply was lost: it may be saved. Look before letting it be sent again.
+                                val found = try {
+                                    IttcAdmitApi.findJustRecorded(app, lead.id, amountNow, started)
+                                } catch (_: Throwable) {
+                                    null
+                                }
+                                if (found != null) Result.success(found)
+                                else Result.failure(IllegalStateException(app.getString(R.string.ittc_d_pay_not_confirmed)))
+                            } else {
+                                Result.failure(e)
+                            }
                         }
                         activity.runOnUiThread {
                             busy = false
@@ -193,7 +209,7 @@ object IttcPaymentSheet {
                             if (!IttcDUi.alive(activity)) return@runOnUiThread
                             r.onFailure { IttcDUi.showError(error, IttcAdmitApi.errorText(it, activity.getString(R.string.ittc_d_could_not_save))) }
                             r.onSuccess { res ->
-                                val amount = IttcAdmitApi.money(form.amount())
+                                val amount = IttcAdmitApi.money(amountNow)
                                 activity.toast(activity.getString(R.string.ittc_d_payment_saved, amount, res.receiptNo))
                                 // Offer the receipt straight away (as the Tracker)
                                 try {
@@ -212,7 +228,7 @@ object IttcPaymentSheet {
                 }
                 body.addView(save, IttcDUi.lp(activity, top = 12f))
             }
-        } else if (due > 0 && !d.may.pay) {
+        } else if (lead.admitted && due > 0 && !d.may.pay) {
             body.addView(IttcDUi.hint(activity, activity.getString(R.string.ittc_d_cant_take)), IttcDUi.lp(activity, top = 12f))
         }
 
@@ -322,17 +338,25 @@ internal class IttcDPayForm(
                 dayMs = if (IttcAdmitApi.isToday(ms)) null else ms
                 showDay()
             }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).apply {
-                datePicker.maxDate = System.currentTimeMillis()
+                val now = System.currentTimeMillis()
+                datePicker.maxDate = now
+                // (an admin may go further back on the Tracker; here: as far as the setting allows)
+                datePicker.minDate = now - settings.backdateDays.coerceAtLeast(0) * 24L * 60 * 60 * 1000
             }.show()
         } catch (_: Throwable) {
         }
     }
 
-    fun amount(): Double = amountInput.text.toString().replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: 0.0
+    /** (Bengali digits ০-৯ are read as 0-9) */
+    fun amount(): Double = IttcAdmitApi.asciiDigits(amountInput.text.toString()).replace(NOT_NUMBER, "").toDoubleOrNull() ?: 0.0
     fun txn(): String? = if (methodInfo()?.txn == true) txnInput.text.toString().trim().ifEmpty { null } else null
     fun college(): String? = if (settings.collegeReceipt == "off") null else collegeInput.text.toString().trim().ifEmpty { null }
     fun note(): String? = noteInput.text.toString().trim().ifEmpty { null }
     fun dayMs(): Long? = dayMs
+
+    private companion object {
+        val NOT_NUMBER = Regex("[^0-9.]")
+    }
 
     /** The Tracker's checks; null = fine */
     fun validate(due: Double, least: Double = 0.0): String? {
@@ -417,7 +441,8 @@ internal object IttcReceipt {
         val uri = try {
             if (app.packageManager.resolveContentProvider(authority(app), 0) != null) {
                 val dir = File(app.cacheDir, "ittc_receipts").apply { mkdirs() }
-                dir.listFiles()?.forEach { it.delete() } // (only the newest is kept)
+                // keep the last few (a share sheet may still be reading an earlier one)
+                dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(4)?.forEach { it.delete() }
                 val file = File(dir, pay.receiptNo.replace(Regex("[^A-Za-z0-9_-]"), "_").ifEmpty { "receipt" } + ".png")
                 val bmp = image(app, d)
                 FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }

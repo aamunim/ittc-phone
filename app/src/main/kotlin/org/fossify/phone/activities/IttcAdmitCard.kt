@@ -441,6 +441,7 @@ internal object IttcDUi {
                 maxLines = 1
                 isSingleLine = true
             }
+            if (numeric) ittcAcceptBengaliDigits()
             layoutParams = lp(context, top = 6f)
         }
     }
@@ -566,5 +567,14 @@ internal class IttcDFlow(context: Context) : ViewGroup(context) {
             x += c.measuredWidth + gap
             lineH = maxOf(lineH, c.measuredHeight)
         }
+    }
+}
+
+/** A number field that also takes Bengali digits (০-৯; read them with IttcAdmitApi.asciiDigits), on the number keyboard */
+internal fun EditText.ittcAcceptBengaliDigits() {
+    try {
+        keyListener = android.text.method.DigitsKeyListener.getInstance("0123456789.,০১২৩৪৫৬৭৮৯")
+        setRawInputType(InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+    } catch (_: Throwable) {
     }
 }

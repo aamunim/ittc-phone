@@ -16,9 +16,9 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.NestedScrollView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import org.fossify.commons.extensions.getAlertDialogBuilder
@@ -352,6 +352,7 @@ internal object IttcCUi {
             } else {
                 maxLines = 1
             }
+            if (type and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_NUMBER) ittcAcceptBengaliDigits()
         }
     }
 
@@ -406,7 +407,7 @@ internal object IttcCUi {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(activity, 20), dp(activity, 12), dp(activity, 20), dp(activity, 28))
         }
-        holder.addView(ScrollView(activity).apply { addView(body) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        holder.addView(NestedScrollView(activity).apply { addView(body) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         dialog.setContentView(holder)
         dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         dialog.setOnShowListener {

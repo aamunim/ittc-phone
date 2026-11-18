@@ -143,7 +143,7 @@
     <string name="ittc_d_pay_now">Take a payment now</string>
     <string name="ittc_d_pay_least">" (at least %1$s)"</string>
     <string name="ittc_d_amount_up_to">Amount (৳), up to %1$s</string>
-    <string name="ittc_d_paid_on_admission_day">Paid on the admission date.</string>
+    <string name="ittc_d_pay_not_confirmed">Could not confirm — check the list before trying again.</string>
     <string name="ittc_d_min_cant_pay">A payment of at least %1$s is needed to admit, and you can\'t take payments.</string>
     <string name="ittc_d_admission_date">Admission date</string>
     <string name="ittc_d_student_id_label">Student ID</string>

@@ -47,6 +47,7 @@ import org.fossify.phone.databinding.IttcActivityLeadBinding
 import org.fossify.phone.direct.IttcApi
 import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcLeadApi
+import org.fossify.phone.direct.IttcNotify
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
@@ -89,8 +90,10 @@ class IttcLeadActivity : SimpleActivity() {
 
     /** The visit / fee and admission cards were filled once (they reload after a change) */
     private var cardsBound = false
-    /** Back from the admission screen: read the lead again */
+    /** Paused after the first load (a call, a sheet's screen, the admission screen…): read the lead again */
     private var reloadOnResume = false
+    private var loadedOnce = false
+    private val notifyHold = IttcNotify.ScreenHold()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -133,12 +136,19 @@ class IttcLeadActivity : SimpleActivity() {
             window.setNavigationBarAppearance(p.bg)
         } catch (_: Throwable) {
         }
+        notifyHold.resume(this)
         if (reloadOnResume) {
-            // (back from the admission screen: the lead and both cards again, even offline)
+            // (back from elsewhere: the lead and both cards again, even offline)
             reloadOnResume = false
             cardsBound = false
             load()
         }
+    }
+
+    override fun onPause() {
+        notifyHold.pause()
+        if (loadedOnce) reloadOnResume = true
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -202,6 +212,7 @@ class IttcLeadActivity : SimpleActivity() {
             }
             runOnUiThread {
                 if (!alive() || seq != loadSeq) return@runOnUiThread
+                loadedOnce = true
                 signedIn = inNow
                 meta = m
                 // (a change made here not sent yet: keep it on screen, say it waits, look again later)

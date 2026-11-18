@@ -18,6 +18,7 @@ import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
 import org.fossify.phone.databinding.IttcCActivityInboxBinding
+import org.fossify.phone.direct.IttcAdmitApi
 import org.fossify.phone.direct.IttcApi
 import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.direct.IttcNotify
@@ -38,6 +39,7 @@ class IttcInboxActivity : SimpleActivity() {
     private val adapter = Adapter()
     private var items: List<Item> = emptyList()
     @Volatile private var loading = 0
+    private val notifyHold = IttcNotify.ScreenHold()
 
     private class Item(
         val id: String,
@@ -48,10 +50,12 @@ class IttcInboxActivity : SimpleActivity() {
         val createdAt: Long,
         var read: Boolean,
     ) {
-        /** The lead it is about (lead_id, or the only one of lead_ids) */
+        /** The lead it is about (lead_id, or the only one of lead_ids; only a real id) */
         val leadId: String?
-            get() = data?.optString("lead_id")?.takeIf { it.isNotBlank() && it != "null" }
-                ?: data?.optJSONArray("lead_ids")?.takeIf { it.length() == 1 }?.optString(0)?.takeIf { it.isNotBlank() }
+            get() = (
+                data?.optString("lead_id")?.takeIf { it.isNotBlank() && it != "null" }
+                    ?: data?.optJSONArray("lead_ids")?.takeIf { it.length() == 1 }?.optString(0)?.takeIf { it.isNotBlank() }
+                )?.trim()?.takeIf { IttcAdmitApi.isUuid(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,7 +79,13 @@ class IttcInboxActivity : SimpleActivity() {
         super.onResume()
         setupTopAppBar(binding.ittcCInboxAppbar, NavigationIcon.Arrow)
         IttcNotify.clearPosted(this)
+        notifyHold.resume(this)
         load()
+    }
+
+    override fun onPause() {
+        notifyHold.pause()
+        super.onPause()
     }
 
     // ------------------------------------------------------------------ the list
