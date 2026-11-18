@@ -114,8 +114,9 @@
                         android:id="@+id/ittc_lead_info"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
                         android:background="?attr/selectableItemBackground"
+                        android:gravity="center_vertical"
+                        android:minHeight="@dimen/ittc_touch"
                         android:textSize="13sp"
                         tools:text="01711-000000 · CSE · Batch 2027" />
 
@@ -123,7 +124,6 @@
                         android:id="@+id/ittc_lead_meta"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
                         android:textSize="12sp"
                         tools:text="Hot · AI chance 72% · Assigned to you" />
                 </LinearLayout>
@@ -171,7 +171,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:background="?attr/selectableItemBackground"
-                        android:minHeight="36dp"
+                        android:minHeight="@dimen/ittc_touch"
                         android:gravity="center_vertical"
                         android:textSize="13sp"
                         tools:text="Next call Today 10:30 AM" />
@@ -179,7 +179,7 @@
                     <TextView
                         android:id="@+id/ittc_lead_change_stage"
                         android:layout_width="wrap_content"
-                        android:layout_height="36dp"
+                        android:layout_height="@dimen/ittc_touch"
                         android:layout_marginStart="8dp"
                         android:gravity="center"
                         android:paddingStart="14dp"
@@ -270,14 +270,18 @@
                 android:id="@+id/ittc_lead_extras"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical" />
+                android:orientation="vertical"
+                android:paddingStart="@dimen/ittc_space_l"
+                android:paddingEnd="@dimen/ittc_space_l" />
 
             <!-- 🎓 admission, payments, papers (Part D: IttcAdmitCard) -->
             <LinearLayout
                 android:id="@+id/ittc_lead_admit"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical" />
+                android:orientation="vertical"
+                android:paddingStart="@dimen/ittc_space_l"
+                android:paddingEnd="@dimen/ittc_space_l" />
 
             <TextView
                 android:id="@+id/ittc_lead_notes_label"

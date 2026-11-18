@@ -3,11 +3,11 @@ package org.fossify.phone.activities
 import android.app.Activity
 import android.text.Editable
 import android.text.InputType
+import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -52,6 +52,8 @@ object IttcFeeSheet {
 
         // "what was said"
         var eventKind = "lead_asked"
+        var eventAmount = ""
+        var eventNote = ""
 
         val current get() = items.firstOrNull { it.id == tab } ?: items.lastOrNull()
         val canWork get() = allowed && info?.isOpen == true && current?.locked == false
@@ -142,8 +144,8 @@ object IttcFeeSheet {
         st.sheet.body.removeAllViews()
         title(st)
         st.sheet.body.addView(
-            ProgressBar(st.activity).apply { isIndeterminate = true },
-            LinearLayout.LayoutParams(IttcCUi.dp(st.activity, 32), IttcCUi.dp(st.activity, 32)).apply {
+            IttcCUi.spinner(st.activity),
+            LinearLayout.LayoutParams(IttcCUi.dp(st.activity, 28), IttcCUi.dp(st.activity, 28)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 topMargin = IttcCUi.dp(st.activity, 24)
                 bottomMargin = IttcCUi.dp(st.activity, 24)
@@ -186,7 +188,11 @@ object IttcFeeSheet {
             st.reason = null
             st.note = ""
         }
-        if (mode == Mode.EVENT) st.eventKind = "lead_asked"
+        if (mode == Mode.EVENT) {
+            st.eventKind = "lead_asked"
+            st.eventAmount = ""
+            st.eventNote = ""
+        }
         render(st)
     }
 
@@ -375,11 +381,17 @@ object IttcFeeSheet {
             if (left.isEmpty()) body.addView(IttcCUi.text(a, a.getString(R.string.ittc_c_fee_no_courses), 13f, p.muted), IttcCUi.topMargin(a, 12))
             left.forEach { c ->
                 val row = IttcCUi.row(a).apply {
-                    background = IttcTheme.rounded(a, p.surface, 14f, p.outline)
+                    background = IttcTheme.pressable(a, IttcTheme.rounded(a, p.surface, 14f, p.outline), p.text)
                     setPadding(IttcCUi.dp(a, 14), 0, IttcCUi.dp(a, 14), 0)
                     minimumHeight = IttcCUi.dp(a, 48)
                 }
-                row.addView(IttcCUi.text(a, (if (c.id in mine) "★ " else "") + c.name, 14f, p.text, bold = c.id in mine).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                row.addView(
+                    IttcCUi.text(a, (if (c.id in mine) "★ " else "") + c.name, 14f, p.text, bold = c.id in mine).apply {
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                    },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = IttcCUi.dp(a, 8) },
+                )
                 row.addView(IttcCUi.text(a, IttcVisitFeeApi.money(c.total), 14f, p.text2))
                 row.setOnClickListener { start(st, c) }
                 body.addView(row, IttcCUi.topMargin(a, 8))
@@ -429,35 +441,41 @@ object IttcFeeSheet {
 
         // on: the whole fee or one fee item
         body.addView(IttcCUi.section(a, a.getString(R.string.ittc_c_disc_on)), IttcCUi.topMargin(a, 12))
-        val onChips = arrayListOf<View>(
-            IttcCUi.chip(a, a.getString(R.string.ittc_c_disc_whole, IttcVisitFeeApi.money(t.list)), st.feeId == null) {
-                st.feeId = null
-                render(st)
-            },
-        )
+        // (a chip changes only the chips' looks and the preview: the field keeps its text and focus)
+        var updatePreviewNow: () -> Unit = {}
+        val onChips = ArrayList<Pair<String?, TextView>>()
+        fun pickFee(id: String?) {
+            st.feeId = id
+            onChips.forEach { (fid, chip) -> IttcCUi.setChipOn(chip, fid == id) }
+            updatePreviewNow()
+        }
+        onChips += null to IttcCUi.chip(a, a.getString(R.string.ittc_c_disc_whole, IttcVisitFeeApi.money(t.list)), st.feeId == null) { pickFee(null) }
         n.courseFees.forEach { f ->
-            if (f.id != null) {
-                onChips += IttcCUi.chip(a, "${f.name} · ${IttcVisitFeeApi.money(f.amount)}", st.feeId == f.id) {
-                    st.feeId = f.id
-                    render(st)
-                }
+            val fid = f.id
+            if (fid != null) {
+                onChips += fid to IttcCUi.chip(a, "${f.name} · ${IttcVisitFeeApi.money(f.amount)}", st.feeId == fid) { pickFee(fid) }
             }
         }
-        body.addView(IttcCUi.chipRow(a, onChips), IttcCUi.topMargin(a, 6))
+        body.addView(IttcCUi.chipRow(a, onChips.map { it.second }), IttcCUi.topMargin(a, 6))
 
         // taka or %, and how much
         val amountRow = IttcCUi.row(a)
-        amountRow.addView(IttcCUi.chip(a, a.getString(R.string.ittc_c_disc_taka), !st.percent) {
-            st.percent = false
-            render(st)
-        }, IttcCUi.wrap(a, 6))
-        amountRow.addView(IttcCUi.chip(a, a.getString(R.string.ittc_c_disc_percent), st.percent) {
-            st.percent = true
-            render(st)
-        }, IttcCUi.wrap(a, 8))
         val value = IttcCUi.input(a, if (st.percent) "10" else "3000", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL).apply {
             setText(st.value)
         }
+        lateinit var takaChip: TextView
+        lateinit var percentChip: TextView
+        fun pickPercent(on: Boolean) {
+            st.percent = on
+            IttcCUi.setChipOn(takaChip, !on)
+            IttcCUi.setChipOn(percentChip, on)
+            value.hint = if (on) "10" else "3000"
+            updatePreviewNow()
+        }
+        takaChip = IttcCUi.chip(a, a.getString(R.string.ittc_c_disc_taka), !st.percent) { pickPercent(false) }
+        percentChip = IttcCUi.chip(a, a.getString(R.string.ittc_c_disc_percent), st.percent) { pickPercent(true) }
+        amountRow.addView(takaChip, IttcCUi.wrap(a, 6))
+        amountRow.addView(percentChip, IttcCUi.wrap(a, 8))
         amountRow.addView(value, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         body.addView(amountRow, IttcCUi.topMargin(a, 12))
 
@@ -467,10 +485,11 @@ object IttcFeeSheet {
             visibility = View.GONE
         }
         body.addView(preview, IttcCUi.topMargin(a, 8))
-        val base = if (st.feeId == null) t.list else n.courseFees.firstOrNull { it.id == st.feeId }?.amount ?: 0.0
+        // (read when used: the fee item can change while the form is open)
+        fun base(): Double = if (st.feeId == null) t.list else n.courseFees.firstOrNull { it.id == st.feeId }?.amount ?: 0.0
         fun amountOf(text: String): Double {
             val v = IttcAdmitApi.asciiDigits(text).filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
-            return ((if (st.percent) base * v / 100 else v) * 100).roundToLong() / 100.0
+            return ((if (st.percent) base() * v / 100 else v) * 100).roundToLong() / 100.0
         }
         fun updatePreview() {
             val amount = amountOf(st.value)
@@ -490,6 +509,7 @@ object IttcFeeSheet {
             preview.setTextColor(if (autoOk) gFg else wFg)
             preview.visibility = View.VISIBLE
         }
+        updatePreviewNow = { updatePreview() }
         value.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -502,13 +522,14 @@ object IttcFeeSheet {
 
         // the reason
         body.addView(IttcCUi.section(a, a.getString(if (setting.reasonRequired) R.string.ittc_c_disc_reason_req else R.string.ittc_c_disc_reason)), IttcCUi.topMargin(a, 14))
-        val reasonChips = setting.reasons.map { r ->
-            IttcCUi.chip(a, r, st.reason == r) {
+        val reasonChips = ArrayList<Pair<String, TextView>>()
+        setting.reasons.forEach { r ->
+            reasonChips += r to IttcCUi.chip(a, r, st.reason == r) {
                 st.reason = if (st.reason == r) null else r
-                render(st)
+                reasonChips.forEach { (reason, chip) -> IttcCUi.setChipOn(chip, reason == st.reason) }
             }
         }
-        body.addView(IttcCUi.chipRow(a, reasonChips), IttcCUi.topMargin(a, 6))
+        body.addView(IttcCUi.chipRow(a, reasonChips.map { it.second }), IttcCUi.topMargin(a, 6))
         val note = IttcCUi.noteInput(a, a.getString(R.string.ittc_c_note_optional)).apply { setText(st.note) }
         note.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -528,7 +549,7 @@ object IttcFeeSheet {
             val v = IttcAdmitApi.asciiDigits(st.value).filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
             when {
                 amount <= 0 -> showErr(err, a.getString(R.string.ittc_c_disc_type))
-                amount > base -> showErr(err, a.getString(R.string.ittc_c_disc_too_much, IttcVisitFeeApi.money(base)))
+                amount > base() -> showErr(err, a.getString(R.string.ittc_c_disc_too_much, IttcVisitFeeApi.money(base())))
                 setting.reasonRequired && st.reason == null -> showErr(err, a.getString(R.string.ittc_c_disc_reason_needed))
                 else -> send(st, save, err) {
                     val r = IttcVisitFeeApi.requestDiscount(a, n.id, st.feeId, if (st.percent) "percent" else "amount", v, st.reason, st.note)
@@ -548,23 +569,49 @@ object IttcFeeSheet {
         val body = st.sheet.body
         body.addView(IttcCUi.text(a, a.getString(R.string.ittc_c_said_title), 16f, p.text, bold = true), IttcCUi.topMargin(a, 14))
         val kinds = listOf("lead_asked", "offer", "quoted", "note")
-        val chips = kinds.map { k ->
-            IttcCUi.chip(a, eventLabel(a, k), st.eventKind == k) {
+        val amount = IttcCUi.input(a, a.getString(R.string.ittc_c_said_amount), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL).apply {
+            setText(st.eventAmount)
+        }
+        val note = IttcCUi.noteInput(a, "").apply { setText(st.eventNote) }
+        // (the kind changes the chips, the amount field and the note's hint in place: typing is kept)
+        val chips = ArrayList<Pair<String, TextView>>()
+        fun showKind() {
+            val isNote = st.eventKind == "note"
+            chips.forEach { (k, chip) -> IttcCUi.setChipOn(chip, k == st.eventKind) }
+            amount.visibility = if (isNote) View.GONE else View.VISIBLE
+            note.hint = a.getString(if (isNote) R.string.ittc_c_said_note else R.string.ittc_c_said_note_optional)
+        }
+        kinds.forEach { k ->
+            chips += k to IttcCUi.chip(a, eventLabel(a, k), st.eventKind == k) {
                 st.eventKind = k
-                render(st)
+                showKind()
             }
         }
-        body.addView(IttcCUi.chipRow(a, chips), IttcCUi.topMargin(a, 10))
-        val isNote = st.eventKind == "note"
-        val amount = IttcCUi.input(a, a.getString(R.string.ittc_c_said_amount), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
-        if (!isNote) body.addView(amount, IttcCUi.topMargin(a, 12))
-        val note = IttcCUi.noteInput(a, a.getString(if (isNote) R.string.ittc_c_said_note else R.string.ittc_c_said_note_optional))
+        body.addView(IttcCUi.chipRow(a, chips.map { it.second }), IttcCUi.topMargin(a, 10))
+        body.addView(amount, IttcCUi.topMargin(a, 12))
         body.addView(note, IttcCUi.topMargin(a, 10))
+        showKind()
+        amount.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                st.eventAmount = s?.toString().orEmpty()
+            }
+        })
+        note.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                st.eventNote = s?.toString().orEmpty()
+            }
+        })
         val err = IttcCUi.text(a, "", 13f, p.danger).apply { visibility = View.GONE }
         body.addView(err, IttcCUi.topMargin(a, 8))
         val row = IttcCUi.row(a)
         lateinit var save: TextView
         save = IttcCUi.button(a, a.getString(R.string.ittc_c_save), IttcCUi.Style.PRIMARY) {
+            // (the kind as it is now: it can change while the form is open)
+            val isNote = st.eventKind == "note"
             val v = IttcAdmitApi.asciiDigits(amount.text?.toString().orEmpty()).filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
             val text = note.text?.toString()?.trim().orEmpty()
             when {

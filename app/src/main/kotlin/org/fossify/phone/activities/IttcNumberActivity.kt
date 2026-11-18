@@ -47,6 +47,7 @@ import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcUi
 import org.fossify.phone.helpers.RecentsHelper
 import org.joda.time.DateTime
 
@@ -106,8 +107,8 @@ class IttcNumberActivity : SimpleActivity() {
     private fun applyPalette() {
         val p = palette
         binding.apply {
+            // (the screen's background only: the list on it has none of its own, no second paint)
             ittcNumberCoordinator.setBackgroundColor(p.bg)
-            ittcNumberScrollview.setBackgroundColor(p.bg)
             IttcTheme.card(ittcNumberCard, p)
             ittcNumberDivider.setBackgroundColor(p.divider)
             ittcNumberName.setTextColor(p.text)
@@ -121,6 +122,8 @@ class IttcNumberActivity : SimpleActivity() {
                 it.setTextColor(p.text)
             }
             ittcNumberDelete.setTextColor(p.danger)
+            // (the tiles' pressed ripple keeps to their rounded corners)
+            listOf(ittcNumberCall, ittcNumberSms, ittcNumberWhatsapp, ittcNumberContact, ittcNumberBlock).forEach { it.clipToOutline = true }
         }
     }
 
@@ -315,6 +318,7 @@ class IttcNumberActivity : SimpleActivity() {
                     maxLines = 1
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                     if (i == 0) IttcTheme.pill(this, p.primary, p.onPrimary) else IttcTheme.pill(this, p.surface, p.primary, p.outline)
+                    IttcUi.ripple(this)
                     setOnClickListener { action() }
                 },
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(if (i == 0) 0 else m, m, if (i == buttons.size - 1) 0 else m, 0) },
@@ -455,6 +459,7 @@ class IttcNumberActivity : SimpleActivity() {
                     gravity = Gravity.CENTER
                     setPadding(pad, pad, pad, pad)
                     isClickable = true
+                    IttcUi.ripple(this)
                     setOnClickListener { showMoreCalls() }
                 },
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
@@ -557,7 +562,7 @@ class IttcNumberActivity : SimpleActivity() {
         const val EXTRA_NUMBER = "ittc_number"
         const val EXTRA_NAME = "ittc_name"
         private const val WHATSAPP_GREEN = 0xFF25D366.toInt()
-        private const val PAGE = 100
+        private const val PAGE = 40
         private const val SHOW_MORE_TAG = "ittc_show_more"
 
         fun open(context: Context, number: String, name: String? = null) {

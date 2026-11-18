@@ -212,12 +212,20 @@ class FavoritesFragment(context: Context, attributeSet: AttributeSet) : MyViewPa
 
     private fun setViewType(viewType: Int) {
         val spanCount = context.config.contactsGridColumnCount
+        val current = binding.fragmentList.layoutManager
 
+        // 🎓 ITTC: the layout is replaced only when the view type changes (a refresh keeps the
+        // list's place and spares a full re-layout); the column count is still kept up to date
         val layoutManager = if (viewType == VIEW_TYPE_GRID) {
             binding.letterFastscroller.beGone()
+            if (current is MyGridLayoutManager) {
+                if (current.spanCount != spanCount) current.spanCount = spanCount
+                return
+            }
             MyGridLayoutManager(context, spanCount)
         } else {
             binding.letterFastscroller.beVisible()
+            if (current != null && current.javaClass == MyLinearLayoutManager::class.java) return
             MyLinearLayoutManager(context)
         }
         binding.fragmentList.layoutManager = layoutManager

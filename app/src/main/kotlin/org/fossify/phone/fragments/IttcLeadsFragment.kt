@@ -44,6 +44,7 @@ import org.fossify.phone.helpers.IttcDialer
 import org.fossify.phone.helpers.IttcDisclosure
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcToday
+import org.fossify.phone.helpers.IttcUi
 import org.json.JSONObject
 import java.util.Calendar
 import java.util.Locale
@@ -144,6 +145,9 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             render()
         }
         binding.ittcLeadsTeam.setOnClickListener { IttcTeamActivity.open(context) }
+        // 🎨 the system's pressed ripple over the custom pill buttons; the list fills the page
+        listOf(binding.ittcLeadsAdd, binding.ittcLeadsCallAll, binding.ittcLeadsStop, binding.ittcLeadsTeam).forEach { IttcUi.ripple(it) }
+        binding.ittcLeadsList.setHasFixedSize(true)
         setupSwipes()
         // (the last list at once, then the Tracker's)
         all = IttcBridge.myLeadsCache
@@ -223,6 +227,9 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         heroColor = 0
         actionsPalette = null
         swipePainter = null
+        chipsSignature = null
+        stagesSignature = null
+        adapter.colorsChanged()
         setBackgroundColor(p.bg)
         binding.ittcLeadsPlaceholder.setTextColor(p.text2)
         binding.ittcLeadsHint.setTextColor(p.muted)
@@ -421,7 +428,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         b.ittcLeadsTodayStats.text = extra
         b.ittcLeadsTodayStats.beVisibleIf(!extra.isNullOrEmpty())
         b.ittcLeadsTeam.beVisibleIf(team)
-        b.ittcLeadsToday.beVisibleIf(true)
+        IttcUi.fadeIn(b.ittcLeadsToday)
     }
 
     // ------------------------------------------------------------- ▶ power dialer
@@ -626,7 +633,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             else -> null
         }
         binding.ittcLeadsPlaceholder.text = placeholder
-        binding.ittcLeadsPlaceholder.beVisibleIf(placeholder != null)
+        IttcUi.fadeIf(binding.ittcLeadsPlaceholder, placeholder != null)
         // (no leads from anywhere yet: a tap opens the ITTC sign-in)
         if (noTracker && org.fossify.phone.direct.IttcDirect.configured) {
             binding.ittcLeadsPlaceholder.setOnClickListener {
@@ -636,7 +643,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             binding.ittcLeadsPlaceholder.setOnClickListener(null)
             binding.ittcLeadsPlaceholder.isClickable = false
         }
-        binding.ittcLeadsList.beVisibleIf(placeholder == null)
+        IttcUi.fadeIf(binding.ittcLeadsList, placeholder == null)
         binding.ittcLeadsHint.beVisibleIf(placeholder == null && !swipeLearned())
     }
 
@@ -650,7 +657,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             typeface = if (on || kind != ChipKind.NORMAL) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             maxLines = 1
             gravity = android.view.Gravity.CENTER
-            minHeight = IttcTheme.dp(context, 36f)
+            minHeight = IttcTheme.dp(context, 40f)
             val pad = IttcTheme.dp(context, 14f)
             setPadding(pad, 0, pad, 0)
             val p = pal()
@@ -662,6 +669,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 kind == ChipKind.SCOPE -> IttcTheme.pill(this, p.primarySoft, p.primary)
                 else -> IttcTheme.pill(this, p.surface, p.text, p.outline)
             }
+            IttcUi.ripple(this)
             setOnClickListener { onClick(it) }
         }
 
@@ -674,19 +682,30 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         )
     }
 
+    // (the chips as last drawn: the same labels, counts, choice and colours → not made again)
+    private var chipsSignature: List<Any?>? = null
+    private var stagesSignature: List<Any?>? = null
+
+    private val chipFilters = listOf(
+        Filter.TODAY to R.string.ittc_chip_today,
+        Filter.OVERDUE to R.string.ittc_chip_overdue,
+        Filter.NEW to R.string.ittc_chip_new,
+        Filter.HOT to R.string.ittc_chip_hot,
+        Filter.ALL to R.string.ittc_chip_all,
+    )
+
     private fun renderChips(today: Long, list: List<IttcBridge.PhoneLead>) {
         val row = binding.ittcLeadsChips
+        val counts = chipFilters.map { (f, _) -> list.count { matches(f, it, today) } }
+        val scopeText = if (isSuper) scopeLabel() else null
+        val signature = listOf(pal(), scopeText, filter, counts)
+        if (signature == chipsSignature && row.childCount > 0) return
+        chipsSignature = signature
         row.removeAllViews()
         // (a super admin: whose leads, one choice in one chip)
-        if (isSuper) addChip(row, chipView(scopeLabel(), false, ChipKind.SCOPE) { pickScope(it) })
-        listOf(
-            Filter.TODAY to R.string.ittc_chip_today,
-            Filter.OVERDUE to R.string.ittc_chip_overdue,
-            Filter.NEW to R.string.ittc_chip_new,
-            Filter.HOT to R.string.ittc_chip_hot,
-            Filter.ALL to R.string.ittc_chip_all,
-        ).forEach { (f, label) ->
-            val n = list.count { matches(f, it, today) }
+        if (scopeText != null) addChip(row, chipView(scopeText, false, ChipKind.SCOPE) { pickScope(it) })
+        chipFilters.forEachIndexed { i, (f, label) ->
+            val n = counts[i]
             // (overdue is red while there are any)
             val kind = if (f == Filter.OVERDUE && n > 0) ChipKind.DANGER else ChipKind.NORMAL
             addChip(
@@ -702,8 +721,12 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     /** 🧭 All stages · New 42 · Interested 18 · … (the counts follow the chips above) */
     private fun renderStages(list: List<IttcBridge.PhoneLead>, stages: List<IttcBridge.Stage>) {
         val row = binding.ittcLeadsStages
-        row.removeAllViews()
         binding.ittcLeadsStagesScroll.beVisibleIf(stages.isNotEmpty())
+        val counts = list.groupingBy { it.stageId }.eachCount()
+        val signature = listOf(pal(), stageId, list.size, stages, counts)
+        if (signature == stagesSignature) return
+        stagesSignature = signature
+        row.removeAllViews()
         if (stages.isEmpty()) return
         addChip(
             row,
@@ -713,7 +736,6 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 render()
             },
         )
-        val counts = list.groupingBy { it.stageId }.eachCount()
         stages.forEach { st ->
             val n = counts[st.id] ?: 0
             // (a stage with nobody in it stays out of the way, unless it is the chosen one)
@@ -1011,11 +1033,37 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     private inner class LeadsAdapter : RecyclerView.Adapter<LeadsAdapter.Holder>() {
         private var items: List<IttcBridge.PhoneLead> = emptyList()
+        /** (what the rows were last drawn with besides the list: the same → nothing to draw again) */
+        private var signature: List<Any?>? = null
+        /** the start of today, worked out once per list (not once per row) */
+        private var dayStart = 0L
+        /** a stage's pill colours, worked out once per stage (until the theme changes) */
+        private val stageColors = HashMap<String, Pair<Int, Int>>()
+
+        fun colorsChanged() {
+            stageColors.clear()
+            signature = null
+        }
 
         fun submit(list: List<IttcBridge.PhoneLead>) {
+            // (everything a row's look depends on: the palette, whose name shows, the people's names
+            // and the minute — "in 20 min" moves on with the clock)
+            val ownerShown = isSuper && scope != Scope.MY && person == null
+            val sig = listOf(
+                pal(),
+                ownerShown,
+                if (ownerShown) meta?.let { it.meId to it.people } else null,
+                System.currentTimeMillis() / 60_000L,
+            )
+            if (sig == signature && list == items) return
+            signature = sig
+            dayStart = startOfToday()
             items = list
             notifyDataSetChanged()
         }
+
+        private fun stageColorsFor(stage: String): Pair<Int, Int> =
+            stageColors.getOrPut(stage) { IttcTheme.stageColors(context, stage) }
 
         fun at(position: Int): IttcBridge.PhoneLead? = items.getOrNull(position)
 
@@ -1031,6 +1079,9 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 b.ittcLeadAvatar.background = avatar
                 b.ittcLeadStage.background = pill
                 b.ittcLeadCall.background = callBg
+                // (the pressed ripples keep to the card's rounded corners and the round 📞)
+                b.ittcLeadHolder.clipToOutline = true
+                IttcUi.ripple(b.ittcLeadCall)
             }
         }
 
@@ -1043,7 +1094,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             val l = items[position]
             val p = pal()
             val now = System.currentTimeMillis()
-            val today = startOfToday()
+            val today = dayStart
             holder.card.setColor(p.surface)
             holder.b.apply {
                 val title = l.name.ifEmpty { l.callNumber.orEmpty() }
@@ -1058,7 +1109,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 val stage = l.stage?.takeIf { it.isNotBlank() }
                 ittcLeadStage.beVisibleIf(stage != null)
                 if (stage != null) {
-                    val (sBg, sFg) = IttcTheme.stageColors(context, stage)
+                    val (sBg, sFg) = stageColorsFor(stage)
                     holder.pill.setColor(sBg)
                     ittcLeadStage.setTextColor(sFg)
                     ittcLeadStage.text = stage

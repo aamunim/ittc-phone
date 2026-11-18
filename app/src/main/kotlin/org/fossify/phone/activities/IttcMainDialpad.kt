@@ -23,6 +23,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
@@ -143,10 +144,17 @@ class IttcMainDialpad(
         }
     }
 
+    // (what the pad was last styled with; declared before init, which styles it the first time)
+    private var styledPalette: IttcTheme.Palette? = null
+    private var styledHideNumbers = false
+    private var styledBackground = 0
+
     init {
         sizeKeys()
         setupKeys()
         setupActions()
+        // (the matches' list fills the room above the pad whatever it holds)
+        main.ittcDialList.setHasFixedSize(true)
         main.ittcDialList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 if (newState == RecyclerView.SCROLL_STATE_DRAGGING) collapse()
@@ -157,15 +165,30 @@ class IttcMainDialpad(
 
     // ------------------------------------------------------------------------- open / fold
 
-    /** The round button: the pad (or, with the setting off, the dial pad screen) */
-    fun open() {
+    /**
+     * The round button: the pad (or, with the setting off, the dial pad screen). [animate]: it slides
+     * up from below (a tap on the button); off: it is simply there (opened at start / after a restart)
+     */
+    fun open(animate: Boolean = true) {
         // (with the setting off, or a window too short for it — landscape — the dial pad screen)
         if (!enabled || !fits) {
             activity.startActivity(Intent(activity.applicationContext, DialpadActivity::class.java))
             return
         }
         if (main.mainMenu.isSearchOpen) main.mainMenu.closeSearch()
-        pad.root.beVisible()
+        val root = pad.root
+        if (animate && !isOpen) {
+            root.animate().cancel()
+            // (its height from the last time it showed; never shown yet: about a pad's height)
+            val from = root.height.takeIf { it > 0 } ?: IttcTheme.dp(activity, 360f)
+            root.translationY = from.toFloat()
+            root.alpha = 0f
+            root.beVisible()
+            root.animate().translationY(0f).alpha(1f).setDuration(OPEN_MS).setInterpolator(DecelerateInterpolator()).start()
+        } else if (!isOpen) {
+            resetMotion()
+            root.beVisible()
+        }
         main.mainDialpadButton.hide()
         resultsWanted = true
         showResults(number.isNotEmpty())
@@ -174,8 +197,17 @@ class IttcMainDialpad(
     /** Folded into the round button (what it matched stays over the list) */
     fun collapse() {
         if (!isOpen) return
+        // (folded at once: a slide still running stops where it ends)
+        resetMotion()
         pad.root.beGone()
         main.mainDialpadButton.show()
+    }
+
+    private fun resetMotion() {
+        val root = pad.root
+        root.animate().cancel()
+        root.translationY = 0f
+        root.alpha = 1f
     }
 
     /** Another tab, the search: the pad and its matches both go (the number stays) */
@@ -220,12 +252,12 @@ class IttcMainDialpad(
         if (!enabled) return
         if (savedInstanceState == null) {
             // (not when a missed call's notification opened the app: Recents first)
-            if (activity.intent?.action != Intent.ACTION_VIEW && fits) open()
+            if (activity.intent?.action != Intent.ACTION_VIEW && fits) open(animate = false)
             return
         }
         number = savedInstanceState.getString(STATE_NUMBER).orEmpty()
         resultsWanted = savedInstanceState.getBoolean(STATE_RESULTS)
-        if (savedInstanceState.getBoolean(STATE_OPEN) && fits) open()
+        if (savedInstanceState.getBoolean(STATE_OPEN) && fits) open(animate = false)
         numberChanged()
     }
 
@@ -249,6 +281,14 @@ class IttcMainDialpad(
     /** The palette (light / dark as the app) and the accent; again on every return to the screen */
     fun applyColors() {
         val p = IttcTheme.of(activity)
+        val hideNumbers = activity.config.hideDialpadNumbers
+        val background = activity.getProperBackgroundColor()
+        // (nothing changed since the last time: the keys keep their drawables — no re-styling on
+        // every return to the screen)
+        if (p === styledPalette && hideNumbers == styledHideNumbers && background == styledBackground) return
+        styledPalette = p
+        styledHideNumbers = hideNumbers
+        styledBackground = background
         val radius = IttcTheme.dp(activity, 24f).toFloat()
         pad.root.background = GradientDrawable().apply {
             setColor(p.surface)
@@ -268,7 +308,6 @@ class IttcMainDialpad(
         )
         pad.ittcDpCall.setColorFilter(p.call.getContrastColor())
 
-        val hideNumbers = activity.config.hideDialpadNumbers
         keys.forEach { (key, char) ->
             key.background = RippleDrawable(
                 ColorStateList.valueOf(p.outline),
@@ -283,7 +322,7 @@ class IttcMainDialpad(
             key.visibility = if (hideNumbers && char in '1'..'9') View.INVISIBLE else View.VISIBLE
         }
 
-        main.ittcDialResults.setBackgroundColor(activity.getProperBackgroundColor())
+        main.ittcDialResults.setBackgroundColor(background)
     }
 
     private fun keyText(char: Char, hideNumbers: Boolean, p: IttcTheme.Palette): CharSequence {
@@ -712,6 +751,7 @@ class IttcMainDialpad(
 
     companion object {
         private const val MAX_LENGTH = 40
+        private const val OPEN_MS = 160L
         private const val KEY_MAX_DP = 60
         private const val KEY_MIN_DP = 44
         private const val KEY_GAP_DP = 4

@@ -297,7 +297,7 @@
                         <TextView
                             android:id="@+id/ittc_account_send_now"
                             android:layout_width="wrap_content"
-                            android:layout_height="40dp"
+                            android:layout_height="@dimen/ittc_touch"
                             android:layout_marginStart="@dimen/ittc_space_s"
                             android:gravity="center"
                             android:paddingStart="16dp"
@@ -309,7 +309,7 @@
                     <TextView
                         android:id="@+id/ittc_account_update_now"
                         android:layout_width="wrap_content"
-                        android:layout_height="40dp"
+                        android:layout_height="@dimen/ittc_touch"
                         android:layout_marginTop="@dimen/ittc_space_m"
                         android:gravity="center"
                         android:paddingStart="16dp"

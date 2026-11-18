@@ -54,7 +54,7 @@ object IttcAdmitCard {
             val gen = (generation[container] ?: 0) + 1
             generation[container] = gen
             container.visibility = View.VISIBLE
-            if (container.childCount == 0) container.addView(IttcDUi.loadingCard(activity))
+            if (container.childCount == 0) container.addView(leadCard(IttcDUi.loadingCard(activity) as LinearLayout), IttcCUi.cardParams(activity))
             val app = activity.applicationContext
             ensureBackgroundThread {
                 val result: Result<Data?> = try {
@@ -68,9 +68,9 @@ object IttcAdmitCard {
                         container.removeAllViews()
                         val data = result.getOrNull()
                         when {
-                            result.isFailure -> container.addView(errorCard(activity, container, leadId, result.exceptionOrNull()))
+                            result.isFailure -> container.addView(errorCard(activity, container, leadId, result.exceptionOrNull()), IttcCUi.cardParams(activity))
                             data == null -> container.visibility = View.GONE
-                            else -> container.addView(card(activity, container, data))
+                            else -> container.addView(card(activity, container, data), IttcCUi.cardParams(activity))
                         }
                     } catch (_: Throwable) {
                         // (never take the lead page down)
@@ -102,11 +102,18 @@ object IttcAdmitCard {
 
     private fun reload(activity: Activity, container: LinearLayout, leadId: String) = { bind(activity, container, leadId) }
 
+    /** The lead page's look for a card (the Visit / Fee cards' padding; added with IttcCUi.cardParams) */
+    private fun leadCard(card: LinearLayout): LinearLayout = card.apply {
+        val h = IttcTheme.dp(context, 16f)
+        val v = IttcTheme.dp(context, 14f)
+        setPadding(h, v, h, v)
+    }
+
     private fun errorCard(activity: Activity, container: LinearLayout, leadId: String, e: Throwable?): View {
         val p = IttcTheme.of(activity)
-        val card = IttcDUi.card(activity)
-        card.addView(IttcDUi.text(activity, activity.getString(R.string.ittc_d_card_title), 15f, p.text, bold = true))
-        card.addView(IttcDUi.hint(activity, IttcAdmitApi.errorText(e ?: Exception(), activity.getString(R.string.ittc_d_could_not_load))))
+        val card = leadCard(IttcDUi.card(activity))
+        card.addView(IttcDUi.text(activity, activity.getString(R.string.ittc_d_card_title), 16f, p.text, bold = true))
+        card.addView(IttcDUi.hint(activity, IttcAdmitApi.errorText(activity, e ?: Exception(), activity.getString(R.string.ittc_d_could_not_load))))
         val row = IttcDUi.row(activity)
         row.addView(IttcDUi.button(activity, activity.getString(R.string.ittc_d_retry), IttcDUi.Btn.SOFT, small = true) { bind(activity, container, leadId) })
         card.addView(row, IttcDUi.lp(activity, top = 8f))
@@ -117,13 +124,13 @@ object IttcAdmitCard {
         val p = IttcTheme.of(activity)
         val lead = d.lead
         val done = reload(activity, container, lead.id)
-        val card = IttcDUi.card(activity)
+        val card = leadCard(IttcDUi.card(activity))
 
         // ---- 🎓 admission / approval
         val head = IttcDUi.row(activity)
         head.gravity = Gravity.CENTER_VERTICAL
         head.addView(
-            IttcDUi.text(activity, activity.getString(R.string.ittc_d_card_title), 15f, p.text, bold = true),
+            IttcDUi.text(activity, activity.getString(R.string.ittc_d_card_title), 16f, p.text, bold = true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
         )
         val (statusText, tone) = status(activity, d)
@@ -302,7 +309,7 @@ internal object IttcDUi {
             if (bold) setTypeface(typeface, Typeface.BOLD)
         }
 
-    fun title(context: Context, s: CharSequence) = text(context, s, 19f, IttcTheme.of(context).text, bold = true)
+    fun title(context: Context, s: CharSequence) = text(context, s, 20f, IttcTheme.of(context).text, bold = true)
     fun label(context: Context, s: CharSequence) = text(context, s, 13f, IttcTheme.of(context).text2, bold = true)
     fun hint(context: Context, s: CharSequence) = text(context, s, 12f, IttcTheme.of(context).muted)
 
@@ -366,6 +373,7 @@ internal object IttcDUi {
             minHeight = IttcTheme.dp(context, 44f)
             val h = IttcTheme.dp(context, if (small) 14f else 18f)
             setPadding(h, 0, h, 0)
+            // (IttcTheme.button: a ripple inside the round shape when pressed)
             when (style) {
                 Btn.PRIMARY -> IttcTheme.button(this, p.primary, p.onPrimary)
                 Btn.CALL -> IttcTheme.button(this, p.call, p.onPrimary)
@@ -392,12 +400,15 @@ internal object IttcDUi {
         val p = IttcTheme.of(context)
         return text(context, s, 13f, p.text, bold = on).apply {
             gravity = Gravity.CENTER
-            minHeight = IttcTheme.dp(context, 40f)
+            minHeight = context.resources.getDimensionPixelSize(R.dimen.ittc_touch)
             val h = IttcTheme.dp(context, 14f)
             setPadding(h, 0, h, 0)
-            if (on) IttcTheme.pill(this, p.primary, p.onPrimary) else IttcTheme.pill(this, p.surface, p.text2, p.outline)
+            val (bg, fg) = if (on) p.primary to p.onPrimary else p.surface to p.text2
+            setTextColor(fg)
+            background = IttcTheme.pressable(context, IttcTheme.rounded(context, bg, 999f, if (on) 0 else p.outline), fg)
             alpha = if (enabled) 1f else 0.4f
             isEnabled = enabled
+            isSelected = on
             setOnClickListener { if (enabled) onClick() }
         }
     }
@@ -406,10 +417,17 @@ internal object IttcDUi {
     fun option(context: Context, s: String, sub: String?, on: Boolean, enabled: Boolean, warn: Boolean, onClick: () -> Unit): View {
         val p = IttcTheme.of(context)
         val b = box(context, if (on) p.primarySoft else p.surface, if (on) p.primary else p.outline)
+        b.background = IttcTheme.pressable(context, IttcTheme.rounded(context, if (on) p.primarySoft else p.surface, 12f, if (on) p.primary else p.outline), p.primary)
         b.minimumHeight = IttcTheme.dp(context, 44f)
-        b.addView(text(context, (if (on) "● " else "○ ") + s, 14f, if (warn) p.danger else p.text, bold = on))
+        b.addView(text(context, (if (on) "● " else "○ ") + s, 14f, if (warn) p.danger else p.text, bold = on).apply {
+            // (the dot is read as "selected", not as a symbol)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        })
         if (!sub.isNullOrBlank()) b.addView(hint(context, sub))
+        b.contentDescription = if (sub.isNullOrBlank()) s else "$s, $sub"
+        b.isSelected = on
         b.alpha = if (enabled) 1f else 0.45f
+        b.isEnabled = enabled
         b.isClickable = enabled
         b.setOnClickListener { if (enabled) onClick() }
         b.layoutParams = lp(context, top = 6f)
@@ -423,9 +441,11 @@ internal object IttcDUi {
             setTextColor(p.text)
             setHintTextColor(p.muted)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            background = IttcTheme.rounded(context, p.surface, 12f, p.outline)
-            val h = IttcTheme.dp(context, 12f)
-            setPadding(h, h, h, h)
+            // (the same field as IttcCUi.input: filled, 48 dp, the same padding)
+            background = IttcTheme.rounded(context, p.surfaceAlt, 12f, p.outline)
+            val h = IttcTheme.dp(context, 14f)
+            val v = IttcTheme.dp(context, 12f)
+            setPadding(h, v, h, v)
             minHeight = IttcTheme.dp(context, 48f)
             inputType = when {
                 numeric -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -484,28 +504,36 @@ internal object IttcDUi {
     fun sheet(activity: Activity, build: (column: LinearLayout, dialog: BottomSheetDialog) -> Unit): BottomSheetDialog {
         val p = IttcTheme.of(activity)
         val dialog = BottomSheetDialog(activity)
-        val column = LinearLayout(activity).apply {
+        // (as IttcCUi.sheet: the rounded surface holds a fixed handle and the scrolling column)
+        val r = IttcTheme.dp(activity, 20f).toFloat()
+        val holder = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            val pad = IttcTheme.dp(activity, 20f)
-            setPadding(pad, IttcTheme.dp(activity, 10f), pad, pad)
-        }
-        // the handle
-        column.addView(
-            View(activity).apply { background = IttcTheme.rounded(activity, p.outline, 999f) },
-            LinearLayout.LayoutParams(IttcTheme.dp(activity, 40f), IttcTheme.dp(activity, 4f)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = IttcTheme.dp(activity, 12f)
-            },
-        )
-        val scroll = NestedScrollView(activity).apply {
-            val r = IttcTheme.dp(activity, 20f).toFloat()
             background = GradientDrawable().apply {
                 setColor(p.surface)
                 cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
             }
+        }
+        // the handle (stays put while the column scrolls)
+        holder.addView(
+            View(activity).apply {
+                background = IttcTheme.rounded(activity, p.outline, 999f)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            },
+            LinearLayout.LayoutParams(IttcTheme.dp(activity, 40f), IttcTheme.dp(activity, 4f)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = IttcTheme.dp(activity, 10f)
+            },
+        )
+        val column = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = IttcTheme.dp(activity, 20f)
+            setPadding(pad, IttcTheme.dp(activity, 12f), pad, IttcTheme.dp(activity, 28f))
+        }
+        val scroll = NestedScrollView(activity).apply {
             addView(column, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        dialog.setContentView(scroll)
+        holder.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        dialog.setContentView(holder)
         dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         dialog.setOnShowListener {
             try {

@@ -343,6 +343,7 @@ class DialpadActivity : SimpleActivity() {
         val hits = IttcDialSearch.leads(text, 3)
         val primary = getProperPrimaryColor()
         val pad = (resources.displayMetrics.density * 8).toInt()
+        val rippleValue = TypedValue()
         hits.forEach { l ->
             val number = l.callNumber ?: return@forEach
             box.addView(TextView(this).apply {
@@ -352,7 +353,8 @@ class DialpadActivity : SimpleActivity() {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(pad * 2, pad, pad * 2, pad)
-                setBackgroundResource(android.R.drawable.list_selector_background)
+                // (the theme's ripple, as the main screen's dial pad rows)
+                if (this@DialpadActivity.theme.resolveAttribute(android.R.attr.selectableItemBackground, rippleValue, true)) setBackgroundResource(rippleValue.resourceId)
                 setOnClickListener { initCall(number) }
             })
         }

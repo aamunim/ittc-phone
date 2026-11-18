@@ -136,7 +136,8 @@
             app:tabPaddingEnd="0dp"
             app:tabPaddingStart="0dp"
             app:tabPaddingTop="0dp"
-            app:tabRippleColor="@null" />
+            app:tabRippleColor="@color/pressed_item_foreground"
+            app:tabUnboundedRipple="true" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

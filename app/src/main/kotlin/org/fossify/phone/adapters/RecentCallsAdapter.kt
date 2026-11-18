@@ -3,6 +3,7 @@ package org.fossify.phone.adapters
 import android.annotation.SuppressLint
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.provider.CallLog.Calls
 import android.text.SpannableString
 import android.text.TextUtils
@@ -57,6 +58,7 @@ import org.fossify.phone.databinding.ItemRecentCallBinding
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcUi
 import org.fossify.phone.databinding.ItemRecentsDateBinding
 import org.fossify.phone.dialogs.ShowGroupedCallsDialog
 import org.fossify.phone.extensions.areMultipleSIMsAvailable
@@ -98,8 +100,9 @@ class RecentCallsAdapter(
     private val cachedSimColors = HashMap<Pair<Int,Int>, Int>()
 
     // 🎓 ITTC: Recents shows one row per number (not in "Show call details", which has no listener)
-    private val ittcPerNumber: Boolean
-        get() = refreshItemsListener != null && IttcCallHistory.onePerNumber(activity)
+    // (read with the colours in initDrawables, which runs again on every return to the screen)
+    private var ittcPerNumber = false
+    private var formatPhoneNumbers = false
 
     // 🎓 ITTC 3.5: the Recents tab's cards (the "Show call details" dialog keeps plain rows)
     private val cardMode = refreshItemsListener != null
@@ -116,6 +119,12 @@ class RecentCallsAdapter(
     /** before this: "Earlier" — the row shows the date instead of the time */
     private var yesterdayStart = 0L
     private var dayEnd = 0L
+
+    /** (a number's place abroad, by number and whether it is a contact; "" = none — worked out once) */
+    private val locationCache = HashMap<String, String>()
+    /** (each row's phone contact, by call id, for the current list — looked up once, not on every bind) */
+    private val contactCache = HashMap<Int, Contact?>()
+    private var contactCacheSize = -1
 
     private class Avatar(val initials: String, val bg: Int, val fg: Int)
 
@@ -241,6 +250,7 @@ class RecentCallsAdapter(
     override fun submitList(list: List<CallLogItem>?) {
         val layoutManager = recyclerView.layoutManager!!
         val recyclerViewState = layoutManager.onSaveInstanceState()
+        contactCache.clear()
         super.submitList(list) {
             layoutManager.onRestoreInstanceState(recyclerViewState)
             // 🎓 ITTC: a row's card corners depend on its neighbours: the rows on screen again
@@ -253,6 +263,10 @@ class RecentCallsAdapter(
         palette = IttcTheme.of(activity)
         avatarCache.clear()
         stageCache.clear()
+        locationCache.clear()
+        contactCache.clear()
+        ittcPerNumber = refreshItemsListener != null && IttcCallHistory.onePerNumber(activity)
+        formatPhoneNumbers = activity.config.formatPhoneNumbers
         labelOutgoing = activity.getString(R.string.ittc_hist_outgoing)
         labelIncoming = activity.getString(R.string.ittc_hist_incoming)
         labelMissed = activity.getString(R.string.ittc_hist_missed)
@@ -408,7 +422,16 @@ class RecentCallsAdapter(
     }
 
     private fun findContactByCall(recentCall: RecentCall): Contact? {
-        return (activity as MainActivity).cachedContacts.find { it.name == recentCall.name && it.doesHavePhoneNumber(recentCall.phoneNumber) }
+        val contacts = (activity as MainActivity).cachedContacts
+        // (the app's contacts were loaded again since: look them up afresh)
+        if (contacts.size != contactCacheSize) {
+            contactCache.clear()
+            contactCacheSize = contacts.size
+        }
+        if (contactCache.containsKey(recentCall.id)) return contactCache[recentCall.id]
+        val contact = contacts.find { it.name == recentCall.name && it.doesHavePhoneNumber(recentCall.phoneNumber) }
+        contactCache[recentCall.id] = contact
+        return contact
     }
 
     private fun launchContactDetailsIntent(contact: Contact?) {
@@ -421,6 +444,7 @@ class RecentCallsAdapter(
     fun updateItems(newItems: List<CallLogItem>, highlightText: String = "") {
         if (textToHighlight != highlightText) {
             textToHighlight = highlightText
+            contactCache.clear()
             submitList(newItems) {
                 recyclerView.post {
                     notifyDataSetChanged()
@@ -610,7 +634,9 @@ class RecentCallsAdapter(
             binding.itemRecentsAvatar.background = avatarBg
             binding.itemRecentsPill.background = pillBg
             binding.itemRecentsBar.background = barBg
-            binding.itemRecentsHistory.background = historyBg
+            // (the 36 dp circle inside the 44 dp touch area; the pressed ripple keeps to the circle)
+            binding.itemRecentsHistory.background = InsetDrawable(historyBg, IttcTheme.dp(activity, 4f))
+            IttcUi.ripple(binding.itemRecentsHistory)
             if (cardMode) {
                 binding.root.background = card
             } else {
@@ -674,7 +700,6 @@ class RecentCallsAdapter(
                 val currentFontSize = fontSize
                 val matchingContact = findContactByCall(call)
                 val name = matchingContact?.getNameToDisplay() ?: call.name
-                val formatPhoneNumbers = activity.config.formatPhoneNumbers
                 var nameToShow = if (name == call.phoneNumber && formatPhoneNumbers) {
                     SpannableString(name.formatPhoneNumber())
                 } else {
@@ -872,6 +897,14 @@ class RecentCallsAdapter(
 
     /** 🎓 ITTC: the place of a number from abroad (as the old row showed it), else null */
     private fun ittcLocation(call: RecentCall, isContact: Boolean): String? {
+        val key = (if (isContact) "c" else "n") + call.phoneNumber
+        locationCache[key]?.let { return it.ifEmpty { null } }
+        val found = ittcLocationOf(call, isContact)
+        locationCache[key] = found.orEmpty()
+        return found
+    }
+
+    private fun ittcLocationOf(call: RecentCall, isContact: Boolean): String? {
         val locale = Locale.getDefault()
         val defaultCountryCode = locale.country
         val phoneNumber = try {

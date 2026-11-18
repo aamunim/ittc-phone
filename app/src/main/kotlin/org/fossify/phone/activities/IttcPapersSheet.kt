@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import org.fossify.commons.extensions.toast
@@ -44,49 +45,57 @@ object IttcPapersSheet {
                 if (!leadName.isNullOrBlank()) column.addView(IttcDUi.hint(activity, leadName))
                 val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
                 column.addView(body, IttcDUi.lp(activity, top = 4f))
-                body.addView(IttcDUi.progress(activity), IttcDUi.lp(activity, top = 24f, width = ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER_HORIZONTAL })
-                val app = activity.applicationContext
-                ensureBackgroundThread {
-                    val r = try {
-                        val may = IttcAdmitApi.may(app)
-                        val lead = IttcAdmitApi.lead(app, leadId)
-                        val doc = if (may.docReady) {
+                fun load() {
+                    body.removeAllViews()
+                    body.addView(IttcDUi.progress(activity), IttcDUi.lp(activity, top = 24f, width = ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER_HORIZONTAL })
+                    val app = activity.applicationContext
+                    ensureBackgroundThread {
+                        val r = try {
+                            val may = IttcAdmitApi.may(app)
+                            val lead = IttcAdmitApi.lead(app, leadId)
+                            val doc = if (may.docReady) {
+                                try {
+                                    IttcAdmitApi.docReady(app)
+                                } catch (_: Throwable) {
+                                    null
+                                }
+                            } else null
+                            Result.success(
+                                Data(
+                                    papers = IttcAdmitApi.papers(app, leadId),
+                                    may = may,
+                                    doc = doc,
+                                    progress = if (doc != null) IttcAdmitApi.docProgress(app, leadId) else emptyMap(),
+                                    open = if (doc != null) IttcAdmitApi.openRequests(app, leadId) else emptyList(),
+                                    name = lead?.name ?: leadName.orEmpty(),
+                                    whatsapp = lead?.whatsapp,
+                                    phone = lead?.phone ?: phone,
+                                    college = if (doc != null) IttcAdmitApi.college(app) else "",
+                                ),
+                            )
+                        } catch (e: Throwable) {
+                            Result.failure(e)
+                        }
+                        activity.runOnUiThread {
+                            if (!IttcDUi.alive(activity) || !dialog.isShowing) return@runOnUiThread
                             try {
-                                IttcAdmitApi.docReady(app)
+                                body.removeAllViews()
+                                val d = r.getOrNull()
+                                if (d == null) {
+                                    body.addView(IttcDUi.hint(activity, IttcAdmitApi.errorText(activity, r.exceptionOrNull() ?: Exception(), activity.getString(R.string.ittc_d_could_not_load))))
+                                    // (a way to try again, as the Visit / Fee sheets)
+                                    val row = IttcDUi.row(activity)
+                                    row.addView(IttcDUi.button(activity, activity.getString(R.string.ittc_d_retry), IttcDUi.Btn.SOFT, small = true) { load() })
+                                    body.addView(row, IttcDUi.lp(activity, top = 8f))
+                                } else {
+                                    fill(activity, body, leadId, d, dialog) { changed = true }
+                                }
                             } catch (_: Throwable) {
-                                null
                             }
-                        } else null
-                        Result.success(
-                            Data(
-                                papers = IttcAdmitApi.papers(app, leadId),
-                                may = may,
-                                doc = doc,
-                                progress = if (doc != null) IttcAdmitApi.docProgress(app, leadId) else emptyMap(),
-                                open = if (doc != null) IttcAdmitApi.openRequests(app, leadId) else emptyList(),
-                                name = lead?.name ?: leadName.orEmpty(),
-                                whatsapp = lead?.whatsapp,
-                                phone = lead?.phone ?: phone,
-                                college = if (doc != null) IttcAdmitApi.college(app) else "",
-                            ),
-                        )
-                    } catch (e: Throwable) {
-                        Result.failure(e)
-                    }
-                    activity.runOnUiThread {
-                        if (!IttcDUi.alive(activity) || !dialog.isShowing) return@runOnUiThread
-                        try {
-                            body.removeAllViews()
-                            val d = r.getOrNull()
-                            if (d == null) {
-                                body.addView(IttcDUi.hint(activity, IttcAdmitApi.errorText(r.exceptionOrNull() ?: Exception(), activity.getString(R.string.ittc_d_could_not_load))))
-                            } else {
-                                fill(activity, body, leadId, d, dialog) { changed = true }
-                            }
-                        } catch (_: Throwable) {
                         }
                     }
                 }
+                load()
             }
             dialog.setOnDismissListener { if (changed) onDone() }
             dialog.show()
@@ -121,7 +130,11 @@ object IttcPapersSheet {
                 "not_needed" -> "–" to p.muted
                 else -> (if (paper.required) "✗" else "○") to (if (paper.required) p.danger else p.muted)
             }
-            row.addView(IttcDUi.text(activity, mark, 15f, color, bold = true), IttcDUi.lp(activity, width = IttcTheme.dp(activity, 24f)))
+            row.addView(
+                // (the mark is a picture of the state written beside it: not read out)
+                IttcDUi.text(activity, mark, 15f, color, bold = true).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO },
+                IttcDUi.lp(activity, width = IttcTheme.dp(activity, 24f)),
+            )
             row.addView(
                 IttcDUi.text(activity, paper.name + if (paper.required) " *" else "", 14f, if (paper.status == null) p.text else p.text2),
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
@@ -179,8 +192,12 @@ object IttcPapersSheet {
                     (if (on) "☑ " else "☐ ") + s.name + if (have > 0) activity.getString(R.string.ittc_d_has_n, have) else "",
                     14f, p.text,
                 )
-                t.minHeight = IttcTheme.dp(activity, 40f)
+                t.minHeight = activity.resources.getDimensionPixelSize(R.dimen.ittc_touch)
                 t.gravity = Gravity.CENTER_VERTICAL
+                t.background = IttcTheme.pressable(activity, IttcTheme.rounded(activity, p.surface, 8f), p.text)
+                // (read as a ticked / not ticked choice, not as "☑")
+                t.isSelected = on
+                t.contentDescription = s.name + if (have > 0) activity.getString(R.string.ittc_d_has_n, have) else ""
                 t.setOnClickListener {
                     if (on) picked.remove(s.id) else picked.add(s.id)
                     drawSteps()
@@ -235,7 +252,7 @@ object IttcPapersSheet {
                     busy = false
                     buttons.alpha = 1f
                     if (!IttcDUi.alive(activity)) return@runOnUiThread
-                    r.onFailure { IttcDUi.showError(error, IttcAdmitApi.errorText(it, activity.getString(R.string.ittc_d_could_not_make_link))) }
+                    r.onFailure { IttcDUi.showError(error, IttcAdmitApi.errorText(activity, it, activity.getString(R.string.ittc_d_could_not_make_link))) }
                     r.onSuccess { (id, url) ->
                         changed()
                         val text = message(url)
@@ -293,7 +310,7 @@ object IttcPapersSheet {
                             IttcAdmitApi.closeRequest(app, req.id)
                             null
                         } catch (e: Throwable) {
-                            IttcAdmitApi.errorText(e, activity.getString(R.string.ittc_d_could_not_save))
+                            IttcAdmitApi.errorText(activity, e, activity.getString(R.string.ittc_d_could_not_save))
                         }
                         activity.runOnUiThread {
                             if (!IttcDUi.alive(activity)) return@runOnUiThread

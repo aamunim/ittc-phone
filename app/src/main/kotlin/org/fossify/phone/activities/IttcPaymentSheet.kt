@@ -75,7 +75,13 @@ object IttcPaymentSheet {
                                     body.addView(IttcDUi.errorBox(activity).also { IttcDUi.showError(it, notice) })
                                 }
                                 if (d == null) {
-                                    body.addView(IttcDUi.hint(activity, IttcAdmitApi.errorText(r.exceptionOrNull() ?: Exception(), activity.getString(R.string.ittc_d_not_found))))
+                                    body.addView(IttcDUi.hint(activity, IttcAdmitApi.errorText(activity, r.exceptionOrNull() ?: Exception(), activity.getString(R.string.ittc_d_not_found))))
+                                    // (it failed, not "not found": a way to try again, as the Visit / Fee sheets)
+                                    if (r.isFailure) {
+                                        val row = IttcDUi.row(activity)
+                                        row.addView(IttcDUi.button(activity, activity.getString(R.string.ittc_d_retry), IttcDUi.Btn.SOFT, small = true) { load(notice) })
+                                        body.addView(row, IttcDUi.lp(activity, top = 8f))
+                                    }
                                 } else {
                                     fill(activity, body, d, dialog, reload = { load(it) }) {
                                         changed = true
@@ -187,6 +193,7 @@ object IttcPaymentSheet {
                     IttcDUi.showError(error, null)
                     busy = true
                     save.alpha = 0.5f
+                    save.text = activity.getString(R.string.ittc_d_saving)
                     val app = activity.applicationContext
                     val amountNow = form.amount()
                     // the payments there before this attempt (the list on screen)
@@ -222,8 +229,9 @@ object IttcPaymentSheet {
                                 activity.runOnUiThread {
                                     busy = false
                                     save.alpha = 1f
+                                    save.text = activity.getString(R.string.ittc_d_save_payment)
                                     if (!IttcDUi.alive(activity)) return@runOnUiThread
-                                    r0.onFailure { IttcDUi.showError(error, IttcAdmitApi.errorText(it, activity.getString(R.string.ittc_d_could_not_save))) }
+                                    r0.onFailure { IttcDUi.showError(error, IttcAdmitApi.errorText(activity, it, activity.getString(R.string.ittc_d_could_not_save))) }
                                     r0.onSuccess { onPaid(it) }
                                 }
                                 return@ensureBackgroundThread
@@ -261,13 +269,14 @@ object IttcPaymentSheet {
                         activity.runOnUiThread {
                             busy = false
                             save.alpha = 1f
+                            save.text = activity.getString(R.string.ittc_d_save_payment)
                             if (!IttcDUi.alive(activity)) return@runOnUiThread
                             r.onFailure {
                                 if (notConfirmed) {
                                     // it may be in: show the list as it is now, the message on top
                                     reload(activity.getString(R.string.ittc_d_pay_not_confirmed))
                                 } else {
-                                    IttcDUi.showError(error, IttcAdmitApi.errorText(it, activity.getString(R.string.ittc_d_could_not_save)))
+                                    IttcDUi.showError(error, IttcAdmitApi.errorText(activity, it, activity.getString(R.string.ittc_d_could_not_save)))
                                 }
                             }
                             r.onSuccess { onPaid(it) }
@@ -298,9 +307,11 @@ object IttcPaymentSheet {
                 ).joinToString(" · ")
                 col.addView(IttcDUi.hint(activity, meta))
                 row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                row.addView(IttcDUi.button(activity, activity.getString(R.string.ittc_d_share), IttcDUi.Btn.SOFT, small = true) {
-                    IttcReceipt.share(activity, lead.id, pay, pays)
-                })
+                lateinit var share: View
+                share = IttcDUi.button(activity, activity.getString(R.string.ittc_d_share), IttcDUi.Btn.SOFT, small = true) {
+                    IttcReceipt.share(activity, lead.id, pay, pays, share)
+                }
+                row.addView(share)
                 body.addView(row, IttcDUi.lp(activity, top = 8f))
             }
         }
@@ -442,8 +453,27 @@ internal object IttcReceipt {
         val paidSoFar: Double,
     )
 
+    /** A receipt is being made (a second tap meanwhile makes nothing twice; set and read on the main thread, cleared off it) */
+    @Volatile
+    private var building = false
+
+    /** Start making one: false when one is already on its way; [button] is dimmed meanwhile */
+    private fun begin(button: View?): Boolean {
+        if (building) return false
+        building = true
+        button?.alpha = 0.5f
+        return true
+    }
+
+    /** Done (always, also after a failure): the next tap works again, the button looks normal */
+    private fun end(activity: Activity, button: View?) {
+        building = false
+        if (button != null) activity.runOnUiThread { button.alpha = 1f }
+    }
+
     /** A payment just saved (its id from record_payment, else found by its receipt no.) */
-    fun shareById(activity: Activity, leadId: String, paymentId: String?, receiptNo: String) {
+    fun shareById(activity: Activity, leadId: String, paymentId: String?, receiptNo: String, button: View? = null) {
+        if (!begin(button)) return
         val app = activity.applicationContext
         ensureBackgroundThread {
             try {
@@ -452,17 +482,22 @@ internal object IttcReceipt {
                     ?: throw IllegalStateException(app.getString(R.string.ittc_d_not_found))
                 build(activity, leadId, pay, pays)
             } catch (e: Throwable) {
-                activity.runOnUiThread { if (IttcDUi.alive(activity)) activity.toast(IttcAdmitApi.errorText(e, activity.getString(R.string.ittc_d_could_not_share))) }
+                activity.runOnUiThread { if (IttcDUi.alive(activity)) activity.toast(IttcAdmitApi.errorText(activity, e, activity.getString(R.string.ittc_d_could_not_share))) }
+            } finally {
+                end(activity, button)
             }
         }
     }
 
-    fun share(activity: Activity, leadId: String, payment: IttcAdmitApi.Payment, pays: IttcAdmitApi.Payments) {
+    fun share(activity: Activity, leadId: String, payment: IttcAdmitApi.Payment, pays: IttcAdmitApi.Payments, button: View? = null) {
+        if (!begin(button)) return
         ensureBackgroundThread {
             try {
                 build(activity, leadId, payment, pays)
             } catch (e: Throwable) {
-                activity.runOnUiThread { if (IttcDUi.alive(activity)) activity.toast(IttcAdmitApi.errorText(e, activity.getString(R.string.ittc_d_could_not_share))) }
+                activity.runOnUiThread { if (IttcDUi.alive(activity)) activity.toast(IttcAdmitApi.errorText(activity, e, activity.getString(R.string.ittc_d_could_not_share))) }
+            } finally {
+                end(activity, button)
             }
         }
     }

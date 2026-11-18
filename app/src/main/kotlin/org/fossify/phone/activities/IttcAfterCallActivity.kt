@@ -30,6 +30,7 @@ import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDialer
 import org.fossify.phone.helpers.IttcNoteDraft
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcUi
 import android.graphics.Color
 import android.view.View
 import android.widget.ImageView
@@ -50,6 +51,8 @@ class IttcAfterCallActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityAfterCallBinding::inflate)
     private val main = Handler(Looper.getMainLooper())
     private lateinit var p: IttcTheme.Palette
+    /** whether the note is empty (the stage hint changes only when this flips) */
+    private var noteBlank = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,6 +65,10 @@ class IttcAfterCallActivity : SimpleActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: android.text.Editable?) {
+                // (only when the note goes from empty to written or back: not on every letter)
+                val blank = s.isNullOrBlank()
+                if (blank == noteBlank) return
+                noteBlank = blank
                 if (stageChoice?.noteRequired == true) renderStages()
             }
         })
@@ -107,7 +114,8 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcStop.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.surface, 999f, p.outline)
             ittcAcStop.setTextColor(p.danger)
             ittcAcSave.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.call, 999f)
-            ittcAcSave.setTextColor(Color.WHITE)
+            // (dark theme: the teal is light, so the dark text reads on it)
+            ittcAcSave.setTextColor(if (p.dark) p.onPrimary else Color.WHITE)
             ittcAcAddLead.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.primary, 999f)
             ittcAcAddLead.setTextColor(p.onPrimary)
             ittcAcCloseButton.setTextColor(p.text2)
@@ -495,7 +503,7 @@ class IttcAfterCallActivity : SimpleActivity() {
                     renderStages()
                     renderNextLabel()
                 },
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, IttcTheme.dp(this, 36f)).apply { setMargins(0, 0, m, 0) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, IttcTheme.dp(this, 40f)).apply { setMargins(0, 0, m, 0) },
             )
         }
         val st = stageChoice
@@ -540,13 +548,10 @@ class IttcAfterCallActivity : SimpleActivity() {
 
     private fun dp(v: Float) = IttcTheme.dp(this, v)
 
-    /** The system's touch ripple over a view with its own background (Android 6+) */
+    /** The system's touch ripple over a view with its own background, kept to its rounded shape */
     private fun touchFeedback(view: View) {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return
         try {
-            val tv = TypedValue()
-            theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
-            view.foreground = androidx.core.content.ContextCompat.getDrawable(this, tv.resourceId)
+            IttcUi.ripple(view)
         } catch (_: Throwable) {
         }
     }
@@ -570,9 +575,11 @@ class IttcAfterCallActivity : SimpleActivity() {
         text = label
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         setPadding(dp(12f), dp(7f), dp(12f), dp(7f))
+        minHeight = dp(40f)
         gravity = Gravity.CENTER
         maxLines = 1
         IttcTheme.pill(this, p.surfaceAlt, p.text)
+        touchFeedback(this)
         setOnClickListener { onClick() }
     }
 
@@ -592,6 +599,7 @@ class IttcAfterCallActivity : SimpleActivity() {
                 else -> IttcTheme.pill(this, p.surface, p.text, p.outline)
             }
             if (chosen || isCurrent) setTypeface(typeface, android.graphics.Typeface.BOLD)
+            touchFeedback(this)
             setOnClickListener { onClick() }
         }
     }
@@ -641,7 +649,7 @@ class IttcAfterCallActivity : SimpleActivity() {
             }
             binding.ittcAcOutcomes.addView(line)
         }
-        val chipHeight = dp(36f)
+        val chipHeight = dp(40f)
 
         binding.ittcAcNext.removeAllViews()
         val now = System.currentTimeMillis()
@@ -696,7 +704,10 @@ class IttcAfterCallActivity : SimpleActivity() {
         val c = Calendar.getInstance().apply { nextAt?.let { timeInMillis = it } }
         DatePickerDialog(this, { _, y, mo, d ->
             TimePickerDialog(this, { _, h, mi ->
-                val at = Calendar.getInstance().apply { set(y, mo, d, h, mi, 0) }.timeInMillis
+                val at = Calendar.getInstance().apply {
+                    set(y, mo, d, h, mi, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
                 if (at > System.currentTimeMillis()) {
                     userNext = true
                     nextKey = "pick"
@@ -704,7 +715,7 @@ class IttcAfterCallActivity : SimpleActivity() {
                     renderChoices()
                     renderStages()
                 }
-            }, 10, 0, false).show()
+            }, 10, 0, android.text.format.DateFormat.is24HourFormat(this)).show()
         }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).apply {
             datePicker.minDate = System.currentTimeMillis() - 1000
         }.show()
@@ -732,6 +743,8 @@ class IttcAfterCallActivity : SimpleActivity() {
         }
         saving = true
         binding.ittcAcSave.isEnabled = false
+        // (dimmed while it saves)
+        binding.ittcAcSave.alpha = 0.6f
         val chosen = outcome
         val next = nextAt
         val dialing = dialerHere()
@@ -755,6 +768,7 @@ class IttcAfterCallActivity : SimpleActivity() {
                 saving = false
                 if (isDestroyed) return@runOnUiThread
                 binding.ittcAcSave.isEnabled = true
+                binding.ittcAcSave.alpha = 1f
                 if (ok) {
                     toast(R.string.ittc_saved)
                     // ▶ calling through a list: the next lead at once (the dial screen opens on its own)
