@@ -10,6 +10,7 @@ import org.fossify.commons.extensions.getMyContactsCursor
 import org.fossify.commons.extensions.hasPermission
 import org.fossify.commons.extensions.isDefaultDialer
 import org.fossify.commons.extensions.isVisible
+import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.underlineText
 import org.fossify.commons.helpers.ContactsHelper
 import org.fossify.commons.helpers.MyContactsContentProvider
@@ -171,7 +172,18 @@ class RecentsFragment(
         // the disclosure and Android's "make it the phone app" question instead
         val act = activity ?: return
         if (!act.isDefaultDialer()) {
-            org.fossify.phone.helpers.IttcDisclosure.showOnce(act) { act.launchSetDefaultDialerIntent() }
+            org.fossify.phone.helpers.IttcDisclosure.showOnce(act) {
+                val roles = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    act.getSystemService(android.app.role.RoleManager::class.java)
+                } else {
+                    null
+                }
+                if (roles != null && !roles.isRoleAvailable(android.app.role.RoleManager.ROLE_DIALER)) {
+                    act.toast(R.string.ittc_no_phone_role)
+                } else {
+                    act.launchSetDefaultDialerIntent()
+                }
+            }
             return
         }
         activity?.handlePermission(PERMISSION_READ_CALL_LOG) {

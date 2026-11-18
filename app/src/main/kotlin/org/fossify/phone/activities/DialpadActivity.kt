@@ -105,6 +105,12 @@ class DialpadActivity : SimpleActivity() {
     @Suppress("LongMethod")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 🎓 ITTC: opened from another app before the first start: the disclosure first
+        if (!org.fossify.phone.helpers.IttcDisclosure.agreed(this)) {
+            startActivity(android.content.Intent(this, MainActivity::class.java))
+            finish()
+            return
+        }
         setContentView(binding.root)
         hasRussianLocale = Locale.getDefault().language == "ru"
 
