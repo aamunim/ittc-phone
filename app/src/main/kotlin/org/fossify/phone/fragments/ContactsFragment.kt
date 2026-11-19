@@ -28,15 +28,15 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.getProperText
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.R
+import org.fossify.phone.activities.IttcNumberActivity
 import org.fossify.phone.activities.MainActivity
 import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.adapters.ContactsAdapter
 import org.fossify.phone.databinding.FragmentContactsBinding
 import org.fossify.phone.databinding.FragmentLettersLayoutBinding
-import org.fossify.phone.extensions.handleGenericContactClick
 import org.fossify.phone.extensions.launchCreateNewContactIntent
 import org.fossify.phone.extensions.setupWithContacts
-import org.fossify.phone.extensions.startContactDetailsIntent
+import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcContactRows
 import org.fossify.phone.helpers.IttcMode
 import org.fossify.phone.helpers.IttcTheme
@@ -226,11 +226,13 @@ class ContactsFragment(context: Context, attributeSet: AttributeSet) : MyViewPag
                 recyclerView = binding.fragmentList,
                 highlightText = query,
                 refreshItemsListener = this,
+                // 🎓 ITTC: a tap on a row always calls (whatever "On contact click" says); the photo
+                // or the row's › opens the contact's details page with its call history
                 itemClick = {
-                    activity?.handleGenericContactClick(it as Contact)
+                    activity?.startCallWithConfirmationCheck(it as Contact)
                 },
                 profileIconClick = {
-                    activity?.startContactDetailsIntent(it as Contact)
+                    activity?.let { a -> IttcNumberActivity.openContact(a, it as Contact) }
                 },
                 ittcRows = rows,
             ).apply {

@@ -388,6 +388,8 @@ class ContactsAdapter(
             rows.bindNumber(this, contact, textToHighlight, fontSize)
 
             if (!activity.isDestroyed) rows.bindAvatar(activity, this, contact)
+            // (the photo / initials and the › open the details page; while selecting they select, as the row does)
+            ittcContactDetails.beVisibleIf(profileIconClick != null)
             if (profileIconClick != null) {
                 val onProfile = View.OnClickListener {
                     if (!actModeCallback.isSelectable) {
@@ -404,6 +406,14 @@ class ContactsAdapter(
                 itemContactImage.setOnLongClickListener(onProfileLong)
                 ittcContactAvatar.setOnClickListener(onProfile)
                 ittcContactAvatar.setOnLongClickListener(onProfileLong)
+                ittcContactDetails.setOnClickListener(onProfile)
+                ittcContactDetails.setOnLongClickListener(onProfileLong)
+                ittcContactDetails.setColorFilter(rows.palette.muted)
+                val details = activity.getString(R.string.ittc_ct_details)
+                val who = contact.getNameToDisplay()
+                ittcContactDetails.contentDescription = if (who.isEmpty()) details else "$details: $who"
+                itemContactImage.contentDescription = ittcContactDetails.contentDescription
+                ittcContactAvatar.contentDescription = ittcContactDetails.contentDescription
             }
 
             val lead = rows.leadOf(contact)

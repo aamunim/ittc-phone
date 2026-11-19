@@ -19,4 +19,32 @@
     <string name="ittc_ct_no_match_in" translatable="false">No contacts in %1$s match “%2$s”</string>
     <string name="ittc_ct_group_empty" translatable="false">No contacts in %s yet</string>
     <string name="ittc_ct_show_all" translatable="false">Show all contacts</string>
+
+    <!-- a row's › : the contact's details page (a tap on the row calls) -->
+    <string name="ittc_ct_details" translatable="false">Details</string>
+
+    <!-- the contact's details page (the call history page in contact mode) -->
+    <string name="ittc_cd_title" translatable="false">Contact</string>
+    <string name="ittc_cd_info" translatable="false">Contact info</string>
+    <string name="ittc_cd_phones" translatable="false">Phone</string>
+    <string name="ittc_cd_emails" translatable="false">Email</string>
+    <string name="ittc_cd_addresses" translatable="false">Address</string>
+    <string name="ittc_cd_work" translatable="false">Work</string>
+    <string name="ittc_cd_events" translatable="false">Dates</string>
+    <string name="ittc_cd_websites" translatable="false">Websites</string>
+    <string name="ittc_cd_groups" translatable="false">Groups</string>
+    <string name="ittc_cd_notes" translatable="false">Notes</string>
+    <string name="ittc_cd_history" translatable="false">Call history</string>
+    <string name="ittc_cd_edit" translatable="false">Edit</string>
+    <string name="ittc_cd_call_number" translatable="false">Call %s</string>
+    <string name="ittc_cd_sms_number" translatable="false">Send an SMS to %s</string>
+    <string name="ittc_cd_whatsapp_number" translatable="false">WhatsApp %s</string>
+    <string name="ittc_cd_email_to" translatable="false">Email %s</string>
+    <string name="ittc_cd_map" translatable="false">Show %s on a map</string>
+    <string name="ittc_cd_open_site" translatable="false">Open %s</string>
+    <string name="ittc_cd_default" translatable="false">Default</string>
+    <string name="ittc_cd_email_home" translatable="false">Home</string>
+    <string name="ittc_cd_email_work" translatable="false">Work</string>
+    <string name="ittc_cd_email_mobile" translatable="false">Mobile</string>
+    <string name="ittc_cd_other" translatable="false">Other</string>
 </resources>
