@@ -386,7 +386,10 @@ class RecentsFragment(
     }
 
     private fun refreshCallLog(loadAll: Boolean = false, callback: (() -> Unit)? = null) {
+        // 🎓 ITTC 3.13: timed (shown at the bottom of the side panel)
+        val startedAt = org.fossify.phone.helpers.IttcPerf.now()
         getRecentCalls(loadAll) {
+            org.fossify.phone.helpers.IttcPerf.recentsLoaded(context, loadAll, startedAt)
             allRecentCalls = it
             // 🎓 ITTC: kept for the next opening
             if (!loadAll) IttcRecentsCache.save(context, it.filterIsInstance<RecentCall>())

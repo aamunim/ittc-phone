@@ -1193,7 +1193,8 @@ class MainActivity : SimpleActivity() {
 
     fun cacheContacts() {
         val privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
-        ContactsHelper(this).getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
+        // 🎓 ITTC 3.13: one shared read (Call History asks at the same moment; read again only after a change)
+        org.fossify.phone.helpers.IttcContactsCache.get(this) { contacts ->
             if (SMT_PRIVATE !in config.ignoredContactSources) {
                 val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
                 if (privateContacts.isNotEmpty()) {
