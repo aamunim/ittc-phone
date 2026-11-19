@@ -21,6 +21,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.FeatureLockedDialog
+import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.addBlockedNumber
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
@@ -45,6 +46,7 @@ import org.fossify.commons.helpers.PERMISSION_READ_CONTACTS
 import org.fossify.commons.helpers.PERMISSION_WRITE_CALL_LOG
 import org.fossify.commons.helpers.SimpleContactsHelper
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.models.RadioItem
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.R
 import org.fossify.phone.databinding.ItemRecentsDateBinding
@@ -123,10 +125,10 @@ class IttcNumberActivity : SimpleActivity() {
 
             if (contactMode) ittcNumberToolbar.title = getString(R.string.ittc_cd_title)
             ittcNumberCall.setOnClickListener { callTile() }
-            ittcNumberSms.setOnClickListener { launchSendSMSIntent(number) }
-            ittcNumberWhatsapp.setOnClickListener { openWhatsApp() }
+            ittcNumberSms.setOnClickListener { pickNumber(R.string.ittc_hist_sms) { launchSendSMSIntent(it) } }
+            ittcNumberWhatsapp.setOnClickListener { pickNumber(R.string.ittc_hist_whatsapp) { openWhatsApp(it) } }
             ittcNumberContact.setOnClickListener { contactTile() }
-            ittcNumberBlock.setOnClickListener { tryBlocking() }
+            ittcNumberBlock.setOnClickListener { pickNumber(R.string.ittc_hist_block) { tryBlocking(it) } }
             ittcNumberDelete.setOnClickListener { askConfirmDelete() }
         }
 
@@ -165,6 +167,7 @@ class IttcNumberActivity : SimpleActivity() {
         super.onResume()
         setupTopAppBar(binding.ittcNumberAppbar, NavigationIcon.Arrow)
         // (back from a call or the contacts app: the calls and the name may have changed)
+        if (contactMode) loadContactUri()
         loadContact()
         loadLead()
         loadCalls()
@@ -184,17 +187,53 @@ class IttcNumberActivity : SimpleActivity() {
 
     private fun keysOf(list: List<String>): Set<String> = list.map { IttcCallHistory.key(it).ifEmpty { it } }.toSet()
 
-    /** Contact mode with the contact found: the Contact tile edits it */
-    private fun editsContact() = contactMode && (contact != null || contactUri != null)
+    /**
+     * Contact mode: the Contact tile edits the contact — from the start, not only once the contacts list
+     * answers (a "Save" there would make a second copy). A contact found to be gone leaves contact mode.
+     */
+    private fun editsContact() = contactMode
+
+    /** Contact mode: the contact's lookup uri, from its id alone (off the main thread) */
+    private fun loadContactUri(then: (() -> Unit)? = null) {
+        val id = contactId
+        ensureBackgroundThread {
+            val uri = lookupUriOf(id)
+            runOnUiThread {
+                if (isDestroyed || isFinishing || id != contactId) return@runOnUiThread
+                contactUri = uri
+                showHeader(shownPhoto)
+                then?.invoke()
+            }
+        }
+    }
+
+    /**
+     * 2+ numbers: a choice of number for SMS / WhatsApp / Block (titled with the tile); one number: it.
+     */
+    private fun pickNumber(titleId: Int, action: (String) -> Unit) {
+        val list = numbers
+        if (list.size <= 1) {
+            action(number)
+            return
+        }
+        val phones = contact?.phoneNumbers.orEmpty()
+        val items = ArrayList<RadioItem>()
+        list.forEachIndexed { i, n ->
+            val key = IttcCallHistory.key(n).ifEmpty { n }
+            val saved = phones.firstOrNull { IttcCallHistory.key(it.value).ifEmpty { it.value } == key }
+            val type = saved?.let { getPhoneNumberTypeText(it.type, it.label) }.orEmpty()
+            val shown = formatted(n)
+            items.add(RadioItem(i, if (type.isEmpty()) shown else "$shown ($type)", n))
+        }
+        RadioGroupDialog(this, items, titleId = titleId) { action(it as String) }
+    }
 
     /** Call: the number; a contact with 2+ numbers → the contact (its default number, else a choice) */
     private fun callTile() {
         val c = contact
         if (contactMode && c != null && numbers.size > 1) {
-            // (the same number saved twice is offered once)
-            val seen = HashSet<String>()
-            val phones = c.phoneNumbers.filter { it.value.isNotBlank() && seen.add(IttcCallHistory.key(it.value).ifEmpty { it.value }) }
-            startCallWithConfirmationCheck(c.copy(phoneNumbers = ArrayList(phones)))
+            // (findContact's numbers: once each, the default kept)
+            startCallWithConfirmationCheck(c)
         } else {
             startCallWithConfirmationCheck(number, displayName())
         }
@@ -204,6 +243,11 @@ class IttcNumberActivity : SimpleActivity() {
     private fun contactTile() {
         val uri = contactUri
         if (editsContact()) {
+            if (uri == null && contact == null) {
+                // (tapped before anything answered: the uri first, then edit)
+                loadContactUri { if (contactUri != null) contactTile() }
+                return
+            }
             editOpened = true
             if (uri != null) {
                 val edit = Intent(Intent.ACTION_EDIT, uri).apply { putExtra("finishActivityOnSaveCompleted", true) }
@@ -232,12 +276,16 @@ class IttcNumberActivity : SimpleActivity() {
         editOpened = false
         IttcContactsCache.get(this, fresh) { list ->
             if (isDestroyed || isFinishing) return@get
+            if (!contactMode) return@get
             val found = findContact(list)
             if (found == null) {
-                // (gone from the phone, or no access: the number's own page, as from Recents)
-                contact = null
-                showInfo(null)
-                loadContactByNumber()
+                if (list.isEmpty()) {
+                    // (no contacts could be read — no access, or a broken provider: not known to be gone;
+                    // the photo and name by the number meanwhile)
+                    loadContactByNumber()
+                } else {
+                    leaveContactMode()
+                }
                 return@get
             }
             contact = found
@@ -255,15 +303,29 @@ class IttcNumberActivity : SimpleActivity() {
             }
             showHeader(shownPhoto)
             showInfo(found)
-            ensureBackgroundThread {
-                val uri = lookupUriOf(found)
-                runOnUiThread {
-                    if (isDestroyed || isFinishing) return@runOnUiThread
-                    contactUri = uri
-                    showHeader(shownPhoto)
-                }
-            }
         }
+    }
+
+    /**
+     * The contact was deleted: the page becomes the main number's own page, as from Recents (its own
+     * name, title, calls and lead; Delete history covers this number only).
+     */
+    private fun leaveContactMode() {
+        contactId = 0
+        contactRawId = 0
+        contact = null
+        contactUri = null
+        contactName = null
+        givenName = null
+        shownPhoto = null
+        binding.ittcNumberToolbar.title = getString(R.string.ittc_hist_title)
+        numbers = listOf(number)
+        shownKey = null
+        showInfo(null)
+        showHeader()
+        loadContactByNumber()
+        loadLead()
+        loadCalls()
     }
 
     /** The tapped contact; one person saved in several accounts is one page with all of it */
@@ -272,10 +334,16 @@ class IttcNumberActivity : SimpleActivity() {
             ?: list.firstOrNull { it.contactId == contactId }
             ?: return null
         val same = list.filter { it.contactId == main.contactId && it.isPrivate() == main.isPrivate() }
-        if (same.size <= 1) return main
         val others = listOf(main) + same.filter { it !== main }
+        // (every number once — the same number saved twice is one — the default first, so it is the one kept)
+        val seen = HashSet<String>()
+        val phones = others.flatMap { it.phoneNumbers }
+            .filter { it.value.isNotBlank() }
+            .sortedByDescending { it.isPrimary }
+            .filter { seen.add(IttcCallHistory.key(it.value).ifEmpty { it.value }) }
+        if (same.size <= 1) return main.copy(phoneNumbers = ArrayList(phones))
         return main.copy(
-            phoneNumbers = ArrayList(others.flatMap { it.phoneNumbers }),
+            phoneNumbers = ArrayList(phones),
             emails = ArrayList(others.flatMap { it.emails }.distinctBy { it.value.trim().lowercase() }),
             addresses = ArrayList(others.flatMap { it.addresses }.distinctBy { it.value.trim() }),
             events = ArrayList(others.flatMap { it.events }.distinctBy { it.type to it.value }),
@@ -287,12 +355,12 @@ class IttcNumberActivity : SimpleActivity() {
         )
     }
 
-    /** The contact's lookup uri (for "Edit"); null for a contact only Fossify Contacts keeps. Off the main thread */
+    /** The contact's lookup uri (for "Edit") from its id; null when it can't be found. Off the main thread */
     @SuppressLint("MissingPermission")
-    private fun lookupUriOf(c: Contact): Uri? {
-        if (c.isPrivate() || !hasPermission(PERMISSION_READ_CONTACTS)) return null
+    private fun lookupUriOf(id: Int): Uri? {
+        if (id <= 0 || !hasPermission(PERMISSION_READ_CONTACTS)) return null
         return try {
-            ContactsContract.Contacts.getLookupUri(contentResolver, ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, c.contactId.toLong()))
+            ContactsContract.Contacts.getLookupUri(contentResolver, ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, id.toLong()))
         } catch (_: Throwable) {
             null
         }
@@ -331,9 +399,8 @@ class IttcNumberActivity : SimpleActivity() {
             add()
         }
 
-        // (the same number saved twice is shown once)
-        val seen = HashSet<String>()
-        val phones = c.phoneNumbers.filter { it.value.isNotBlank() && seen.add(IttcCallHistory.key(it.value).ifEmpty { it.value }) }
+        // (findContact's numbers: once each, the default first)
+        val phones = c.phoneNumbers
         if (phones.isNotEmpty()) group {
             phones.forEach { n ->
                 val shown = formatted(n.value)
@@ -668,6 +735,8 @@ class IttcNumberActivity : SimpleActivity() {
             val canOpen = direct || IttcBridge.trackerInstalled(this)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
+                // (loaded for numbers the page no longer covers: a newer load is on its way)
+                if (wanted != numbers) return@runOnUiThread
                 showLeadBox(lead, direct, canOpen)
                 val p = palette
                 val unsaved = contactName == null && givenName == null
@@ -763,7 +832,8 @@ class IttcNumberActivity : SimpleActivity() {
         ensureBackgroundThread {
             val calls = IttcCallHistory.loadCalls(this, wanted)
             runOnUiThread {
-                if (!isDestroyed && !isFinishing) showCalls(calls, noAccess = false)
+                // (loaded for numbers the page no longer covers: a newer load is on its way)
+                if (!isDestroyed && !isFinishing && wanted == numbers) showCalls(calls, noAccess = false)
             }
         }
     }
@@ -946,16 +1016,16 @@ class IttcNumberActivity : SimpleActivity() {
     }
 
     // (as the Recents list's "Block number")
-    private fun tryBlocking() {
+    private fun tryBlocking(target: String = number) {
         if (!isOrWasThankYouInstalled()) {
             FeatureLockedDialog(this) { }
             return
         }
 
-        val question = String.format(getString(R.string.block_confirmation), number)
+        val question = String.format(getString(R.string.block_confirmation), target)
         ConfirmationDialog(this, question) {
             ensureBackgroundThread {
-                if (addBlockedNumber(number)) {
+                if (addBlockedNumber(target)) {
                     IttcCallHistory.recentsDirty = true
                     runOnUiThread { toast(R.string.ittc_hist_blocked) }
                 }
@@ -1014,14 +1084,14 @@ class IttcNumberActivity : SimpleActivity() {
          */
         fun openContact(context: Context, contact: Contact) {
             val all = contact.phoneNumbers.map { it.value }.filter { it.isNotBlank() }
-            if (all.isEmpty() || contact.contactId <= 0) {
+            // (no number, or a private contact only Fossify Contacts keeps — not in the phone's contacts
+            // list this page reads: the contacts app, as before)
+            if (all.isEmpty() || contact.contactId <= 0 || contact.isPrivate()) {
                 (context as? Activity)?.startContactDetailsIntent(contact)
                 return
             }
-            // (the default number as saved — getPrimaryNumber() gives it normalized — else the first)
-            val primary = contact.phoneNumbers.firstOrNull { it.isPrimary && it.value.isNotBlank() }?.value
-                ?: contact.getPrimaryNumber()?.takeIf { it.isNotBlank() }
-                ?: all.first()
+            // (the default number as saved, else the first as saved — never the normalized "+8801…")
+            val primary = contact.phoneNumbers.firstOrNull { it.isPrimary && it.value.isNotBlank() }?.value ?: all.first()
             Intent(context, IttcNumberActivity::class.java).apply {
                 putExtra(EXTRA_NUMBER, primary)
                 contact.getNameToDisplay().takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_NAME, it) }
