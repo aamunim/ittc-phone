@@ -13,6 +13,7 @@ import org.fossify.commons.dialogs.FeatureLockedDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.addLockedLabelIfNeeded
 import org.fossify.commons.extensions.baseConfig
+import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.isOrWasThankYouInstalled
@@ -265,6 +266,9 @@ class SettingsActivity : SimpleActivity() {
     )
 
     private fun setupOnContactClick() {
+        // 🎓 ITTC 3.14: Contacts and Favorites always call on a tap (the photo / › opens the contact's
+        // page), so "On contact click" has nothing left to choose: hidden
+        binding.settingsOnContactClickHolder.beGone()
         binding.settingsOnContactClick.text = getOnContactClickText()
         binding.settingsOnContactClickHolder.setOnClickListener {
             val items = arrayListOf(

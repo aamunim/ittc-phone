@@ -28,9 +28,9 @@ import org.fossify.phone.adapters.ContactsAdapter
 import org.fossify.phone.databinding.FragmentFavoritesBinding
 import org.fossify.phone.databinding.FragmentLettersLayoutBinding
 import org.fossify.phone.extensions.config
-import org.fossify.phone.extensions.handleGenericContactClick
+import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.extensions.setupWithContacts
-import org.fossify.phone.extensions.startContactDetailsIntent
+import org.fossify.phone.activities.IttcNumberActivity
 import org.fossify.phone.interfaces.RefreshItemsListener
 
 class FavoritesFragment(context: Context, attributeSet: AttributeSet) : MyViewPagerFragment<MyViewPagerFragment.LettersInnerBinding>(context, attributeSet),
@@ -126,11 +126,12 @@ class FavoritesFragment(context: Context, attributeSet: AttributeSet) : MyViewPa
                 viewType = viewType,
                 showDeleteButton = false,
                 enableDrag = true,
+                // 🎓 ITTC 3.14: as on the Contacts tab — a tap calls, the photo opens the contact's page
                 itemClick = {
-                    activity?.handleGenericContactClick(it as Contact)
+                    (activity as? SimpleActivity)?.startCallWithConfirmationCheck(it as Contact)
                 },
                 profileIconClick = {
-                    activity?.startContactDetailsIntent(it as Contact)
+                    activity?.let { a -> IttcNumberActivity.openContact(a, it as Contact) }
                 }).apply {
                 binding.fragmentList.adapter = this
 
