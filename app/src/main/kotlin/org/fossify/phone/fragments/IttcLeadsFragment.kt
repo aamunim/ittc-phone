@@ -898,6 +898,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         b.ittcLeadsClear.beVisibleIf(clear)
         // (the 36 dp circle inside its 44 dp touch area)
         b.ittcLeadsClear.background = InsetDrawable(IttcTheme.rounded(context, p.surface, 999f, p.outline), IttcTheme.dp(context, 4f))
+        // (an inset background replaces the view's padding with its insets: the ✕ keeps its 18 dp)
+        IttcTheme.dp(context, 13f).let { pad -> b.ittcLeadsClear.setPadding(pad, pad, pad, pad) }
         b.ittcLeadsClear.setColorFilter(p.text2)
         applyPillWidths()
     }
@@ -1466,6 +1468,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         listOf(b.ittcLeadsViewList to !boardMode, b.ittcLeadsViewBoard to boardMode).forEach { (v, on) ->
             // (dark: the chosen one in the soft accent, a white pill would glare)
             v.background = if (on) InsetDrawable(IttcTheme.rounded(context, if (p.dark) p.primarySoft else p.surface, 999f), inset) else null
+            // (the inset background would replace the icon's padding: keep it the same on both)
+            IttcTheme.dp(context, 12f).let { pad -> v.setPadding(pad, pad, pad, pad) }
             v.elevation = if (on) IttcTheme.dp(context, 2f).toFloat() else 0f
             v.setColorFilter(if (on) p.primary else p.muted)
             v.isSelected = on

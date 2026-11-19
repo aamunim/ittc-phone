@@ -609,6 +609,11 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             val inset = dp(4f)
             vb.ittcBoardCardCall.background = InsetDrawable(callBg, inset)
             vb.ittcBoardCardWhatsapp.background = InsetDrawable(waBg, inset)
+            // (inset backgrounds replace the views' padding: the icons keep their size)
+            dp(13f).let { pad ->
+                vb.ittcBoardCardCall.setPadding(pad, pad, pad, pad)
+                vb.ittcBoardCardWhatsapp.setPadding(pad, pad, pad, pad)
+            }
             vb.ittcBoardCard.clipToOutline = true
             vb.ittcBoardCard.isClickable = true
             vb.ittcBoardCard.isLongClickable = true
@@ -931,8 +936,9 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             DragEvent.ACTION_DRAG_LOCATION -> {
                 lastX = e.x
                 lastY = e.y
-                setTarget(valid(targetAt(e.x, e.y)))
+                // (first: whether the finger is over the stage strip, so the strip isn't scrolled under it)
                 updateAutoScroll(e.x, e.y)
+                setTarget(valid(targetAt(e.x, e.y)))
             }
             DragEvent.ACTION_DRAG_EXITED -> {
                 setTarget(null)
