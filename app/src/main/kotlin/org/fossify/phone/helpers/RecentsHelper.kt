@@ -9,6 +9,7 @@ import android.provider.CallLog.Calls.PRESENTATION_UNKNOWN
 import android.telephony.PhoneNumberUtils
 import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
+import org.fossify.commons.models.BlockedNumber
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.R
 import org.fossify.phone.activities.SimpleActivity
@@ -36,7 +37,8 @@ class RecentsHelper(private val context: Context) {
             return
         }
 
-        ContactsHelper(context).getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
+        // 🎓 ITTC 3.13: the contacts read once and shared (not every contact read again on each refresh)
+        IttcContactsCache.get(context) { contacts ->
             ensureBackgroundThread {
                 val privateContacts = MyContactsContentProvider.getContacts(context, privateCursor)
                 if (privateContacts.isNotEmpty()) {
@@ -44,6 +46,13 @@ class RecentsHelper(private val context: Context) {
                 }
 
                 this.queryLimit = queryLimit
+                // 🎓 ITTC 3.13: the look-up tables, the SIM cards and the blocked numbers once for this
+                // read (both halves below use them)
+                val index = MatchIndex(contacts)
+                val sims = HashMap<String, SIMAccount>().also { map ->
+                    context.getAvailableSIMCardLabels().forEach { map[it.handle.id] = it }
+                }
+                val blockedNumbers = context.getBlockedNumbers()
                 val recentCalls = if (previousRecents.isNotEmpty()) {
                     val previousRecentCalls = previousRecents
                         .flatMap { it.groupedCalls ?: listOf(it) }
@@ -51,19 +60,25 @@ class RecentsHelper(private val context: Context) {
 
                     val newerRecents = getRecents(
                         contacts = contacts,
+                        index = index,
+                        accountIdToSimAccountMap = sims,
+                        blockedNumbers = blockedNumbers,
                         selection = "${Calls.DATE} > ?",
                         selectionParams = arrayOf("${previousRecentCalls.first().startTS}")
                     )
 
                     val olderRecents = getRecents(
                         contacts = contacts,
+                        index = index,
+                        accountIdToSimAccountMap = sims,
+                        blockedNumbers = blockedNumbers,
                         selection = "${Calls.DATE} < ?",
                         selectionParams = arrayOf("${previousRecentCalls.last().startTS}")
                     )
 
                     newerRecents + previousRecentCalls + olderRecents
                 } else {
-                    getRecents(contacts)
+                    getRecents(contacts, index, sims, blockedNumbers)
                 }
 
                 callback(
@@ -127,6 +142,9 @@ class RecentsHelper(private val context: Context) {
     @SuppressLint("NewApi")
     private fun getRecents(
         contacts: List<Contact>,
+        index: MatchIndex,
+        accountIdToSimAccountMap: Map<String, SIMAccount>,
+        blockedNumbers: ArrayList<BlockedNumber>,
         selection: String? = null,
         selectionParams: Array<String>? = null,
     ): List<RecentCall> {
@@ -147,11 +165,6 @@ class RecentsHelper(private val context: Context) {
             Calls.NUMBER_PRESENTATION
         )
 
-        val accountIdToSimAccountMap = HashMap<String, SIMAccount>()
-        context.getAvailableSIMCardLabels().forEach {
-            accountIdToSimAccountMap[it.handle.id] = it
-        }
-
         val cursor = if (isNougatPlus()) {
             // https://issuetracker.google.com/issues/175198972?pli=1#comment6
             val limitedUri = contentUri.buildUpon()
@@ -164,6 +177,9 @@ class RecentsHelper(private val context: Context) {
             context.contentResolver.query(contentUri, projection, selection, selectionParams, sortOrder)
         }
 
+        // 🎓 ITTC 3.13: `index` — look-up tables instead of walking every contact for every call
+        //   (a 2 GB phone spent seconds here: calls × contacts number comparisons). Each gives the
+        //   same contact the old walk found: the first one in the list that matches.
         val contactsWithMultipleNumbers = contacts.filter { it.phoneNumbers.size > 1 }
         val numbersToContactIDMap = HashMap<String, Int>()
         contactsWithMultipleNumbers.forEach { contact ->
@@ -201,19 +217,9 @@ class RecentsHelper(private val context: Context) {
                     } else {
                         val normalizedNumber = number.normalizePhoneNumber()
                         if (normalizedNumber!!.length >= COMPARABLE_PHONE_NUMBER_LENGTH) {
-                            name = contacts.filter { it.phoneNumbers.isNotEmpty() }.firstOrNull { contact ->
-                                val curNumber = contact.phoneNumbers.first().normalizedNumber
-                                if (curNumber.length >= COMPARABLE_PHONE_NUMBER_LENGTH) {
-                                    if (curNumber.substring(curNumber.length - COMPARABLE_PHONE_NUMBER_LENGTH) == normalizedNumber.substring(
-                                            normalizedNumber.length - COMPARABLE_PHONE_NUMBER_LENGTH
-                                        )
-                                    ) {
-                                        contactsNumbersMap[number] = contact.getNameToDisplay()
-                                        return@firstOrNull true
-                                    }
-                                }
-                                false
-                            }?.name ?: number
+                            val contact = index.byFirstNumberEnd(normalizedNumber)
+                            if (contact != null) contactsNumbersMap[number] = contact.getNameToDisplay()
+                            name = contact?.name ?: number
                         }
                     }
                 }
@@ -227,7 +233,7 @@ class RecentsHelper(private val context: Context) {
                     if (contactPhotosMap.containsKey(number)) {
                         photoUri = contactPhotosMap[number]!!
                     } else {
-                        val contact = contacts.firstOrNull { it.doesHavePhoneNumber(number) }
+                        val contact = index.havingNumber(number)
                         if (contact != null) {
                             photoUri = contact.photoUri
                             contactPhotosMap[number] = contact.photoUri
@@ -252,7 +258,7 @@ class RecentsHelper(private val context: Context) {
                 val contactIdWithMultipleNumbers = numbersToContactIDMap[number]
                 if (contactIdWithMultipleNumbers != null) {
                     val specificPhoneNumber =
-                        contacts.firstOrNull { it.contactId == contactIdWithMultipleNumbers }?.phoneNumbers?.firstOrNull { it.value == number }
+                        index.byContactId(contactIdWithMultipleNumbers)?.phoneNumbers?.firstOrNull { it.value == number }
                     if (specificPhoneNumber != null) {
                         specificNumber = specificPhoneNumber.value
                         specificType = context.getPhoneNumberTypeText(specificPhoneNumber.type, specificPhoneNumber.label)
@@ -277,8 +283,6 @@ class RecentsHelper(private val context: Context) {
                 )
             } while (cursor.moveToNext() && recentCalls.size < queryLimit)
         }
-
-        val blockedNumbers = context.getBlockedNumbers()
 
         return recentCalls
             .filter { !context.isNumberBlocked(it.phoneNumber, blockedNumbers) }
@@ -327,6 +331,75 @@ class RecentsHelper(private val context: Context) {
                     callback()
                 }
             }
+        }
+    }
+
+    /**
+     * 🎓 ITTC 3.13: the old walks through the contact list, as look-ups. Each answers exactly what
+     * its walk answered: the first contact in the list that matches.
+     */
+    private class MatchIndex(private val contacts: List<Contact>) {
+        /** The last 9 characters of each contact's first number (the call log name walk) */
+        private val firstNumberEnds = HashMap<String, Contact>().also { map ->
+            contacts.forEach { contact ->
+                val cur = contact.phoneNumbers.firstOrNull()?.normalizedNumber ?: return@forEach
+                if (cur.length >= COMPARABLE_PHONE_NUMBER_LENGTH) map.putIfAbsent(cur.takeLast(COMPARABLE_PHONE_NUMBER_LENGTH), contact)
+            }
+        }
+
+        fun byFirstNumberEnd(normalizedNumber: String): Contact? =
+            firstNumberEnds[normalizedNumber.takeLast(COMPARABLE_PHONE_NUMBER_LENGTH)]
+
+        /** Each contact's place in the list, by contact id (the first one, as firstOrNull found it) */
+        private val byId = HashMap<Int, Contact>().also { map -> contacts.forEach { map.putIfAbsent(it.contactId, it) } }
+
+        fun byContactId(id: Int): Contact? = byId[id]
+
+        /**
+         * Contact.doesHavePhoneNumber, without trying every contact: two numbers it calls the same
+         * always end in the same 7 digits (PhoneNumberUtils.compare needs at least 7 matching from
+         * the end), so only the contacts with a number ending in those 7 digits are tried — in their
+         * list order. Numbers with fewer than 7 digits are tried the old way.
+         */
+        private val byLastSeven = HashMap<String, MutableList<Int>>()
+        private val short = ArrayList<Int>()
+
+        init {
+            contacts.forEachIndexed { i, contact ->
+                val keys = HashSet<String>()
+                var hasShort = false
+                contact.phoneNumbers.forEach { phone ->
+                    // (what doesHavePhoneNumber compares: the stored normalized number, and it normalized again)
+                    for (n in listOf(phone.normalizedNumber, phone.normalizedNumber.normalizePhoneNumber())) {
+                        val key = lastSeven(n)
+                        if (key == null) hasShort = true else keys.add(key)
+                    }
+                }
+                keys.forEach { byLastSeven.getOrPut(it) { ArrayList() }.add(i) }
+                if (hasShort) short.add(i)
+            }
+        }
+
+        fun havingNumber(number: String): Contact? {
+            val key = lastSeven(number.normalizePhoneNumber())
+            if (key == null) return contacts.firstOrNull { it.doesHavePhoneNumber(number) }
+            val tries = ((byLastSeven[key] ?: emptyList<Int>()) + short).distinct().sorted()
+            for (i in tries) {
+                if (contacts[i].doesHavePhoneNumber(number)) return contacts[i]
+            }
+            return null
+        }
+
+        /** The last 7 digits, or null when there are fewer */
+        private fun lastSeven(n: String): String? {
+            val digits = StringBuilder(7)
+            var i = n.length - 1
+            while (i >= 0 && digits.length < 7) {
+                val c = n[i]
+                if (c in '0'..'9') digits.append(c)
+                i--
+            }
+            return if (digits.length == 7) digits.reverse().toString() else null
         }
     }
 }

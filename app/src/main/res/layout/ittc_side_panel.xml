@@ -250,5 +250,15 @@
             android:layout_height="wrap_content"
             android:drawableStart="@drawable/ic_info_vector"
             android:text="@string/ittc_sp_about" />
+
+        <!-- 🎓 3.13: how long Call History took the last time (to compare a slow phone before / after) -->
+        <TextView
+            android:id="@+id/ittc_panel_perf"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:paddingHorizontal="4dp"
+            android:textSize="11sp"
+            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

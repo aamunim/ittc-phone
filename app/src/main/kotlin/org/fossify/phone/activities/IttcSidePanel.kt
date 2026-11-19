@@ -207,6 +207,7 @@ class IttcSidePanel(
         b.ittcPanelDark.setColors(p.text, accent, p.surface)
         b.ittcPanelDialpad.setColors(p.text, accent, p.surface)
         b.ittcPanelDivider.setBackgroundColor(p.divider)
+        b.ittcPanelPerf.setTextColor(p.muted)
         listOf(b.ittcPanelModeSettings, b.ittcPanelDisplay, b.ittcPanelSettings, b.ittcPanelAbout).forEach { link ->
             link.setTextColor(p.text)
             link.compoundDrawableTintList = IttcTheme.tint(p.text2)
@@ -223,6 +224,10 @@ class IttcSidePanel(
         b.ittcPanelTextValue.text = activity.getString(R.string.ittc_ds_percent, textPct)
         b.ittcPanelDark.isChecked = IttcTheme.of(activity).dark
         b.ittcPanelDialpad.isChecked = activity.config.ittcOpenWithDialpad
+        // 🎓 3.13: Call History's last load time
+        val perf = org.fossify.phone.helpers.IttcPerf.recentsText(activity)
+        b.ittcPanelPerf.text = perf
+        b.ittcPanelPerf.visibility = if (perf != null) View.VISIBLE else View.GONE
     }
 
     // ------------------------------------------------------------------------- who / mode
