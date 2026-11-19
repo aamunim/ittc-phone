@@ -796,10 +796,20 @@ class RecentCallsAdapter(
                 val newMissed = if (ittcPerNumber) IttcCallHistory.newMissed(call) else 0
                 val missed = call.type == Calls.MISSED_TYPE || newMissed > 0
 
+                // (3.11.1: the whole name — up to two lines; a long one a little smaller, ~14 sp at the usual size)
                 itemRecentsName.apply {
                     text = nameToShow
                     setTextColor(if (missed) p.danger else p.text)
-                    setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize)
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, if (nameToShow.length > LONG_NAME) currentFontSize * 0.875f else currentFontSize)
+                }
+
+                // (3.11.1: a number not saved that is a lead: the lead's name, small, under the number)
+                val leadName = if (unsaved && lead != null) lead.name.trim().takeIf { it.isNotEmpty() } else null
+                itemRecentsLeadName.beVisibleIf(leadName != null)
+                if (leadName != null) {
+                    itemRecentsLeadName.text = leadName
+                    itemRecentsLeadName.setTextColor(p.text2)
+                    itemRecentsLeadName.setTextSize(TypedValue.COMPLEX_UNIT_PX, currentFontSize * 0.8f)
                 }
 
                 itemRecentsCount.apply {
@@ -849,10 +859,8 @@ class RecentCallsAdapter(
                         }
                     )
                     if (shouldShowDuration) line.append(" · ").append(context.formatSecondsToShortTimeString(call.duration))
-                    if (lead != null) {
-                        if (unsaved && lead.name.isNotEmpty()) line.append(" · ").append(lead.name)
-                        if (!lead.course.isNullOrBlank()) line.append(" · ").append(lead.course)
-                    }
+                    // (the lead's name of a number not saved: on its own line above)
+                    if (lead != null && !lead.course.isNullOrBlank()) line.append(" · ").append(lead.course)
                     ittcLocation(call, matchingContact != null)?.let { line.append(" · ").append(it) }
                     text = line
                     setTextColor(p.muted)
@@ -1022,6 +1030,9 @@ class RecentCallsAdapter(
     companion object {
         private const val VIEW_TYPE_DATE = 0
         private const val VIEW_TYPE_CALL = 1
+
+        /** 🎓 ITTC 3.11.1: a name longer than this is drawn a little smaller (two lines hold it in full) */
+        private const val LONG_NAME = 24
 
         /** 🎓 ITTC 3.8: a round outline (the photo's pressed ripple keeps to the circle) */
         private val OVAL_OUTLINE = object : ViewOutlineProvider() {

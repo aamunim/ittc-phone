@@ -23,12 +23,28 @@ object IttcCrash {
     @Volatile
     private var installed = false
 
+    /**
+     * 3.11.1: a little memory held back for the report: an OutOfMemoryError lets it go first, so
+     * writing what happened does not fail for want of memory too
+     */
+    @Volatile
+    private var reserve: ByteArray? = null
+
+    /** A few facts kept for the report (list sizes…): what was big when memory ran out */
+    private val marks = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun mark(key: String, value: String) {
+        if (marks.size < 16 || marks.containsKey(key)) marks[key] = value
+    }
+
     fun install(context: Context) {
         if (installed) return
         installed = true
+        reserve = ByteArray(256 * 1024)
         val app = context.applicationContext
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            if (error is OutOfMemoryError) reserve = null
             record(app, error, "crash on ${thread.name}")
             previous?.uncaughtException(thread, error)
         }
@@ -36,6 +52,11 @@ object IttcCrash {
 
     /** Keep an error (the newest one wins) */
     fun record(context: Context, error: Throwable, where: String) {
+        if (error is OutOfMemoryError) {
+            reserve = null
+            recordSmall(context, error, where)
+            return
+        }
         try {
             val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
             val text = buildString {
@@ -46,6 +67,62 @@ object IttcCrash {
             }
             File(context.applicationContext.filesDir, FILE).writeText(text)
         } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * Out of memory: as little made as can be — no whole stack trace as one text, at most 40 lines
+     * written as they are read — plus the memory and the marks (what was big)
+     */
+    private fun recordSmall(context: Context, error: Throwable, where: String) {
+        try {
+            File(context.applicationContext.filesDir, FILE).bufferedWriter().use { w ->
+                w.write("ITTC Phone ")
+                w.write(BuildConfig.VERSION_NAME)
+                w.write(" (")
+                w.write(BuildConfig.VERSION_CODE.toString())
+                w.write(")\nAndroid ")
+                w.write(Build.VERSION.RELEASE ?: "")
+                w.write(" · ")
+                w.write(Build.MANUFACTURER ?: "")
+                w.write(" ")
+                w.write(Build.MODEL ?: "")
+                w.write("\n")
+                w.write(where)
+                w.write(" · ")
+                w.write(java.util.Date().toString())
+                w.write("\n\n")
+                w.write(error.javaClass.name)
+                w.write(": ")
+                w.write(error.message ?: "")
+                w.write("\n")
+                val frames = error.stackTrace
+                for (i in 0 until minOf(frames.size, 40)) {
+                    w.write("\tat ")
+                    w.write(frames[i].toString())
+                    w.write("\n")
+                }
+                val rt = Runtime.getRuntime()
+                w.write("\nMemory: max ")
+                w.write((rt.maxMemory() shr 20).toString())
+                w.write(" MB, used ")
+                w.write(((rt.totalMemory() - rt.freeMemory()) shr 20).toString())
+                w.write(" MB\n")
+                for ((k, v) in marks) {
+                    w.write(k)
+                    w.write(": ")
+                    w.write(v)
+                    w.write("\n")
+                }
+            }
+        } catch (_: Throwable) {
+        }
+        // (a caught out-of-memory: the reserve back for the next one, if there is room again)
+        if (installed && reserve == null) {
+            try {
+                reserve = ByteArray(256 * 1024)
+            } catch (_: Throwable) {
+            }
         }
     }
 

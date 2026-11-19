@@ -53,6 +53,7 @@ import org.fossify.phone.direct.IttcNotify
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
+import org.fossify.phone.helpers.IttcHandover
 import org.fossify.phone.helpers.IttcStageMove
 import org.fossify.phone.helpers.IttcTheme
 import org.json.JSONArray
@@ -675,8 +676,8 @@ class IttcLeadActivity : SimpleActivity() {
         }
     }
 
-    /** Only super admins: my_phone_data lists the people (whom to hand over to) only for them */
-    private fun canHandOver(): Boolean = meta?.isSuper == true
+    /** 👥 Everyone signed in here, for every lead (view-only ones too): the people come from handover_people() */
+    private fun canHandOver(): Boolean = signedIn
 
     /** The chips row: admission steps first, then the rest (each by its key: [CHIP_ACTIONS]) */
     private fun chipItems(): List<Pair<Int, () -> Unit>> {
@@ -698,7 +699,7 @@ class IttcLeadActivity : SimpleActivity() {
             "next_call" -> if (signedIn) nextCall() else toast(R.string.ittc_lp_not_signed_in)
             "rating" -> if (signedIn) changeRating() else toast(R.string.ittc_lp_not_signed_in)
             "edit" -> if (signedIn) editLead() else toast(R.string.ittc_lp_not_signed_in)
-            "hand_over" -> if (signedIn && canHandOver()) handOver() else toast(R.string.ittc_lp_not_signed_in)
+            "hand_over" -> if (canHandOver()) handOver() else toast(R.string.ittc_lp_not_signed_in)
             "web" -> openWeb()
         }
     }
@@ -1377,14 +1378,19 @@ class IttcLeadActivity : SimpleActivity() {
     }
 
     private fun handOver() {
+        if (lead == null) return
+        // (everyone: the server's list of active people; an older server: my_phone_data's)
+        IttcHandover.peopleAsync(this) { all -> handOverTo(all) }
+    }
+
+    private fun handOverTo(all: List<IttcBridge.Person>) {
         val l = lead ?: return
-        val people = meta?.people.orEmpty().filter { it.id != l.s("assigned_to") }.sortedBy { it.name.lowercase() }
+        val people = all.filter { it.id != l.s("assigned_to") }
         if (people.isEmpty()) return toast(R.string.ittc_lp_no_people)
-        pickList(getString(R.string.ittc_lp_hand_over), people.map { p -> if (p.role.isBlank()) p.name else "${p.name}  ·  ${p.role.replace('_', ' ')}" }) { i ->
+        pickList(getString(R.string.ittc_lp_hand_over), people.map { p -> IttcHandover.label(p) }) { i ->
             val p = people[i]
             noteDialog(getString(R.string.ittc_lp_hand_over_to, p.name), required = false) { note ->
-                val item = JSONObject().put("kind", "handover").put("to", p.id)
-                if (note.isNotEmpty()) item.put("note", note)
+                val item = IttcHandover.item(p.id, note, p.name)
                 queue(item) { lo ->
                     lo.put("assigned_to", p.id)
                     lo.put("owner", p.name)
@@ -1558,7 +1564,7 @@ class IttcLeadActivity : SimpleActivity() {
         const val ACTION_CHANGE_STAGE = "change_stage"
         const val ACTION_ADD_NOTE = "add_note"
 
-        /** The chips row's actions by key, in order ("hand_over" only for super admins) */
+        /** The chips row's actions by key, in order ("hand_over": everyone signed in, since the server allows it) */
         private val CHIP_ACTIONS = listOf(
             "visit" to R.string.ittc_b_book_visit,
             "fee" to R.string.ittc_b_fee,

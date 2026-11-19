@@ -25,9 +25,12 @@ import org.fossify.commons.extensions.hasPermission
 import org.fossify.commons.helpers.PERMISSION_READ_CONTACTS
 import org.fossify.phone.R
 import org.fossify.phone.databinding.IttcActivityAfterCallBinding
+import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDialer
+import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcHandover
 import org.fossify.phone.helpers.IttcNoteDraft
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcUi
@@ -46,6 +49,7 @@ import org.fossify.commons.extensions.setStatusBarAppearance
  * next"), and a number that is no lead (direct mode): "Add as a lead".
  * 3.5: the new look (a dark top, a white sheet with big result tiles, stage chips, the list being
  * called) and the note written on the call screen ("Write a note now") filled in.
+ * 👥 Direct mode: "Hand over" the lead (anyone, to anyone) — sent after the call's result.
  */
 class IttcAfterCallActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityAfterCallBinding::inflate)
@@ -72,7 +76,28 @@ class IttcAfterCallActivity : SimpleActivity() {
                 if (stageChoice?.noteRequired == true) renderStages()
             }
         })
+        // (👥 a hand over chosen before the screen was made again: kept; the same call stays on screen)
+        savedInstanceState?.let { st ->
+            shownKey = st.getString(STATE_SHOWN_KEY)
+            val lead = st.getString(STATE_HO_LEAD)
+            val to = st.getString(STATE_HO_TO)
+            if (lead != null && to != null) {
+                handOver = Triple(lead, IttcBridge.Person(to, st.getString(STATE_HO_NAME).orEmpty(), ""), st.getString(STATE_HO_NOTE).orEmpty())
+            }
+        }
         show(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_SHOWN_KEY, shownKey)
+        // (a save in progress queues the hand over itself: not kept, so a recreated screen can't queue it again)
+        if (!saving) handOver?.let { (lead, person, note) ->
+            outState.putString(STATE_HO_LEAD, lead)
+            outState.putString(STATE_HO_TO, person.id)
+            outState.putString(STATE_HO_NAME, person.name)
+            outState.putString(STATE_HO_NOTE, note)
+        }
     }
 
     override fun onResume() {
@@ -119,7 +144,9 @@ class IttcAfterCallActivity : SimpleActivity() {
             ittcAcAddLead.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.primary, 999f)
             ittcAcAddLead.setTextColor(p.onPrimary)
             ittcAcCloseButton.setTextColor(p.text2)
-            listOf<View>(ittcAcSave, ittcAcAddLead, ittcAcStop).forEach { touchFeedback(it) }
+            ittcAcHandOver.background = IttcTheme.rounded(this@IttcAfterCallActivity, p.surface, 999f, p.outline)
+            ittcAcHandOver.setTextColor(p.primary)
+            listOf<View>(ittcAcSave, ittcAcAddLead, ittcAcStop, ittcAcHandOver).forEach { touchFeedback(it) }
         }
     }
 
@@ -133,6 +160,9 @@ class IttcAfterCallActivity : SimpleActivity() {
 
     override fun onDestroy() {
         main.removeCallbacksAndMessages(null)
+        // (👥 a hand over chosen and the screen closed without saving: it still goes; while a
+        // save is running, its thread queues it right after the result)
+        if (isFinishing && !saving) flushHandOver()
         super.onDestroy()
     }
 
@@ -182,6 +212,9 @@ class IttcAfterCallActivity : SimpleActivity() {
         val reason = intent.getStringExtra(REASON)
         val key = "${leadId.orEmpty()}|$number|${intent.getLongExtra(STARTED_AT, 0L)}"
         if (key != shownKey) {
+            // (👥 a hand over chosen for the call shown before: it goes now — or, while that call's
+            // result is being saved, right after it, from the save's thread)
+            if (!saving) flushHandOver()
             shownKey = key
             // (a note written on the call screen for this number: filled in)
             val draft = if (unknown) null else try {
@@ -227,7 +260,7 @@ class IttcAfterCallActivity : SimpleActivity() {
             listOf<View>(ittcAcOutcomeLabel, ittcAcOutcomes, ittcAcNoteLabel, ittcAcNoteInput, ittcAcNextLabel, ittcAcNextScroll, ittcAcSave)
                 .forEach { it.beGoneIf(!show) }
             if (!show) {
-                listOf<View>(ittcAcNote, ittcAcStageLabel, ittcAcStagesScroll, ittcAcStageHint, ittcAcPresetsScroll, ittcAcDialer)
+                listOf<View>(ittcAcNote, ittcAcStageLabel, ittcAcStagesScroll, ittcAcStageHint, ittcAcPresetsScroll, ittcAcDialer, ittcAcHandOver)
                     .forEach { it.beGoneIf(true) }
             }
             ittcAcAddLead.beGoneIf(show)
@@ -337,6 +370,107 @@ class IttcAfterCallActivity : SimpleActivity() {
         renderDialer()
         showToday()
         loadStages(leadId, intent.getStringExtra(STAGE))
+        setupHandOver(leadId)
+    }
+
+    // ------------------------------------------------------------------
+    // 👥 Hand over (direct mode): anyone may give the lead to anyone. Chosen here, queued after
+    // the call's result (Save), or when the screen closes without saving — the result first, so
+    // it is still allowed (the lead is someone else's afterwards).
+    // ------------------------------------------------------------------
+    /** (lead id, to whom, note) chosen here and not queued yet (also read by the save's thread) */
+    @Volatile
+    private var handOver: Triple<String, IttcBridge.Person, String>? = null
+    private val handOverLock = Any()
+    private var directHere = false
+    /** the lead's own person (left out of the list), when the kept leads know it */
+    private var leadOwner: String? = null
+
+    private fun setupHandOver(leadId: String) {
+        directHere = false
+        leadOwner = null
+        renderHandOver()
+        binding.ittcAcHandOver.setOnClickListener { chooseHandOver(leadId) }
+        binding.ittcAcHandOver.setOnLongClickListener {
+            if (handOver?.first != leadId) return@setOnLongClickListener false
+            takeHandOver(leadId)
+            renderHandOver()
+            toast(R.string.ittc_ho_cancelled)
+            true
+        }
+        val app = applicationContext
+        ensureBackgroundThread {
+            val direct = try {
+                IttcDirect.isActive(app)
+            } catch (_: Throwable) {
+                false
+            }
+            val owner = if (!direct) null else try {
+                IttcDirect.leads(app).firstOrNull { it.leadId == leadId }?.assignedTo
+            } catch (_: Throwable) {
+                null
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || unknownMode || intent.getStringExtra(LEAD_ID) != leadId) return@runOnUiThread
+                directHere = direct
+                leadOwner = owner
+                renderHandOver()
+            }
+        }
+    }
+
+    private fun renderHandOver() {
+        val b = binding.ittcAcHandOver
+        b.beGoneIf(!directHere || unknownMode)
+        val chosen = handOver?.takeIf { it.first == intent?.getStringExtra(LEAD_ID) }
+        b.text = if (chosen != null) getString(R.string.ittc_ho_chosen, chosen.second.name) else getString(R.string.ittc_ho_button)
+        b.contentDescription = if (chosen != null) getString(R.string.ittc_ho_will, chosen.second.name) else null
+    }
+
+    private fun chooseHandOver(leadId: String) {
+        if (!directHere) return
+        IttcDisclosure.showOnce(this) {
+            IttcHandover.pick(this, leadOwner) { person, note ->
+                if (isFinishing || isDestroyed || unknownMode || intent.getStringExtra(LEAD_ID) != leadId) return@pick
+                handOver = Triple(leadId, person, note)
+                renderHandOver()
+                toast(getString(R.string.ittc_ho_will, person.name))
+            }
+        }
+    }
+
+    /** The hand over chosen here, taken once (null: none, or another lead's when [leadId] is given) */
+    private fun takeHandOver(leadId: String? = null): Triple<String, IttcBridge.Person, String>? = synchronized(handOverLock) {
+        val h = handOver ?: return@synchronized null
+        if (leadId != null && h.first != leadId) return@synchronized null
+        handOver = null
+        h
+    }
+
+    /** Queue the hand over chosen here (once); the outbox sends it after this lead's result */
+    private fun flushHandOver() {
+        val h = takeHandOver() ?: return
+        val app = applicationContext
+        try {
+            app.toast(app.getString(R.string.ittc_ho_done, h.second.name))
+            IttcHandover.queueAfterLead(app, h.first, h.second.id, h.second.name, h.third) { ok ->
+                if (!ok) Handler(Looper.getMainLooper()).post { app.toast(R.string.ittc_ho_failed) }
+            }
+        } catch (e: Throwable) {
+            IttcCrash.record(app, e, "After-call: hand over")
+        }
+    }
+
+    /** The save's thread: the hand over chosen for [leadId] queued right after its result (any screen state) */
+    private fun queueHandOverAfterSave(app: Context, leadId: String) {
+        val h = takeHandOver(leadId) ?: return
+        val ok = IttcHandover.queueNow(app, h.first, h.second.id, h.second.name, h.third)
+        Handler(Looper.getMainLooper()).post {
+            try {
+                if (ok) app.toast(app.getString(R.string.ittc_ho_done, h.second.name)) else app.toast(R.string.ittc_ho_failed)
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -748,6 +882,7 @@ class IttcAfterCallActivity : SimpleActivity() {
         val chosen = outcome
         val next = nextAt
         val dialing = dialerHere()
+        val app = applicationContext
         ensureBackgroundThread {
             // (the call's row in the call log, so the result lands on that very call; if it is not
             // found yet, the Tracker finds it later by the number and the call's start time)
@@ -763,6 +898,15 @@ class IttcAfterCallActivity : SimpleActivity() {
             } catch (e: Throwable) {
                 IttcCrash.record(this, e, "After-call: save")
                 false
+            }
+            // 👥 the hand over chosen here: queued now, after the result (here, not on the screen's
+            // thread: the screen may be gone already). Not saved and the screen still up: it waits.
+            if (ok || isFinishing || isDestroyed) {
+                try {
+                    queueHandOverAfterSave(app, leadId)
+                } catch (e: Throwable) {
+                    IttcCrash.record(app, e, "After-call: hand over")
+                }
             }
             runOnUiThread {
                 saving = false
@@ -870,6 +1014,11 @@ class IttcAfterCallActivity : SimpleActivity() {
         private const val REASON = "ittc_reason"
         private const val STARTED_AT = "ittc_started_at"
         private const val UNKNOWN = "ittc_unknown"
+        private const val STATE_SHOWN_KEY = "ittc_shown_key"
+        private const val STATE_HO_LEAD = "ittc_ho_lead"
+        private const val STATE_HO_TO = "ittc_ho_to"
+        private const val STATE_HO_NAME = "ittc_ho_name"
+        private const val STATE_HO_NOTE = "ittc_ho_note"
 
         /** After a call with a number that is no lead (direct mode): "Add as a lead" or close */
         fun openUnknown(context: Context, number: String, outgoing: Boolean, talkedSec: Int, reason: String?, startedAt: Long) {

@@ -88,8 +88,10 @@ import java.util.concurrent.Executors
  * list; Target opens the day in full), the two chip rows are one filter bar (whose · when, the stage,
  * ✕) with a filter sheet, and the top folds away while the list scrolls down.
  * 3.11: "My list" / "All list" for everyone signed in here (the Tracker's switch): direct mode fetches
- * every lead the person may see in the Tracker; a 👤 / 👥 button before ☰ / ▦ picks whose (My by
- * default, remembered). The badge, the reminders and Done today / Target stay my own.
+ * every lead the person may see in the Tracker; a 👤 / 👥 button before ☰ / ▦ picks whose. The badge,
+ * the reminders and Done today / Target stay my own.
+ * 3.11.1: the tab opens on All list · All · All stages on every start (the choices last while the app
+ * runs); ✕ / "Clear all" go back to those. One read of the list at a time.
  */
 class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     MyViewPagerFragment<IttcLeadsFragment.LeadsInnerBinding>(context, attributeSet) {
@@ -106,9 +108,11 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     private lateinit var binding: IttcFragmentLeadsBinding
     private var all: List<IttcBridge.PhoneLead> = emptyList()
-    /** the filter the tab opens with (and ✕ / "Clear all" go back to) */
-    private val defaultFilter = Filter.TODAY
-    private var filter = defaultFilter
+    /** the filter the tab opens with (and ✕ / "Clear all" go back to) — 3.11.1: All */
+    private val defaultFilter = Filter.ALL
+    /** 3.11.1: the whose the tab opens with — the All list (My where there is no choice: [whose]) */
+    private val defaultScope = Scope.ALL
+    private var filter = sessionFilter ?: defaultFilter
     private var query = ""
     private var loadedOnce = false
     private var lastAsk = 0L
@@ -116,7 +120,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private var primaryColor = 0
     private val adapter = LeadsAdapter()
     private var meta: IttcBridge.PhoneMeta? = null
-    private var scope = Scope.MY
+    private var scope = defaultScope
     /** 3.11: direct mode with the server's All list, as last found (also before this tab's first read) */
     private var whoseDirect = lastDirect
     /** the list says whose each lead is (an older Tracker does not: all of it is mine) */
@@ -154,6 +158,26 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         @Volatile private var remindersAt = 0L
         /** (3.11: direct mode with the All list as last found, for the next tab made) */
         @Volatile private var lastDirect = false
+        /**
+         * 3.11.1: the choices (whose, when, stage) last for the app's run only — every start opens on
+         * All / All / All — and are kept for the person they were made by ([sessionOwner])
+         */
+        private var sessionFilter: Filter? = null
+        private var sessionScope: Scope? = null
+        private var sessionPerson: String? = null
+        private var sessionStage: String? = null
+        private var sessionOwner: String? = null
+        /** A new launch (not a rotation / theme change): the choices start again at All / All / All */
+        fun resetSession() {
+            sessionFilter = null
+            sessionScope = null
+            sessionPerson = null
+            sessionStage = null
+            sessionOwner = null
+        }
+
+        /** (3.11 kept them across starts: gone) */
+        private val OLD_CHOICE_KEYS = listOf("leads_scope", "leads_person", "leads_stage")
         /** (3.8's folded Today card, gone in 3.10: the remembered choice is removed) */
         private const val KEY_TODAY_COLLAPSED_OLD = "leads_today_collapsed"
         private const val KEY_BOARD = "leads_board"
@@ -175,8 +199,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     override fun setupFragment() {
         binding.ittcLeadsList.adapter = adapter
-        readChoice()
-        stageId = prefs.getString("leads_stage", null)
+        if (OLD_CHOICE_KEYS.any { prefs.contains(it) }) prefs.edit().apply { OLD_CHOICE_KEYS.forEach { remove(it) } }.apply()
+        readChoice(IttcBridge.metaCache?.meId)
         binding.ittcLeadsStatus.setOnClickListener {
             if (trackerClosed && IttcBridge.openTracker(context)) return@setOnClickListener
             ask(force = true)
@@ -295,14 +319,29 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         postDelayed(reloadNow, 300)
     }
 
-    /** Whose (My / All / a person) as kept */
-    private fun readChoice() {
-        scope = prefs.getString("leads_scope", null)?.let { v -> Scope.values().firstOrNull { it.name == v } } ?: Scope.MY
-        person = prefs.getString("leads_person", null)
+    /**
+     * The choices as kept for this run of the app (3.11.1: never across starts — a start is All /
+     * All / All); another person's ([meId]): the defaults
+     */
+    private fun readChoice(meId: String?) {
+        if (meId != null && sessionOwner != null && sessionOwner != meId) {
+            sessionFilter = null
+            sessionScope = null
+            sessionPerson = null
+            sessionStage = null
+        }
+        if (meId != null) sessionOwner = meId
+        filter = sessionFilter ?: defaultFilter
+        scope = sessionScope ?: defaultScope
+        person = sessionPerson
+        stageId = sessionStage
     }
 
     private fun saveChoice() {
-        prefs.edit().putString("leads_scope", scope.name).putString("leads_person", person).putString("leads_stage", stageId).apply()
+        sessionFilter = filter
+        sessionScope = scope
+        sessionPerson = person
+        sessionStage = stageId
     }
 
     override fun setupColors(textColor: Int, primaryColor: Int, properPrimaryColor: Int) {
@@ -354,8 +393,20 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         }
     }
 
+    /** (3.11.1: one read at a time — asked again while one runs: once more after it) */
+    private var loadingAt = 0L
+    private var loadAgain = false
+
     private fun load() {
         val ctx = context ?: return
+        val started = System.currentTimeMillis()
+        // (a read that never came back — the tab went away meanwhile: not waited for)
+        if (loadingAt != 0L && started - loadingAt < 20_000) {
+            loadAgain = true
+            return
+        }
+        loadingAt = started
+        loadAgain = false
         // (board moves shown before the server has them: which still wait in the outbox)
         val moved = pendingMoves.keys.toList()
         ensureBackgroundThread {
@@ -404,6 +455,11 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 }
             }
             post {
+                if (loadingAt == started) loadingAt = 0L
+                if (loadAgain) {
+                    loadAgain = false
+                    reload()
+                }
                 val modeChanged = direct != isDirect
                 direct = isDirect
                 whoseDirect = allList
@@ -416,7 +472,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 // forgot the last person's; every choice is saved when made, so reading it is safe)
                 if (m?.meId != lastMeId) {
                     lastMeId = m?.meId
-                    readChoice()
+                    readChoice(m?.meId)
                 }
                 meta = m
                 noTracker = leads == null
@@ -588,6 +644,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     /** Overdue / Today tapped: that filter; tapped again when chosen: back to the tab's default */
     private fun tapFilterCell(f: Filter) {
         filter = if (filter == f) defaultFilter else f
+        saveChoice()
         render()
     }
 
@@ -945,7 +1002,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         val stage = stageId?.let { id -> stages.firstOrNull { it.id == id } }
         val scopeText = (if (whoChanged) scopeLabel() + " · " else "") + filterName(filter)
         val stageText = stage?.name ?: context.getString(R.string.ittc_l3_stage_all)
-        val clear = whoChanged || whenChanged || (showStage && stage != null)
+        // (3.11.1: the defaults are All list / All / All stages — My differs too)
+        val clear = whoDiffers(sc) || whenChanged || (showStage && stage != null)
         val sig = listOf(
             p, scopeText, whoChanged || whenChanged, showStage, stage?.id, stageText, clear, b.ittcLeadsViewToggle.visibility,
             canChooseWhose, sc,
@@ -1026,14 +1084,17 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         if (stagePill.maxWidth != stageMax) stagePill.maxWidth = stageMax
     }
 
+    /** The whose differs from the default (the All list): My, Team Leads / Callers, one person — where whose can be chosen */
+    private fun whoDiffers(sc: Scope = whose()): Boolean = canChooseWhose && (sc != defaultScope || person != null)
+
     /**
-     * ✕: the default filter, all stages (the list's stage stays while the board shows); Team Leads /
-     * Callers back to my leads. 3.11: My / All stays (the 👤 / 👥 button's own choice).
+     * ✕: back to the defaults (3.11.1: All list · All · All stages) — the list's stage stays while
+     * the board shows
      */
     private fun clearFilters() {
         filter = defaultFilter
         if (!lastBoardMode) stageId = null
-        if (subScope()) scope = Scope.MY
+        scope = defaultScope
         person = null
         saveChoice()
         render()
@@ -1108,7 +1169,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             head.addView(
                 IttcCUi.button(c, context.getString(R.string.ittc_cp_clear_all), IttcCUi.Style.GHOST) {
                     ch.filter = defaultFilter
-                    ch.scope = Scope.MY
+                    // (3.11.1: the All list; My where there is no choice)
+                    ch.scope = whose(defaultScope)
                     ch.person = null
                     if (!lastBoardMode) ch.stageId = null
                     draw()

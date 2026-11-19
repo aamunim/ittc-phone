@@ -109,6 +109,8 @@ class MainActivity : SimpleActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         org.fossify.phone.helpers.IttcCrash.install(this)
         super.onCreate(savedInstanceState)
+        // 🎓 ITTC: each launch opens the Leads tab on All / All / All (a rotation keeps the choices)
+        if (savedInstanceState == null) IttcLeadsFragment.resetSession()
         setContentView(binding.root)
         appLaunched(BuildConfig.APPLICATION_ID)
         // 🎓 ITTC: the reason the app stopped last time, once (to report it)

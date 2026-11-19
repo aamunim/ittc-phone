@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 🎓 ITTC 3.5: one Recents row, a piece of the day's card — a lead's coloured bar, avatar, name
      (N) + stage pill / "2 missed", "Outgoing · 4m 12s · CSE", the time, → call history, ⋮.
+     3.11.1: a saved contact's name in full (two lines, a long one a little smaller); a number not
+     saved that is a lead: the lead's name in small text under it.
      (also the "Show call details" dialog's rows, there without the card) -->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -71,15 +73,16 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="66dp"
         android:layout_marginTop="@dimen/ittc_space_m"
+        android:breakStrategy="simple"
         android:ellipsize="end"
-        android:maxLines="1"
-        android:singleLine="true"
+        android:hyphenationFrequency="none"
+        android:maxLines="2"
         android:textAlignment="viewStart"
         android:textDirection="firstStrongLtr"
         android:textSize="15sp"
         android:textStyle="bold"
         app:layout_constrainedWidth="true"
-        app:layout_constraintBottom_toTopOf="@+id/item_recents_info"
+        app:layout_constraintBottom_toTopOf="@+id/item_recents_lead_name"
         app:layout_constraintEnd_toStartOf="@+id/item_recents_count"
         app:layout_constraintHorizontal_bias="0"
         app:layout_constraintHorizontal_chainStyle="packed"
@@ -122,6 +125,26 @@
         app:layout_constraintEnd_toStartOf="@+id/item_recents_date_time"
         app:layout_constraintStart_toEndOf="@+id/item_recents_count"
         tools:text="Interested"
+        tools:visibility="visible" />
+
+    <!-- 3.11.1: a number not in the contacts that is a lead: the lead's name, small, under the number -->
+    <TextView
+        android:id="@+id/item_recents_lead_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="66dp"
+        android:layout_marginTop="1dp"
+        android:layout_marginEnd="@dimen/ittc_space_s"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAlignment="viewStart"
+        android:textSize="12sp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@+id/item_recents_info"
+        app:layout_constraintEnd_toStartOf="@+id/item_recents_date_time"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/item_recents_name"
+        tools:text="Rahim Hasan"
         tools:visibility="visible" />
 
     <ImageView
@@ -179,7 +202,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toStartOf="@+id/item_recents_date_time"
         app:layout_constraintStart_toEndOf="@+id/item_recents_sim_image"
-        app:layout_constraintTop_toBottomOf="@+id/item_recents_name"
+        app:layout_constraintTop_toBottomOf="@+id/item_recents_lead_name"
         tools:text="Outgoing · 4m 12s · CSE" />
 
     <TextView
