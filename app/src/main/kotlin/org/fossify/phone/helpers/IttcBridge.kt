@@ -337,7 +337,7 @@ object IttcBridge {
     }
 
     // -------------------------------------------------------------------
-    // 🎓 "Leads" tab: the signed-in user's own open leads (Tracker 2.10.5+)
+    // 🎓 "Leads" tab: the signed-in user's open leads (Tracker 2.10.5+; direct mode 3.11: all they may see)
     // -------------------------------------------------------------------
     data class PhoneLead(
         val leadId: String,
@@ -361,7 +361,20 @@ object IttcBridge {
         val callNumber: String? get() = phone ?: altPhone ?: whatsapp
     }
 
-    /** The last list read (for the dial pad's name search and an instant tab) */
+    /**
+     * 3.11: only my own leads of a list that may hold others' too (direct mode's All list, a super
+     * admin's everyone's). [meId] unknown, or a list without owners (an older Tracker, which only
+     * hands over my own): all of it.
+     */
+    fun ownOnly(leads: List<PhoneLead>, meId: String?): List<PhoneLead> {
+        if (meId == null || leads.none { it.assignedTo != null }) return leads
+        return leads.filter { it.assignedTo == meId }
+    }
+
+    /**
+     * The last list read (for the dial pad's name search and an instant tab). 3.11, direct mode:
+     * every open lead I may see (my own first) — [ownOnly] for what is mine.
+     */
     @Volatile
     var myLeadsCache: List<PhoneLead> = emptyList()
         private set
@@ -369,7 +382,14 @@ object IttcBridge {
     /** null: no Tracker / an older one (the tab then says to update it); call off the main thread */
     fun myLeads(context: Context): List<PhoneLead>? {
         val app = context.applicationContext
-        if (IttcDirect.isActive(app)) return IttcDirect.leads(app).also { myLeadsCache = it; IttcTabBadges.leadsChanged() }
+        if (IttcDirect.isActive(app)) {
+            // (3.11: the list holds everyone's I may see: who "me" is comes with it, for the badge's own count)
+            return IttcDirect.leads(app).also { l ->
+                IttcDirect.meta(app)?.let { metaCache = it }
+                myLeadsCache = l
+                IttcTabBadges.leadsChanged()
+            }
+        }
         if (!trackerReady(app)) return null
         return try {
             withTracker(app) { client ->

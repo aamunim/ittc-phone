@@ -75,8 +75,9 @@ class IttcDialSearch {
             KeypadHelper.convertKeypadLettersToDigits(name.normalizeString()).filterNot { it.isWhitespace() }
 
         /**
-         * Your own leads whose name (by the keys) or number matches: two keys or more; a number
-         * from four digits (the last list read: [IttcBridge.myLeads] fills it)
+         * Your leads whose name (by the keys) or number matches: two keys or more; a number
+         * from four digits (the last list read: [IttcBridge.myLeads] fills it — 3.11, direct mode:
+         * every lead you may see, your own first, as the Tracker's search)
          */
         fun leads(text: String, max: Int = 3): List<IttcBridge.PhoneLead> {
             val digits = text.filter { it.isDigit() }

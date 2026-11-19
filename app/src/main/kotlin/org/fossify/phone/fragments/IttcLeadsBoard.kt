@@ -74,7 +74,7 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         fun palette(): IttcTheme.Palette
         /** Leads may be moved here (signed in to ITTC directly) */
         fun canMove(): Boolean
-        /** The line under the name when the owner is shown (a super admin looking at others'), else null */
+        /** The line under the name when the owner is shown (the All list, or a super admin looking at others'), else null */
         fun owner(l: IttcBridge.PhoneLead): String?
         fun whenText(l: IttcBridge.PhoneLead, now: Long, today: Long): String
         fun span(ms: Long): String

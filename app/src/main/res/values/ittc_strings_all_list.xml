@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.11: the Leads tab's "My list" / "All list" switch (as the Tracker's) -->
+<resources>
+    <string name="ittc_al_my_list" translatable="false">My list</string>
+    <string name="ittc_al_all_list" translatable="false">All list</string>
+    <string name="ittc_al_desc_my" translatable="false">My list: only my leads. Tap to show all leads</string>
+    <string name="ittc_al_desc_all" translatable="false">All list: every lead I can see. Tap to show only my leads</string>
+</resources>

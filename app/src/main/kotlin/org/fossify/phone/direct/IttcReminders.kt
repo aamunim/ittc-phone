@@ -42,9 +42,10 @@ object IttcReminders {
         if (!enabled(app)) return
         val now = System.currentTimeMillis()
         val me = (if (IttcDirect.isSignedIn(app)) IttcDirect.meta(app) else null)?.meId ?: IttcBridge.metaCache?.meId
-        val due = leads.filter { l ->
+        // (3.11: the list may hold everyone's I may see: only my own ring)
+        val due = IttcBridge.ownOnly(leads, me).filter { l ->
             val at = l.nextCall ?: return@filter false
-            at > now && at < now + 24 * 3600_000L && (me == null || l.assignedTo == null || l.assignedTo == me) && l.callNumber != null
+            at > now && at < now + 24 * 3600_000L && l.callNumber != null
         }.sortedBy { it.nextCall }.take(MAX)
         val am = app.getSystemService(AlarmManager::class.java) ?: return
         val ids = HashSet<String>()

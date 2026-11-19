@@ -403,6 +403,17 @@
                     android:layout_height="1dp"
                     android:layout_weight="1" />
 
+                <!-- 3.11: 👤 My list / 👥 All list (one toggle; All in the soft accent; remembered) -->
+                <ImageView
+                    android:id="@+id/ittc_leads_whose"
+                    android:layout_width="@dimen/ittc_touch"
+                    android:layout_height="@dimen/ittc_touch"
+                    android:layout_marginStart="@dimen/ittc_space_s"
+                    android:contentDescription="@string/ittc_al_desc_my"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_person_vector"
+                    android:visibility="gone" />
+
                 <!-- 3.9: ☰ list / ▦ board (the chosen one white on the soft track; remembered) -->
                 <LinearLayout
                     android:id="@+id/ittc_leads_view_toggle"

@@ -479,7 +479,7 @@ object IttcDirect {
                 if (isSignedIn(app)) p.edit().putString("refresh_error", "Could not check your sign-in").apply()
                 return
             }
-            val text = IttcApi.rpc(app, "my_phone_data").trim()
+            val text = fetchPhoneData(app).trim()
             // (no answer: the account is not active any more — the session check says so next)
             if (text == "null" || text.isEmpty()) {
                 p.edit().putLong("last_check", 0).putString("refresh_error", "Your account is not active").apply()
@@ -531,6 +531,34 @@ object IttcDirect {
         }
         changed(app)
     }
+
+    /** (3.11: an older database has no my_phone_data(p_all): not asked again for this long) */
+    @Volatile private var noAllListUntil = 0L
+
+    /**
+     * 3.11: every lead I may see in the Tracker ("All list"; the server's row security decides —
+     * the Leads tab picks My / All from it). An older database (no p_all: 404) gets the call
+     * without it, as before (my own leads; a super admin's everyone's).
+     */
+    private fun fetchPhoneData(app: Context): String {
+        if (System.currentTimeMillis() >= noAllListUntil) {
+            try {
+                return IttcApi.rpc(app, "my_phone_data", JSONObject().put("p_all", true)).also { setAllList(app, true) }
+            } catch (e: IttcApi.ApiError) {
+                if (e.status != 404) throw e
+                noAllListUntil = System.currentTimeMillis() + 30 * 60_000L
+            }
+        }
+        return IttcApi.rpc(app, "my_phone_data").also { setAllList(app, false) }
+    }
+
+    private fun setAllList(app: Context, on: Boolean) {
+        val p = prefs(app)
+        if (p.getBoolean("all_list", false) != on) p.edit().putBoolean("all_list", on).apply()
+    }
+
+    /** 3.11: the kept list is the All list (every lead I may see); false: an older database — my own only */
+    fun allList(context: Context): Boolean = prefs(context).getBoolean("all_list", false)
 
     /** Only leads (alumni / bank numbers cannot take a result); an older database: the whole list */
     private fun fetchDirectory(app: Context): JSONArray =

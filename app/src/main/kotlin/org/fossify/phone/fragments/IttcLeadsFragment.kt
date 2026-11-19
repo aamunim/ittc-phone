@@ -87,6 +87,9 @@ import java.util.concurrent.Executors
  * 3.10: a compact top — the Today card is one row of four numbers (Overdue / Today also filter the
  * list; Target opens the day in full), the two chip rows are one filter bar (whose · when, the stage,
  * ✕) with a filter sheet, and the top folds away while the list scrolls down.
+ * 3.11: "My list" / "All list" for everyone signed in here (the Tracker's switch): direct mode fetches
+ * every lead the person may see in the Tracker; a 👤 / 👥 button before ☰ / ▦ picks whose (My by
+ * default, remembered). The badge, the reminders and Done today / Target stay my own.
  */
 class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     MyViewPagerFragment<IttcLeadsFragment.LeadsInnerBinding>(context, attributeSet) {
@@ -98,7 +101,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     private enum class Filter { TODAY, OVERDUE, NEW, HOT, ALL }
 
-    /** Whose leads (a super admin's choice; everyone else: their own) */
+    /** Whose leads: My / All (3.11: everyone, direct mode); Team Leads / Callers a super admin's only */
     private enum class Scope { MY, ALL, TEAM_LEADS, CALLERS }
 
     private lateinit var binding: IttcFragmentLeadsBinding
@@ -114,6 +117,10 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private val adapter = LeadsAdapter()
     private var meta: IttcBridge.PhoneMeta? = null
     private var scope = Scope.MY
+    /** 3.11: direct mode with the server's All list, as last found (also before this tab's first read) */
+    private var whoseDirect = lastDirect
+    /** the list says whose each lead is (an older Tracker does not: all of it is mine) */
+    private var ownersKnown = false
     /** one person in Team Leads / Callers; null = all of them */
     private var person: String? = null
     private var stageId: String? = null
@@ -143,6 +150,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         /** start / release in order, never two at once (the refcount stays right) */
         private val liveExec = Executors.newSingleThreadExecutor()
         @Volatile private var remindersAt = 0L
+        /** (3.11: direct mode with the All list as last found, for the next tab made) */
+        @Volatile private var lastDirect = false
         /** (3.8's folded Today card, gone in 3.10: the remembered choice is removed) */
         private const val KEY_TODAY_COLLAPSED_OLD = "leads_today_collapsed"
         private const val KEY_BOARD = "leads_board"
@@ -189,6 +198,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         binding.ittcLeadsScopePill.setOnClickListener { showFilterSheet(focusStage = false) }
         binding.ittcLeadsStagePill.setOnClickListener { showFilterSheet(focusStage = true) }
         binding.ittcLeadsClear.setOnClickListener { clearFilters() }
+        binding.ittcLeadsWhose.setOnClickListener { toggleWhose() }
         binding.ittcLeadsFilters.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
             if (right - left != oldRight - oldLeft) post { applyPillWidths() }
         }
@@ -196,7 +206,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         listOf(
             binding.ittcLeadsAdd, binding.ittcLeadsCallAll, binding.ittcLeadsStop,
             binding.ittcLeadsCellOverdue, binding.ittcLeadsCellToday, binding.ittcLeadsCellDone, binding.ittcLeadsCellTarget,
-            binding.ittcLeadsScopePill, binding.ittcLeadsStagePill, binding.ittcLeadsClear,
+            binding.ittcLeadsScopePill, binding.ittcLeadsStagePill, binding.ittcLeadsClear, binding.ittcLeadsWhose,
         ).forEach { IttcUi.ripple(it) }
         binding.ittcLeadsList.setHasFixedSize(true)
         setupSwipes()
@@ -363,6 +373,12 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             } catch (_: Throwable) {
                 false
             }
+            // (3.11: the server sent the All list — an older database sends my own only: no choice then)
+            val allList = isDirect && try {
+                IttcDirect.allList(ctx)
+            } catch (_: Throwable) {
+                false
+            }
             // ⏰ Tracker mode: follow-up reminders from this list too (direct mode sets them itself) —
             // only when the person turned them on here (the Tracker has its own reminders: off by default)
             val now = System.currentTimeMillis()
@@ -382,6 +398,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             post {
                 val modeChanged = direct != isDirect
                 direct = isDirect
+                whoseDirect = allList
+                lastDirect = allList
                 // (the Tracker installed / signed in after this tab opened: watch it now)
                 if (observer == null && isAttachedToWindow) observer = IttcBridge.watchLeads(context) { reload() }
                 loadedOnce = true
@@ -717,12 +735,36 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     // ------------------------------------------------------------- scope
     private val isSuper get() = meta?.isSuper == true
 
-    private fun inScope(l: IttcBridge.PhoneLead, sc: Scope = scope, who: String? = person): Boolean {
-        if (!isSuper) return true // (the Tracker only hands over the user's own leads)
+    /**
+     * 3.11: whose can be chosen — a super admin (everyone's list, as before) and, in direct mode,
+     * everyone (the All list comes from the server). Tracker mode / an older database: only my own
+     * leads come (a super admin's everyone's), so there is nothing to choose.
+     */
+    private val canChooseWhose get() = isSuper || whoseDirect
+
+    /** The whose in effect: My when it cannot be chosen; Team Leads / Callers for a super admin only */
+    private fun whose(sc: Scope = scope): Scope = when {
+        !canChooseWhose -> Scope.MY
+        !isSuper && (sc == Scope.TEAM_LEADS || sc == Scope.CALLERS) -> Scope.MY
+        else -> sc
+    }
+
+    /** Team Leads / Callers (a super admin's): shown in the pill, cleared by ✕ */
+    private fun subScope(sc: Scope = whose()): Boolean = sc == Scope.TEAM_LEADS || sc == Scope.CALLERS
+
+    /** Each row / card says whose lead it is (All, or all of the team leads / callers) */
+    private fun ownerShown(): Boolean = when (whose()) {
+        Scope.MY -> false
+        Scope.ALL -> true
+        else -> person == null
+    }
+
+    private fun inScope(l: IttcBridge.PhoneLead, sc: Scope = whose(), who: String? = person): Boolean {
         val m = meta ?: return true
-        return when (sc) {
+        return when (whose(sc)) {
             Scope.ALL -> true
-            Scope.MY -> l.assignedTo == m.meId
+            // (meId unknown / no owners in the list — an older Tracker: all of it is mine)
+            Scope.MY -> m.meId == null || !ownersKnown || l.assignedTo == m.meId
             Scope.TEAM_LEADS, Scope.CALLERS -> {
                 if (who != null) {
                     l.assignedTo == who
@@ -734,11 +776,11 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         }
     }
 
-    /** "👤 My" / "👥 All" / "🧑‍💼 Team Leads" / "📞 Rahim" … (a super admin's whose) */
+    /** "👤 My" / "👥 All" / "🧑‍💼 Team Leads" / "📞 Rahim" … (the whose in effect) */
     private fun scopeLabel(): String {
         val m = meta
         val name = person?.let { id -> m?.people?.firstOrNull { it.id == id }?.name }
-        return when (scope) {
+        return when (whose()) {
             Scope.MY -> context.getString(R.string.ittc_scope_my)
             Scope.ALL -> context.getString(R.string.ittc_scope_all)
             Scope.TEAM_LEADS -> name?.let { "🧑‍💼 $it" } ?: context.getString(R.string.ittc_scope_team_leads)
@@ -803,6 +845,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     private fun renderNow() {
         val today = startOfToday()
+        ownersKnown = all.any { it.assignedTo != null }
         val scoped = all.filter { inScope(it) }
         // (a stage that is gone: all stages)
         val stages = meta?.stages.orEmpty()
@@ -858,7 +901,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         binding.ittcLeadsHint.beVisibleIf(placeholder == null && !boardMode && !swipeLearned())
         // 3.10: the top is shown again for other choices, the board and the placeholders; folded away
         // over a list that no longer scrolls: back once it is laid out
-        val key = listOf(filter, stageId, scope, person, boardMode, query)
+        val key = listOf(filter, stageId, whose(), person, boardMode, query)
         if (boardMode || placeholder != null || key != topKey) showTop(animate = false)
         topKey = key
         if (topHidden) {
@@ -872,22 +915,29 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private var barSignature: List<Any?>? = null
 
     /**
-     * [👤 whose · when ▾] (whose: a super admin's only) · [● stage ▾] (the list only) · [✕] when anything is
-     * not the default. A changed choice: the soft accent with an accent border; else the surface, outlined.
+     * [when ▾] (a super admin's Team Leads / Callers: [🧑‍💼 whose · when ▾]) · [● stage ▾] (the list only) ·
+     * [✕] when anything is not the default · 3.11: [👤 / 👥] My / All · [☰ ▦]. A changed choice: the soft
+     * accent with an accent border; else the surface, outlined.
      */
     private fun renderFilterBar(boardMode: Boolean, stages: List<IttcBridge.Stage>) {
         val b = binding
         val p = pal()
-        val whoChanged = isSuper && (scope != Scope.MY || person != null)
+        val sc = whose()
+        // (My / All: the 👤 / 👥 button says it; the pill only names Team Leads / Callers)
+        val whoChanged = subScope(sc)
         val whenChanged = filter != defaultFilter
         val showStage = !boardMode && stages.isNotEmpty()
         val stage = stageId?.let { id -> stages.firstOrNull { it.id == id } }
-        val scopeText = (if (isSuper) scopeLabel() + " · " else "") + filterName(filter)
+        val scopeText = (if (whoChanged) scopeLabel() + " · " else "") + filterName(filter)
         val stageText = stage?.name ?: context.getString(R.string.ittc_l3_stage_all)
         val clear = whoChanged || whenChanged || (showStage && stage != null)
-        val sig = listOf(p, scopeText, whoChanged || whenChanged, showStage, stage?.id, stageText, clear, b.ittcLeadsViewToggle.visibility)
+        val sig = listOf(
+            p, scopeText, whoChanged || whenChanged, showStage, stage?.id, stageText, clear, b.ittcLeadsViewToggle.visibility,
+            canChooseWhose, sc,
+        )
         if (sig == barSignature) return
         barSignature = sig
+        renderWhoseButton(sc)
         stylePill(b.ittcLeadsScopePill, "$scopeText ▾", whoChanged || whenChanged, null)
         b.ittcLeadsScopePill.contentDescription = context.getString(R.string.ittc_cp_scope_desc, scopeText)
         b.ittcLeadsStagePill.beVisibleIf(showStage)
@@ -934,6 +984,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         val gap = IttcTheme.dp(context, 8f)
         var room = (if (bar.width > 0) bar.width else resources.displayMetrics.widthPixels) - bar.paddingLeft - bar.paddingRight
         if (b.ittcLeadsViewToggle.visibility == VISIBLE) room -= gap + 2 * resources.getDimensionPixelSize(R.dimen.ittc_touch)
+        if (b.ittcLeadsWhose.visibility == VISIBLE) room -= gap + resources.getDimensionPixelSize(R.dimen.ittc_touch)
         if (b.ittcLeadsClear.visibility == VISIBLE) room -= IttcTheme.dp(context, 4f) + resources.getDimensionPixelSize(R.dimen.ittc_touch)
         val showStage = stagePill.visibility == VISIBLE
         if (showStage) room -= gap
@@ -960,14 +1011,45 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         if (stagePill.maxWidth != stageMax) stagePill.maxWidth = stageMax
     }
 
-    /** ✕: the default filter, all stages (the list's stage stays while the board shows), my leads */
+    /**
+     * ✕: the default filter, all stages (the list's stage stays while the board shows); Team Leads /
+     * Callers back to my leads. 3.11: My / All stays (the 👤 / 👥 button's own choice).
+     */
     private fun clearFilters() {
         filter = defaultFilter
         if (!lastBoardMode) stageId = null
-        scope = Scope.MY
+        if (subScope()) scope = Scope.MY
         person = null
         saveChoice()
         render()
+    }
+
+    /** 3.11: 👤 My list / 👥 All list (everyone who can choose; hidden in Tracker mode, where the list is my own) */
+    private fun renderWhoseButton(sc: Scope) {
+        val b = binding
+        val v = b.ittcLeadsWhose
+        v.beVisibleIf(canChooseWhose)
+        if (!canChooseWhose) return
+        val p = pal()
+        val mine = sc == Scope.MY
+        v.setImageResource(if (mine) R.drawable.ic_person_vector else R.drawable.ic_people_vector)
+        // (All: the soft accent pill inside the 44 dp touch area; My: the plain icon)
+        v.background = if (mine) null else InsetDrawable(IttcTheme.rounded(context, p.primarySoft, 999f), IttcTheme.dp(context, 4f))
+        // (an inset background replaces the view's padding: the icon keeps its 20 dp)
+        IttcTheme.dp(context, 12f).let { pad -> v.setPadding(pad, pad, pad, pad) }
+        v.setColorFilter(if (mine) p.text2 else p.primary)
+        v.isSelected = !mine
+        v.contentDescription = context.getString(if (mine) R.string.ittc_al_desc_my else R.string.ittc_al_desc_all)
+    }
+
+    /** 👤 ↔ 👥: My list ↔ All list (a super admin in Team Leads / Callers: back to My) */
+    private fun toggleWhose() {
+        if (!canChooseWhose) return
+        scope = if (whose() == Scope.MY) Scope.ALL else Scope.MY
+        person = null
+        saveChoice()
+        render()
+        context.toast(if (scope == Scope.MY) R.string.ittc_al_my_list else R.string.ittc_al_all_list)
     }
 
     /** The filter sheet's choices until "Show N leads" */
@@ -993,7 +1075,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         val p = pal()
         val sheet = IttcCUi.sheet(act)
         val body = sheet.body
-        val ch = Choice(filter, scope, person, stageId)
+        val ch = Choice(filter, whose(), person, stageId)
         val stages = if (lastBoardMode) emptyList<IttcBridge.Stage>() else meta?.stages.orEmpty()
         var stageHeader: View? = null
         fun sectionTitle(text: String): View {
@@ -1020,16 +1102,14 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             body.addView(head)
 
             val m = meta
-            if (isSuper && m != null) {
+            if (canChooseWhose && m != null) {
                 sectionTitle(context.getString(R.string.ittc_cp_whose))
+                // (3.11: My / All for everyone; Team Leads / Callers a super admin's only)
+                val options = listOf(Scope.MY to R.string.ittc_scope_my, Scope.ALL to R.string.ittc_scope_all) +
+                    if (isSuper) listOf(Scope.TEAM_LEADS to R.string.ittc_scope_team_leads, Scope.CALLERS to R.string.ittc_scope_callers) else emptyList()
                 grid(
                     body,
-                    listOf(
-                        Scope.MY to R.string.ittc_scope_my,
-                        Scope.ALL to R.string.ittc_scope_all,
-                        Scope.TEAM_LEADS to R.string.ittc_scope_team_leads,
-                        Scope.CALLERS to R.string.ittc_scope_callers,
-                    ).map { (sc, label) ->
+                    options.map { (sc, label) ->
                         optionButton(c, context.getString(label), countFor(sc, null, ch.stageId, ch.filter), ch.scope == sc, false) {
                             ch.scope = sc
                             ch.person = null
@@ -1414,7 +1494,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         override fun canMove(): Boolean = direct && activity != null
 
         override fun owner(l: IttcBridge.PhoneLead): String? =
-            if (isSuper && scope != Scope.MY && person == null) ownerName(l) else null
+            if (ownerShown()) ownerName(l) else null
 
         override fun whenText(l: IttcBridge.PhoneLead, now: Long, today: Long): String = this@IttcLeadsFragment.whenText(l, now, today)
 
@@ -1443,7 +1523,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     /** What the board's cards look like besides their leads (as the list's rows: theme, owner shown, the minute) */
     private fun boardLook(): List<Any?> {
-        val ownerShown = isSuper && scope != Scope.MY && person == null
+        val ownerShown = ownerShown()
         return listOf(pal(), ownerShown, if (ownerShown) meta?.let { it.meId to it.people } else null, System.currentTimeMillis() / 60_000L)
     }
 
@@ -1809,7 +1889,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         fun submit(list: List<IttcBridge.PhoneLead>) {
             // (everything a row's look depends on: the palette, whose name shows, the people's names
             // and the minute — "in 20 min" moves on with the clock)
-            val ownerShown = isSuper && scope != Scope.MY && person == null
+            val ownerShown = ownerShown()
             val sig = listOf(
                 pal(),
                 ownerShown,
@@ -1879,7 +1959,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                     ittcLeadStage.text = stage
                 }
 
-                val owner = if (isSuper && scope != Scope.MY && person == null) ownerName(l) else null
+                val owner = if (ownerShown()) ownerName(l) else null
                 val overdue = l.nextCall != null && l.nextCall < now
                 ittcLeadLine.text = listOfNotNull(owner, l.course, l.batch, whenText(l, now, today)).joinToString(" · ")
                 ittcLeadLine.setTextColor(if (overdue) p.danger else p.muted)
