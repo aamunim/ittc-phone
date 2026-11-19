@@ -392,8 +392,9 @@ class IttcAccountActivity : SimpleActivity() {
             // (off → every alarm goes; on → set from the kept list)
             IttcReminders.setEnabled(app, on)
             if (on) {
-                val leads = if (IttcDirect.isSignedIn(app)) IttcDirect.leads(app) else IttcBridge.myLeadsCache
-                if (leads.isNotEmpty()) IttcReminders.schedule(app, leads)
+                val direct = IttcDirect.isSignedIn(app)
+                val leads = if (direct) IttcDirect.leads(app) else IttcBridge.myLeadsCache
+                if (leads.isNotEmpty()) IttcReminders.schedule(app, leads, ownersKnown = direct || IttcBridge.cacheIsDirect)
             }
         }
     }

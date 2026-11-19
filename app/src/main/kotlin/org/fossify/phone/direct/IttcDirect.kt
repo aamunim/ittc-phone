@@ -173,12 +173,17 @@ object IttcDirect {
         // token is kept, so nothing of another person's is ever sent with it)
         synchronized(outboxLock) {
             val owner = prefs(app).getString("outbox_user", null)
-            if (owner != null && owner != t.userId) file(app, OUTBOX).delete()
+            if (owner != null && owner != t.userId) {
+                file(app, OUTBOX).delete()
+                // (3.11: another person: the Leads tab's My / All starts from My)
+                forgetLeadsChoice(app)
+            }
             prefs(app).edit().putString("outbox_user", t.userId).commit()
         }
         generation++
         listOf(LEADS, META, DIR).forEach { file(app, it).delete() }
         leadsCache = null
+        ownCache = null
         metaCache = null
         dirCache = null
         IttcAuth.save(app, t)
@@ -246,7 +251,8 @@ object IttcDirect {
         }
         org.fossify.phone.helpers.IttcDialer.stop(app)
         prefs(app).edit().remove("me").remove("settings").remove("last_refresh").remove("last_check")
-            .remove("last_directory").remove("refresh_error").remove("tracker_device_id").apply()
+            .remove("last_directory").remove("refresh_error").remove("tracker_device_id").remove("all_list").apply()
+        forgetLeadsChoice(app)
         if (message != null) prefs(app).edit().putString("message", message).apply()
         IttcRealtime.stop()
         IttcNotify.stop()
@@ -306,6 +312,11 @@ object IttcDirect {
         return true
     }
 
+    /** 3.11: the Leads tab's whose (My / All / a person) is the last person's: gone (My again) */
+    private fun forgetLeadsChoice(app: Context) {
+        app.getSharedPreferences("ittc", Context.MODE_PRIVATE).edit().remove("leads_scope").remove("leads_person").apply()
+    }
+
     /** Tell the Tracker (if installed) whether ITTC Phone sends its own lead calls now */
     fun syncTrackerFlag(context: Context) {
         val app = context.applicationContext
@@ -360,7 +371,10 @@ object IttcDirect {
         val map = HashMap<String, IttcBridge.Lead>()
         leads(context).forEach { l ->
             val lead = IttcBridge.Lead(l.leadId, l.name, l.rating, l.stage, l.course, l.lastNote)
-            listOf(l.phone, l.altPhone, l.whatsapp).forEach { n -> normalizeBd(n)?.let { map[sha256(it)] = lead } }
+            // (3.11: the list holds others' leads too, my own first — a number on both is my lead's)
+            listOf(l.phone, l.altPhone, l.whatsapp).forEach { n ->
+                normalizeBd(n)?.let { val h = sha256(it); if (!map.containsKey(h)) map[h] = lead }
+            }
         }
         ownCache = map
         return map
@@ -413,6 +427,8 @@ object IttcDirect {
             stageId = o.str("stage_id"),
             courseId = o.str("course_id"),
             assignedTo = o.str("assigned_to"),
+            // (3.11: only a lead I may see but not change says so)
+            canEdit = o.optBoolean("can_edit", true),
         )
     }
 
@@ -479,7 +495,7 @@ object IttcDirect {
                 if (isSignedIn(app)) p.edit().putString("refresh_error", "Could not check your sign-in").apply()
                 return
             }
-            val text = IttcApi.rpc(app, "my_phone_data").trim()
+            val text = fetchPhoneData(app).trim()
             // (no answer: the account is not active any more — the session check says so next)
             if (text == "null" || text.isEmpty()) {
                 p.edit().putLong("last_check", 0).putString("refresh_error", "Your account is not active").apply()
@@ -524,13 +540,42 @@ object IttcDirect {
             // (also every hour: a follow-up more than a day away gets its alarm when it comes near)
             if ((changedLeads || now - lastScheduled > 3600_000L) && isActive(app)) {
                 lastScheduled = now
-                IttcReminders.schedule(app, leads(app))
+                IttcReminders.schedule(app, leads(app), ownersKnown = true)
             }
         } catch (e: Throwable) {
             p.edit().putString("refresh_error", e.message ?: "Could not update").apply()
         }
         changed(app)
     }
+
+    /** (3.11: an older database has no my_phone_data(p_all): not asked again for this long) */
+    @Volatile private var noAllListUntil = 0L
+
+    /**
+     * 3.11: every lead I may see in the Tracker ("All list"; the server's row security decides —
+     * the Leads tab picks My / All from it). An older database (no p_all: 404) gets the call
+     * without it, as before (my own leads; a super admin's everyone's).
+     */
+    private fun fetchPhoneData(app: Context): String {
+        if (System.currentTimeMillis() >= noAllListUntil) {
+            try {
+                return IttcApi.rpc(app, "my_phone_data", JSONObject().put("p_all", true)).also { setAllList(app, true) }
+            } catch (e: IttcApi.ApiError) {
+                // (only "no such function" — PostgREST's PGRST202 — means an older database)
+                if (e.status != 404 || e.code != "PGRST202") throw e
+                noAllListUntil = System.currentTimeMillis() + 30 * 60_000L
+            }
+        }
+        return IttcApi.rpc(app, "my_phone_data").also { setAllList(app, false) }
+    }
+
+    private fun setAllList(app: Context, on: Boolean) {
+        val p = prefs(app)
+        if (p.getBoolean("all_list", false) != on) p.edit().putBoolean("all_list", on).apply()
+    }
+
+    /** 3.11: the kept list is the All list (every lead I may see); false: an older database — my own only */
+    fun allList(context: Context): Boolean = prefs(context).getBoolean("all_list", false)
 
     /** Only leads (alumni / bank numbers cannot take a result); an older database: the whole list */
     private fun fetchDirectory(app: Context): JSONArray =

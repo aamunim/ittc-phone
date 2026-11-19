@@ -60,11 +60,10 @@ object IttcTabBadges {
             set(Calendar.MILLISECOND, 0)
             add(Calendar.DAY_OF_MONTH, 1)
         }.timeInMillis
-        // (a super admin's list holds everyone's leads: only their own count here, as the tab's "My")
-        val me = if (meta?.isSuper == true) meta.meId else null
-        return leads.count { l ->
+        // (the list may hold others' leads — a super admin's, 3.11's All list: only my own count, whatever the tab shows)
+        return IttcBridge.ownOnly(leads, meta?.meId, ownersKnown = IttcBridge.cacheIsDirect).count { l ->
             val next = l.nextCall
-            next != null && next < tomorrow && (me == null || l.assignedTo == me)
+            next != null && next < tomorrow
         }
     }
 

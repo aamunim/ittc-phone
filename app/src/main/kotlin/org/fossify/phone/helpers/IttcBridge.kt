@@ -337,7 +337,7 @@ object IttcBridge {
     }
 
     // -------------------------------------------------------------------
-    // 🎓 "Leads" tab: the signed-in user's own open leads (Tracker 2.10.5+)
+    // 🎓 "Leads" tab: the signed-in user's open leads (Tracker 2.10.5+; direct mode 3.11: all they may see)
     // -------------------------------------------------------------------
     data class PhoneLead(
         val leadId: String,
@@ -357,11 +357,32 @@ object IttcBridge {
         val stageId: String? = null,
         val courseId: String? = null,
         val assignedTo: String? = null,
+        /** 3.11 (direct mode's All list): false — I may see it but not change its stage / notes / details */
+        val canEdit: Boolean = true,
     ) {
         val callNumber: String? get() = phone ?: altPhone ?: whatsapp
     }
 
-    /** The last list read (for the dial pad's name search and an instant tab) */
+    /**
+     * 3.11: only my own leads of a list that may hold others' too (direct mode's All list, a super
+     * admin's everyone's). [meId] unknown, or a list without owners (an older Tracker, which only
+     * hands over my own): all of it. [ownersKnown]: the list always says whose (direct mode — every
+     * lead may be unassigned, none of them mine); else known when any lead has an owner.
+     */
+    fun ownOnly(leads: List<PhoneLead>, meId: String?, ownersKnown: Boolean = false): List<PhoneLead> {
+        if (meId == null || (!ownersKnown && leads.none { it.assignedTo != null })) return leads
+        return leads.filter { it.assignedTo == meId }
+    }
+
+    /** (3.11: [myLeadsCache] came from the server itself — direct mode: whose is always known) */
+    @Volatile
+    var cacheIsDirect = false
+        private set
+
+    /**
+     * The last list read (for the dial pad's name search and an instant tab). 3.11, direct mode:
+     * every open lead I may see (my own first) — [ownOnly] for what is mine.
+     */
     @Volatile
     var myLeadsCache: List<PhoneLead> = emptyList()
         private set
@@ -369,7 +390,15 @@ object IttcBridge {
     /** null: no Tracker / an older one (the tab then says to update it); call off the main thread */
     fun myLeads(context: Context): List<PhoneLead>? {
         val app = context.applicationContext
-        if (IttcDirect.isActive(app)) return IttcDirect.leads(app).also { myLeadsCache = it; IttcTabBadges.leadsChanged() }
+        if (IttcDirect.isActive(app)) {
+            // (3.11: the list holds everyone's I may see: who "me" is comes with it, for the badge's own count)
+            return IttcDirect.leads(app).also { l ->
+                IttcDirect.meta(app)?.let { metaCache = it }
+                cacheIsDirect = true
+                myLeadsCache = l
+                IttcTabBadges.leadsChanged()
+            }
+        }
         if (!trackerReady(app)) return null
         return try {
             withTracker(app) { client ->
@@ -405,7 +434,11 @@ object IttcBridge {
             }
         } catch (_: Throwable) {
             null
-        }?.also { myLeadsCache = it; IttcTabBadges.leadsChanged() }
+        }?.also {
+            cacheIsDirect = false
+            myLeadsCache = it
+            IttcTabBadges.leadsChanged()
+        }
     }
 
     fun parseTimeOf(s: String?): Long? = parseTime(s)
@@ -660,6 +693,7 @@ object IttcBridge {
     /** Signed out of ITTC Phone: nothing of the last person's lists stays */
     fun clearCaches() {
         myLeadsCache = emptyList()
+        cacheIsDirect = false
         metaCache = null
         known.clear()
         IttcTabBadges.leadsChanged()

@@ -203,8 +203,15 @@ class IttcLeadActivity : SimpleActivity() {
             } catch (_: Throwable) {
                 IttcBridge.metaCache
             }
+            val keptLead = try {
+                IttcDirect.leads(this).firstOrNull { it.leadId == id }
+            } catch (_: Throwable) {
+                null
+            }
+            // (3.11: a lead of the All list I may see but not change; not in the list: as before)
+            editable = keptLead?.canEdit ?: true
             val kept = if (!needKept) null else try {
-                IttcDirect.leads(this).firstOrNull { it.leadId == id }?.let { keptJson(it, m) }
+                keptLead?.let { keptJson(it, m) }
             } catch (_: Throwable) {
                 null
             }
@@ -1194,8 +1201,17 @@ class IttcLeadActivity : SimpleActivity() {
         return meName
     }
 
+    /** 3.11: false — a lead of the All list I may see but not change (its stage, notes, details) */
+    @Volatile private var editable = true
+
     /** Queue a change for this lead; [optimistic] shows it now (the lead is read again soon) */
     private fun queue(item: JSONObject, quiet: Boolean = false, optimistic: (JSONObject) -> Unit) {
+        // (the server would refuse these, or drop them unseen: said here instead; the next call,
+        // a template sent and calls are allowed on any lead I may see)
+        if (!editable && item.optString("kind") in setOf("note", "stage", "edit")) {
+            toast(R.string.ittc_al_view_only)
+            return
+        }
         // (3.9: the same queueing as the Leads board's stage moves)
         IttcStageMove.queue(this, leadId, item) done@{ ok ->
             if (!alive()) return@done
@@ -1231,6 +1247,7 @@ class IttcLeadActivity : SimpleActivity() {
         JSONObject().put("at", isoOf(System.currentTimeMillis())).put("action", action).put("details", details).put("by", myName())
 
     private fun addNote() {
+        if (!editable) return toast(R.string.ittc_al_view_only)
         noteDialog(getString(R.string.ittc_lp_add_note), required = true) { note ->
             queue(JSONObject().put("kind", "note").put("note", note)) { l ->
                 prepend(l, "activity", activityEntry("note_added", JSONObject().put("note", note)))
@@ -1239,6 +1256,7 @@ class IttcLeadActivity : SimpleActivity() {
     }
 
     private fun changeStage() {
+        if (!editable) return toast(R.string.ittc_al_view_only)
         val l = lead ?: return
         val currentId = l.s("stage_id")
         val list = meta?.stages.orEmpty().filter { it.forCourse(l.s("course_id")) }
@@ -1297,6 +1315,7 @@ class IttcLeadActivity : SimpleActivity() {
     private fun ratingLabel(value: String) = value.replaceFirstChar { it.uppercase() }
 
     private fun changeRating() {
+        if (!editable) return toast(R.string.ittc_al_view_only)
         val values = listOf("hot", "warm", "cold", null)
         val labels = listOf(
             getString(R.string.ittc_lp_hot), getString(R.string.ittc_lp_warm), getString(R.string.ittc_lp_cold),
@@ -1314,6 +1333,7 @@ class IttcLeadActivity : SimpleActivity() {
     }
 
     private fun editLead() {
+        if (!editable) return toast(R.string.ittc_al_view_only)
         val l = lead ?: return
         val holder = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

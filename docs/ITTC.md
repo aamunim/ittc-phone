@@ -87,6 +87,12 @@ Asks this app for a fresh list (`asked` when it is running, else `later`).
 
 - `my_leads` also has `stage_id, course_id, assigned_to`. A **super admin** gets every open lead
   (≤ 2000, their own first) from `my_phone_data()`; everyone else only their own (≤ 500).
+  ITTC Phone 3.11 signed in by itself calls `my_phone_data(p_all => true)`: every open lead the
+  person may see in the Tracker (row security decides; ≤ 2000, their own first) and `people` with
+  the owners' names, for the Leads tab's "My list" / "All list" switch. An older database (404):
+  the call without arguments, as before (only on PostgREST's `PGRST202`). A lead there that the person may
+  see but not change carries `"can_edit": false` (the phone then offers no stage move, note or edit). The Tracker's own call (no arguments) is unchanged, so in
+  Tracker mode the switch is not offered (a super admin keeps their whose choice).
 - Each new list is announced with `notifyChange(content://com.abamunim.leads.leadlookup/my_leads)`:
   ITTC Phone registers a `ContentObserver` on that URI and re-reads it. The app fetches a new list
   ~2 s after the server pings it (Supabase Realtime INSERTs on `phone_lead_pings`, added by triggers

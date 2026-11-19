@@ -336,7 +336,7 @@ class DialpadActivity : SimpleActivity() {
         binding.dialpadList.beVisibleIf(filtered.isNotEmpty())
     }
 
-    // 🎓 ITTC: your own leads (the "Leads" tab's) whose name (by the keys) or number matches
+    // 🎓 ITTC: your leads (the "Leads" tab's list; direct mode 3.11: all you may see, your own first) whose name (by the keys) or number matches
     private fun ittcShowMatches(text: String) {
         val box = binding.ittcDialpadMatches
         box.removeAllViews()
