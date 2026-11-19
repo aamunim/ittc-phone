@@ -638,8 +638,14 @@ class CallActivity : SimpleActivity() {
             // 🎓 ITTC 3.12: a personal call (Personal mode, or the personal SIM; decided once per
             // call): no lead card — with "hint" a small "ITTC lead" chip only; in doubt, nothing
             val personal = try {
-                val details = CallManager.getPrimaryCall()?.details
-                IttcMode.decideCall(this@CallActivity, details?.handle?.schemeSpecificPart ?: number, details?.accountHandle)
+                val primary = CallManager.getPrimaryCall()
+                // (the call already ended: decide without storing, so a later call isn't given this one's answer)
+                if (primary == null) {
+                    IttcMode.personalFor(this@CallActivity, null)
+                } else {
+                    val details = primary.details
+                    IttcMode.decideCall(this@CallActivity, details?.handle?.schemeSpecificPart ?: number, details?.accountHandle)
+                }
             } catch (_: Throwable) {
                 true
             }

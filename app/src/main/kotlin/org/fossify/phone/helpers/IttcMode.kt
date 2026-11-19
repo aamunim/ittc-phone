@@ -411,7 +411,8 @@ object IttcMode {
             p.edit().putString(KEY_ADMIN, text).apply()
             adminCache = null
             enforce(ctx)
-            IttcModeAuto.reschedule(ctx.applicationContext ?: ctx)
+            // (check, not a bare reschedule: a switch waiting for a call to end keeps its retry)
+            IttcModeAuto.check(ctx.applicationContext ?: ctx)
             notifyListeners()
         } catch (_: Throwable) {
         }
