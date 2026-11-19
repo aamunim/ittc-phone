@@ -270,6 +270,8 @@ object IttcDirect {
         IttcRealtime.stop()
         IttcNotify.stop()
         IttcReminders.cancelAll(app, notifications = true)
+        // (🎓 3.12: back to ITTC mode, the admin's mode settings and the office hours' alarms gone)
+        org.fossify.phone.helpers.IttcMode.signedOut(app)
         modeAt = 0
         modeActive = false
         syncTrackerFlag(app)
@@ -322,6 +324,8 @@ object IttcDirect {
             .putString("settings", answer.optJSONObject("settings")?.toString())
             .putLong("last_check", System.currentTimeMillis())
             .apply()
+        // (🎓 3.12: the admin's ITTC / Personal mode settings)
+        org.fossify.phone.helpers.IttcMode.adminSettingsChanged(app, answer.optJSONObject("settings"))
         return true
     }
 
@@ -524,7 +528,11 @@ object IttcDirect {
             val meta = data.second
             val metaText = meta.toString()
             writeAtomic(file(app, META), metaText)
-            meta.optJSONObject("settings")?.let { p.edit().putString("settings", it.toString()).apply() }
+            meta.optJSONObject("settings")?.let {
+                p.edit().putString("settings", it.toString()).apply()
+                // (🎓 3.12: the admin's ITTC / Personal mode settings)
+                org.fossify.phone.helpers.IttcMode.adminSettingsChanged(app, it)
+            }
             metaCache = try {
                 IttcBridge.parseMeta(metaText)
             } catch (_: Throwable) {

@@ -90,17 +90,20 @@ class MainActivity : SimpleActivity() {
     private lateinit var ittcPanel: IttcSidePanel
     private var ittcModeItem: MenuItem? = null
     private var ittcModeButton: TextView? = null
-    private val ittcModeListener: () -> Unit = { if (!isFinishing && !isDestroyed) showIttcMode() }
+    private val ittcModeListener: () -> Unit = { if (!isFinishing && !isDestroyed) ittcModeChanged() }
     private var ittcLastTab = -1
     private var ittcMovingPager = false
     private var ittcStoredOpenWithDialpad = true
 
     // 🎓 ITTC 3.8: the kinds of the tabs shown, in their order (Call History, Leads, Contacts,
     // Favorites — ittcVisibleTabs): the one source of every tab position on this screen. Read once
-    // (a change of the tabs shown in Settings restarts the app).
+    // (a change of the tabs shown in Settings restarts the app; 🎓 3.12: a change of ITTC / Personal
+    // mode makes the tabs again — no Leads tab in Personal mode — see ittcRebuildTabs).
     private var tabKindsCache: List<Int>? = null
     private val tabKinds: List<Int>
-        get() = tabKindsCache ?: ittcVisibleTabs(config.showTabs).also { tabKindsCache = it }
+        get() = tabKindsCache ?: ittcWantedTabs().also { tabKindsCache = it }
+
+    private fun ittcWantedTabs(): List<Int> = ittcVisibleTabs(config.showTabs, IttcMode.isPersonal(this))
 
     /** The kind of the tab at [position] (null: none there) */
     private fun kindAt(position: Int): Int? = tabKinds.getOrNull(position)
@@ -185,6 +188,11 @@ class MainActivity : SimpleActivity() {
         setupTabs()
         IttcTabBadges.addListener(ittcBadgesListener)
         IttcMode.addListener(ittcModeListener)
+        // 🎓 ITTC 3.12: the office hours' switch missed while away, the admin's limits, the alarms again
+        if (savedInstanceState == null) {
+            val app = applicationContext
+            ensureBackgroundThread { org.fossify.phone.helpers.IttcModeAuto.check(app) }
+        }
         Contact.sorting = config.sorting
         setupIttcDialpad(savedInstanceState)
         storedFontSize = config.fontSize
@@ -380,7 +388,8 @@ class MainActivity : SimpleActivity() {
 
     private fun ittcSearchForTab(kind: Int?) {
         val leadMode = kind == ITTC_TAB_LEADS && ittcSignedInTop
-        ittcSearchItem?.isVisible = ittcSignedInTop && !leadMode
+        // (🎓 3.12: no lead search in Personal mode)
+        ittcSearchItem?.isVisible = ittcSignedInTop && !leadMode && !IttcMode.isPersonal(this)
         if (leadMode == ittcLeadSearchMode) return
         ittcLeadSearchMode = leadMode
         val menu = binding.mainMenu
@@ -657,8 +666,8 @@ class MainActivity : SimpleActivity() {
     private fun setupTabs() {
         binding.viewPager.adapter = null
         binding.mainTabsHolder.removeAllTabs()
-        tabKindsCache = ittcVisibleTabs(config.showTabs)
-        // 🎓 ITTC 3.8: Call History, Leads (always), Contacts, Favorites
+        tabKindsCache = ittcWantedTabs()
+        // 🎓 ITTC 3.8: Call History, Leads (always; 🎓 3.12: not in Personal mode), Contacts, Favorites
         tabKinds.forEach { kind ->
             binding.mainTabsHolder.newTab().setCustomView(R.layout.ittc_tab_item).apply {
                 customView?.findViewById<ImageView>(R.id.tab_item_icon)?.setImageDrawable(getTabIcon(kind))
@@ -910,7 +919,7 @@ class MainActivity : SimpleActivity() {
             }
             try {
                 IttcNotify.refreshAsync(app) { n ->
-                    runOnUiThread { if (!isFinishing && !isDestroyed) showIttcBadge(n) }
+                    runOnUiThread { if (!isFinishing && !isDestroyed) ittcUnreadChanged(n) }
                 }
             } catch (_: Throwable) {
             }
@@ -933,7 +942,13 @@ class MainActivity : SimpleActivity() {
     private var ittcBellBadge: TextView? = null
     private var ittcResumed = false
     private var ittcNotifyStarted = false
-    private val ittcUnreadListener: (Int) -> Unit = { n -> if (!isFinishing && !isDestroyed) showIttcBadge(n) }
+    private val ittcUnreadListener: (Int) -> Unit = { n -> if (!isFinishing && !isDestroyed) ittcUnreadChanged(n) }
+
+    /** 🎓 3.12: kept for the way back from Personal mode (the bell is hidden meanwhile) */
+    private fun ittcUnreadChanged(n: Int) {
+        ittcUnread = n
+        showIttcBadge(if (IttcMode.isPersonal(this)) 0 else n)
+    }
 
     private fun setupIttcTopBar() {
         val menu = binding.mainMenu.requireToolbar().menu
@@ -1028,31 +1043,76 @@ class MainActivity : SimpleActivity() {
     }
 
     private fun toggleIttcMode() {
-        if (!IttcMode.canSwitch(this)) return
         val personal = !IttcMode.isPersonal(this)
-        IttcMode.setPersonal(this, personal)
+        // (🎓 3.12: the admin's limits: a toast says why not)
+        if (!IttcMode.request(this, personal)) return
         showIttcMode()
         toast(if (personal) R.string.ittc_mode_personal_toast else R.string.ittc_mode_ittc_toast)
     }
 
-    /** The mode's settings screen (made in a later version: nothing happens until the app has it) */
-    private fun openIttcModeSettings() {
-        val intent = Intent().setClassName(this, "org.fossify.phone.activities.IttcModeActivity")
-        if (intent.resolveActivity(packageManager) == null) return
-        try {
-            startActivity(intent)
-        } catch (_: Throwable) {
-        }
+    /** 🎓 ITTC 3.12: the mode's settings (office hours, office SIM, a lead's call in Personal mode) */
+    fun openIttcModeSettings() {
+        IttcModeActivity.open(this)
     }
+
+    private var ittcUnread = 0
 
     private fun showIttcTopBar(signedIn: Boolean, unread: Int) {
         ittcSignedInTop = signedIn
+        ittcUnread = unread
         ittcModeItem?.isVisible = signedIn
         if (signedIn) showIttcMode()
-        ittcSearchItem?.isVisible = signedIn
+        // (🎓 3.12: 🔍 and 🔔 only in ITTC mode)
+        val ittc = signedIn && !IttcMode.isPersonal(this)
+        ittcSearchItem?.isVisible = ittc
         ittcSearchForTab(currentKind())
-        ittcBellItem?.isVisible = signedIn
-        showIttcBadge(if (signedIn) unread else 0)
+        ittcBellItem?.isVisible = ittc
+        showIttcBadge(if (ittc) unread else 0)
+    }
+
+    /**
+     * 🎓 ITTC 3.12: ITTC / Personal mode changed (here, in the side panel, the tile, the office
+     * hours, the admin): the button, 🔍 / 🔔, the tabs (Leads only in ITTC mode), the lead pills in
+     * Call History and Contacts, the badges. Never in the way of the phone: an error is recorded only.
+     */
+    private fun ittcModeChanged() {
+        try {
+            showIttcMode()
+            showIttcTopBar(ittcSignedInTop, ittcUnread)
+            if (ittcWantedTabs() != tabKinds) ittcRebuildTabs()
+            getRecentsFragment()?.ittcModeChanged()
+            getContactsFragment()?.ittcModeChanged()
+            IttcTabBadges.leadsChanged()
+            ittcShowBadges()
+        } catch (e: Throwable) {
+            org.fossify.phone.helpers.IttcCrash.record(this, e, "Main screen: mode change")
+        }
+    }
+
+    /**
+     * 🎓 ITTC 3.12: the tabs made again for the mode (from the same ordered list, ittcVisibleTabs):
+     * the pages too when they exist, on the same kind of tab — Call History when it was Leads.
+     */
+    private fun ittcRebuildTabs() {
+        val keep = currentKind()
+        val hadPages = binding.viewPager.adapter != null
+        if (binding.mainMenu.isSearchOpen) binding.mainMenu.closeSearch()
+        getAllFragments().forEach { it?.finishActMode() }
+        ittcLastTab = -1
+        setupTabs()
+        setupTabColors()
+        if (hadPages) {
+            val target = positionOf(keep ?: TAB_CALL_HISTORY).takeIf { it >= 0 }
+                ?: positionOf(TAB_CALL_HISTORY).takeIf { it >= 0 } ?: 0
+            binding.viewPager.adapter = ViewPagerAdapter(this, tabKinds)
+            binding.viewPager.currentItem = target
+            binding.mainTabsHolder.getTabAt(target)?.select()
+            binding.viewPager.onGlobalLayout {
+                if (!isFinishing && !isDestroyed) refreshFragments()
+            }
+        }
+        refreshMenuItems()
+        ittcShowBadges()
     }
 
     private fun showIttcBadge(unread: Int) {

@@ -33,8 +33,9 @@ import org.fossify.phone.helpers.IttcUi
 /**
  * 🎓 ITTC Phone 3.12: the main screen's side panel — ☰ at the top left or a swipe from the left
  * edge opens it (300 dp, over the screen with a scrim; androidx DrawerLayout, which the app already
- * has through AppCompat / Material). It holds who is signed in, ITTC / Personal mode (signed in
- * only), the text size, dark theme, "Open with the dial pad", Display & text size, Settings, About.
+ * has through AppCompat / Material). It holds who is signed in, ITTC / Personal mode and its
+ * settings (signed in only), the text size, dark theme, "Open with the dial pad", Display & text
+ * size, Settings, About.
  *
  * The text size is live: while the slider moves, the text of the screen behind takes the new size
  * at once ([IttcDisplay.previewText]: one pass over the views on screen, no new screen per step);
@@ -156,6 +157,11 @@ class IttcSidePanel(
             IttcDisplayActivity.open(activity)
             close(animate = false)
         }
+        // 🎓 3.12: ITTC & Personal mode's settings
+        b.ittcPanelModeSettings.setOnClickListener {
+            activity.openIttcModeSettings()
+            close(animate = false)
+        }
         b.ittcPanelSettings.setOnClickListener {
             onSettings()
             close(animate = false)
@@ -196,7 +202,7 @@ class IttcSidePanel(
         b.ittcPanelDark.setColors(p.text, accent, p.surface)
         b.ittcPanelDialpad.setColors(p.text, accent, p.surface)
         b.ittcPanelDivider.setBackgroundColor(p.divider)
-        listOf(b.ittcPanelDisplay, b.ittcPanelSettings, b.ittcPanelAbout).forEach { link ->
+        listOf(b.ittcPanelModeSettings, b.ittcPanelDisplay, b.ittcPanelSettings, b.ittcPanelAbout).forEach { link ->
             link.setTextColor(p.text)
             link.compoundDrawableTintList = IttcTheme.tint(p.text2)
         }
@@ -221,6 +227,7 @@ class IttcSidePanel(
         b.ittcPanelName.text = this.name ?: activity.getString(R.string.ittc_sp_guest)
         b.ittcPanelStatus.text = activity.getString(if (signedIn) R.string.ittc_sp_signed_in else R.string.ittc_sp_signed_out)
         b.ittcPanelModeHolder.visibility = if (signedIn) View.VISIBLE else View.GONE
+        b.ittcPanelModeSettings.visibility = if (signedIn) View.VISIBLE else View.GONE
         showAccountColors()
         showMode()
     }
@@ -234,8 +241,8 @@ class IttcSidePanel(
     }
 
     private fun setMode(personal: Boolean) {
-        if (!IttcMode.canSwitch(activity)) return
-        IttcMode.setPersonal(activity, personal)
+        // (🎓 3.12: the admin's limits — a toast says why not)
+        IttcMode.request(activity, personal)
         showMode()
     }
 
@@ -244,6 +251,8 @@ class IttcSidePanel(
         val personal = IttcMode.isPersonal(activity)
         segment(b.ittcPanelModeIttc, !personal, p)
         segment(b.ittcPanelModePersonal, personal, p)
+        // (🎓 3.12: no Personal choice when the admin turned Personal mode off)
+        b.ittcPanelModePersonal.visibility = if (personal || IttcMode.admin(activity).personalAllowed) View.VISIBLE else View.GONE
     }
 
     private fun segment(v: TextView, on: Boolean, p: IttcTheme.Palette) {

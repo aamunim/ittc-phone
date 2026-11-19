@@ -635,9 +635,25 @@ class CallActivity : SimpleActivity() {
             ittcLeadShown = false
             ittcNoteNumber = null
             val shown = callContact
-            IttcBridge.lookup(this@CallActivity, number) { lead ->
+            // 🎓 ITTC 3.12: a personal call (Personal mode, or the personal SIM): no lead card — at
+            // most a small "ITTC lead" chip, as the admin (or the person) chose; in doubt, nothing
+            val personal = try {
+                IttcMode.personalFor(this@CallActivity, CallManager.getPrimaryCall()?.details?.accountHandle)
+            } catch (_: Throwable) {
+                true
+            }
+            val hintOnly = personal && try {
+                IttcMode.leadCallInPersonal(this@CallActivity) != IttcMode.LEAD_NOTHING
+            } catch (_: Throwable) {
+                false
+            }
+            if (!personal || hintOnly) IttcBridge.lookup(this@CallActivity, number, anyMode = true) { lead ->
                 if (lead == null || shown != callContact || isFinishing || isDestroyed) return@lookup
                 try {
+                    if (hintOnly) {
+                        ittcShowLeadHint()
+                        return@lookup
+                    }
                     // (not in the phone's contacts: the number stays the title, the lead's name in the card)
                     val unsaved = name.isEmpty() || name == number
                     ittcShowLeadCard(lead, number, if (unsaved) lead.name.takeIf { it.isNotEmpty() } else null)
@@ -708,6 +724,26 @@ class CallActivity : SimpleActivity() {
             )
             ittcUpdateNoteButton()
             ittcLeadWriteNote.setOnClickListener { ittcWriteNote() }
+            // (🎓 3.12: hidden by a Personal mode hint earlier on this screen)
+            ittcLeadWriteNote.beVisible()
+            ittcLeadCard.alpha = 0f
+            ittcLeadCard.beVisible()
+            ittcLeadCard.animate().alpha(1f).setDuration(150L).start()
+        }
+    }
+
+    /** 🎓 ITTC 3.12: Personal mode — only a small "ITTC lead" chip (no name, stage, note or "Write a note") */
+    private fun ittcShowLeadHint() {
+        val p = IttcTheme.of(this)
+        binding.apply {
+            ittcLeadCard.background = null
+            IttcTheme.pill(ittcLeadBadge, p.callSoft, p.call)
+            ittcLeadBadge.text = getString(R.string.ittc_mode_hint_lead)
+            ittcLeadStage.beGone()
+            ittcLeadCourse.beGone()
+            ittcLeadInfo.beGone()
+            ittcLeadWriteNote.beGone()
+            ittcNoteNumber = null
             ittcLeadCard.alpha = 0f
             ittcLeadCard.beVisible()
             ittcLeadCard.animate().alpha(1f).setDuration(150L).start()

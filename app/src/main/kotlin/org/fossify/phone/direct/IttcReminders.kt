@@ -113,6 +113,11 @@ object IttcReminders {
     }
 
     internal fun show(c: Context, i: Intent) {
+        // (🎓 3.12: Personal mode — it waits, and rings on the way back to ITTC mode)
+        if (org.fossify.phone.helpers.IttcMode.isPersonal(c)) {
+            org.fossify.phone.helpers.IttcModeAuto.holdReminder(c, i)
+            return
+        }
         val nm = c.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Follow-up reminders", NotificationManager.IMPORTANCE_HIGH))
         val number = i.getStringExtra("number") ?: return

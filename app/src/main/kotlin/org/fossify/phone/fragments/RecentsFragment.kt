@@ -36,6 +36,7 @@ import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.IttcRecentsCache
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
+import org.fossify.phone.helpers.IttcMode
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcUi
 import org.fossify.phone.interfaces.RefreshItemsListener
@@ -105,6 +106,8 @@ class RecentsFragment(
             }
         }
         renderKindChips()
+        // 🎓 ITTC 3.12: no "Leads" chip in Personal mode
+        binding.ittcRecentsLeadsOnly.beGoneIf(IttcMode.isPersonal(context))
         // 🎓 ITTC: the system's pressed ripple over the pills
         kindChips().forEach { (_, chip) -> IttcUi.ripple(chip) }
         IttcUi.ripple(binding.ittcRecentsLeadsOnly)
@@ -215,6 +218,27 @@ class RecentsFragment(
                 post {
                     if (ittcFullAt == now) ittcFullAt = 0L
                     if (ittcFullAgain && ittcFullAt == 0L) ittcRefreshFull()
+                }
+            }
+        }
+    }
+
+    /**
+     * 🎓 ITTC 3.12: ITTC / Personal mode changed: the "Leads" chip, the list's filter and the rows'
+     * lead pills again (from the calls already read: no new read of the call log)
+     */
+    fun ittcModeChanged() {
+        binding.ittcRecentsLeadsOnly.beGoneIf(IttcMode.isPersonal(context))
+        renderKindChips()
+        val all = allRecentCalls
+        ensureBackgroundThread {
+            val shown = ittcFilter(all)
+            activity?.runOnUiThread {
+                if (!searchQuery.isNullOrEmpty()) {
+                    recentsAdapter?.apply { notifyItemRangeChanged(0, itemCount) }
+                } else if (all.isNotEmpty()) {
+                    gotRecents(shown)
+                    recentsAdapter?.apply { notifyItemRangeChanged(0, itemCount) }
                 }
             }
         }
@@ -482,6 +506,8 @@ class RecentsFragment(
      * number (off the main thread)
      */
     private fun ittcFilter(items: List<CallLogItem>): List<CallLogItem> {
+        // (🎓 3.12: "Leads only" does nothing in Personal mode — its chip is hidden then)
+        val leadsOnly = this.leadsOnly && !IttcMode.isPersonal(context)
         val kind = recentsKind
         val perNumber = onePerNumber
         if (!leadsOnly && kind == IttcCallHistory.KIND_ALL && !perNumber) return items

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC Phone 3.12: ITTC / Personal mode — its settings screen, the office hours' notice, the
+     Quick Settings tile, what the admin limits, and what waited in Personal mode -->
+<resources>
+    <string name="ittc_mode_title" translatable="false">ITTC &amp; Personal mode</string>
+    <string name="ittc_mode_settings" translatable="false">Mode settings</string>
+    <string name="ittc_mode_now" translatable="false">MODE</string>
+    <string name="ittc_mode_now_ittc" translatable="false">ITTC mode: leads, the after-call screen and lead reminders are on.</string>
+    <string name="ittc_mode_now_personal" translatable="false">Personal mode: a plain phone. No lead names, stages or after-call screen; ITTC reminders wait until you switch back; nothing of your personal calls is sent.</string>
+
+    <!-- office hours -->
+    <string name="ittc_mode_hours_caption" translatable="false">OFFICE HOURS</string>
+    <string name="ittc_mode_auto" translatable="false">Switch by office hours</string>
+    <string name="ittc_mode_auto_sub" translatable="false">ITTC during office hours, Personal after</string>
+    <string name="ittc_mode_from" translatable="false">From</string>
+    <string name="ittc_mode_to" translatable="false">To</string>
+    <string name="ittc_mode_time_value" translatable="false">%1$s %2$s</string>
+    <string name="ittc_mode_notice_note" translatable="false">A notice comes 10 minutes before the switch</string>
+    <string name="ittc_mode_hours_none" translatable="false">No office hours: pick the days, and a From and a To that differ</string>
+
+    <!-- office SIM -->
+    <string name="ittc_mode_sim_caption" translatable="false">TWO SIMS</string>
+    <string name="ittc_mode_sim" translatable="false">Office SIM is ITTC</string>
+    <string name="ittc_mode_sim_sub" translatable="false">Calls on %1$s count as ITTC, on the other SIM as personal</string>
+    <string name="ittc_mode_sim_sub_none" translatable="false">Calls on the office SIM count as ITTC, on the other SIM as personal</string>
+    <string name="ittc_mode_sim_pick" translatable="false">Which SIM is the office SIM?</string>
+    <string name="ittc_mode_sim_one" translatable="false">This phone has one SIM now: its calls count as ITTC</string>
+
+    <!-- a lead's call in Personal mode -->
+    <string name="ittc_mode_lead_caption" translatable="false">A LEAD CALLS WHILE YOU ARE IN PERSONAL MODE</string>
+    <string name="ittc_mode_lead_nothing" translatable="false">Show nothing (fully personal)</string>
+    <string name="ittc_mode_lead_hint" translatable="false">Show a small hint: \"ITTC lead\"</string>
+    <string name="ittc_mode_lead_log" translatable="false">Log the call to the lead quietly, no screens</string>
+    <string name="ittc_mode_option_on" translatable="false">●  %1$s</string>
+    <string name="ittc_mode_option_off" translatable="false">○  %1$s</string>
+    <string name="ittc_mode_hint_lead" translatable="false">ITTC lead</string>
+
+    <!-- the admin -->
+    <string name="ittc_mode_admin_info" translatable="false">Your admin can turn Personal mode off for office phones, or lock ITTC mode during office hours.</string>
+    <string name="ittc_mode_admin_off" translatable="false">Your admin has turned Personal mode off: this phone stays in ITTC mode.</string>
+    <string name="ittc_mode_admin_locked" translatable="false">Your admin locks ITTC mode during office hours (%1$s). The hours are set by your admin.</string>
+    <string name="ittc_mode_blocked_off" translatable="false">Your admin has turned Personal mode off</string>
+    <string name="ittc_mode_blocked_hours" translatable="false">ITTC mode is locked during office hours</string>
+    <string name="ittc_mode_blocked_hours_until" translatable="false">ITTC mode is locked during office hours (until %1$s)</string>
+
+    <!-- the switch's notice -->
+    <string name="ittc_mode_channel" translatable="false">ITTC / Personal mode switch</string>
+    <string name="ittc_mode_notice_personal" translatable="false">Switching to Personal mode at %1$s</string>
+    <string name="ittc_mode_notice_ittc" translatable="false">Switching to ITTC mode at %1$s</string>
+    <string name="ittc_mode_notice_text_personal" translatable="false">Office hours end. Lead reminders wait until ITTC mode.</string>
+    <string name="ittc_mode_notice_text_ittc" translatable="false">Office hours start. Leads and reminders come back.</string>
+    <string name="ittc_mode_stay" translatable="false">Stay in ITTC</string>
+
+    <!-- the Quick Settings tile -->
+    <string name="ittc_mode_tile" translatable="false">ITTC mode</string>
+    <string name="ittc_mode_tile_ittc" translatable="false">ITTC</string>
+    <string name="ittc_mode_tile_personal" translatable="false">Personal</string>
+    <string name="ittc_mode_tile_signed_out" translatable="false">Sign in to ITTC in ITTC Phone first</string>
+
+    <!-- what waited in Personal mode -->
+    <plurals name="ittc_mode_inbox_waiting" translatable="false">
+        <item quantity="one">%1$d ITTC notification came in Personal mode</item>
+        <item quantity="other">%1$d ITTC notifications came in Personal mode</item>
+    </plurals>
+    <string name="ittc_mode_inbox_waiting_text" translatable="false">Tap to open your ITTC notifications</string>
+</resources>

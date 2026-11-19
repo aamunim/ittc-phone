@@ -35,10 +35,13 @@ const val ITTC_TAB_LEADS = 1 shl 20
 val ittcTabOrder = listOf(TAB_CALL_HISTORY, ITTC_TAB_LEADS, TAB_CONTACTS, TAB_FAVORITES)
 
 /**
- * 🎓 ITTC 3.8: the kinds of the tabs shown, in their order on screen (Leads always). The one source
- * of every tab position: the pager's pages, the tab bar, the default tab, the last used tab.
+ * 🎓 ITTC 3.8: the kinds of the tabs shown, in their order on screen (Leads always — 🎓 3.12: but not
+ * in Personal mode, [personal]). The one source of every tab position: the pager's pages, the tab
+ * bar, the default tab, the last used tab. Never empty (Call History at least).
  */
-fun ittcVisibleTabs(showTabs: Int): List<Int> = ittcTabOrder.filter { it == ITTC_TAB_LEADS || showTabs and it != 0 }
+fun ittcVisibleTabs(showTabs: Int, personal: Boolean = false): List<Int> =
+    ittcTabOrder.filter { if (it == ITTC_TAB_LEADS) !personal else showTabs and it != 0 }
+        .ifEmpty { listOf(TAB_CALL_HISTORY) }
 
 private const val PATH = "org.fossify.phone.action."
 const val ACCEPT_CALL = PATH + "ACCEPT_CALL"

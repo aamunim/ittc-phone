@@ -20,7 +20,7 @@ import org.fossify.phone.helpers.ittcVisibleTabs
  */
 class ViewPagerAdapter(
     val activity: SimpleActivity,
-    private val kinds: List<Int> = ittcVisibleTabs(activity.config.showTabs),
+    private val kinds: List<Int> = ittcVisibleTabs(activity.config.showTabs, org.fossify.phone.helpers.IttcMode.isPersonal(activity)),
 ) : PagerAdapter() {
 
     override fun instantiateItem(container: ViewGroup, position: Int): Any {

@@ -217,6 +217,16 @@
             android:layout_marginTop="@dimen/ittc_space_s"
             android:layout_marginBottom="@dimen/ittc_space_s" />
 
+        <!-- 🎓 3.12: ITTC & Personal mode's settings (signed in only) -->
+        <TextView
+            android:id="@+id/ittc_panel_mode_settings"
+            style="@style/IttcPanelLink"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:drawableStart="@drawable/ittc_ic_mode_tile"
+            android:text="@string/ittc_mode_settings"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/ittc_panel_display"
             style="@style/IttcPanelLink"
