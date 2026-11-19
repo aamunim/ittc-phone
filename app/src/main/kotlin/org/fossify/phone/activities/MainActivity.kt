@@ -851,20 +851,31 @@ class MainActivity : SimpleActivity() {
 
     fun refreshFragments() {
         cacheContacts()
-        // 🎓 ITTC 3.13: Call History on screen: it loads first, the other tabs a moment later (on a
-        // 2 GB phone they all reading the phone's contacts at once made Call History wait for them);
-        // opening one of those tabs meanwhile loads it at once
+        // 🎓 ITTC 3.13: Call History on screen: it loads first, Contacts and Favorites once the contacts it
+        // needs are read (on a 2 GB phone all three reading the phone's contacts at once made Call
+        // History wait for them); opening one of those tabs meanwhile loads it at once
         val recentsShown = currentKind() == TAB_CALL_HISTORY
         if (!recentsShown) ittcRefreshOthers()
         getRecentsFragment()?.refreshItems()
+        // (the Leads tab reads no contacts: never kept waiting — its badge and the dial pad's leads)
+        getLeadsFragment()?.refreshItems()
         if (recentsShown) {
             ittcPendingOthers?.let { binding.mainTabsHolder.removeCallbacks(it) }
-            val later = Runnable {
-                ittcPendingOthers = null
-                if (!isFinishing && !isDestroyed) ittcRefreshOthers()
+            val later = object : Runnable {
+                override fun run() {
+                    if (ittcPendingOthers !== this) return
+                    ittcPendingOthers = null
+                    binding.mainTabsHolder.removeCallbacks(this)
+                    if (!isFinishing && !isDestroyed) ittcRefreshOthers()
+                }
             }
             ittcPendingOthers = later
-            binding.mainTabsHolder.postDelayed(later, 1200L)
+            // once the shared contacts read Call History waits for is done (+ a moment for its list),
+            // at the latest after 4 s
+            org.fossify.phone.helpers.IttcContactsCache.get(this) {
+                if (ittcPendingOthers === later) binding.mainTabsHolder.postDelayed(later, 500L)
+            }
+            binding.mainTabsHolder.postDelayed(later, 4000L)
         }
     }
 
@@ -874,7 +885,6 @@ class MainActivity : SimpleActivity() {
     private fun ittcRefreshOthers() {
         getContactsFragment()?.refreshItems()
         getFavoritesFragment()?.refreshItems()
-        getLeadsFragment()?.refreshItems()
     }
 
     /** 🎓 3.13: the other tabs' waiting refresh, now (another tab was opened) */
@@ -1235,7 +1245,7 @@ class MainActivity : SimpleActivity() {
             if (SMT_PRIVATE !in config.ignoredContactSources) {
                 val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
                 // (their content, not just how many: a renamed private contact fills again)
-                privateCount = privateContacts.hashCode()
+                privateCount = privateContacts.map { it.getHashWithoutPrivatePhoto() }.hashCode()
                 if (privateContacts.isNotEmpty()) {
                     contacts.addAll(privateContacts)
                     contacts.sort()
