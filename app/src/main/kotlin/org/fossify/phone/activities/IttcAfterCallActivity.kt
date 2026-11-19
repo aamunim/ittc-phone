@@ -91,7 +91,8 @@ class IttcAfterCallActivity : SimpleActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_SHOWN_KEY, shownKey)
-        handOver?.let { (lead, person, note) ->
+        // (a save in progress queues the hand over itself: not kept, so a recreated screen can't queue it again)
+        if (!saving) handOver?.let { (lead, person, note) ->
             outState.putString(STATE_HO_LEAD, lead)
             outState.putString(STATE_HO_TO, person.id)
             outState.putString(STATE_HO_NAME, person.name)
