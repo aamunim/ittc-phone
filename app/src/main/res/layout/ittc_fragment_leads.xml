@@ -194,11 +194,17 @@
                 android:src="@drawable/ic_chevron_up_vector" />
         </FrameLayout>
 
-        <!-- whose leads (super admin) + today / overdue / new / hot / all -->
-        <HorizontalScrollView
-            android:id="@+id/ittc_leads_chips_scroll"
+        <!-- whose leads (super admin) + today / overdue / new / hot / all; 3.9: ☰ list / ▦ board at the end -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+        <HorizontalScrollView
+            android:id="@+id/ittc_leads_chips_scroll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:fadingEdgeLength="24dp"
             android:overScrollMode="never"
             android:requiresFadingEdge="horizontal"
@@ -215,6 +221,34 @@
                 android:paddingEnd="@dimen/ittc_space_s"
                 android:paddingBottom="@dimen/ittc_space_xs" />
         </HorizontalScrollView>
+
+            <!-- 3.9: ☰ list / ▦ board (the chosen one white on the soft track; remembered) -->
+            <LinearLayout
+                android:id="@+id/ittc_leads_view_toggle"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/ittc_touch"
+                android:layout_marginTop="@dimen/ittc_space_s"
+                android:layout_marginEnd="@dimen/ittc_space_l"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/ittc_leads_view_list"
+                    android:layout_width="@dimen/ittc_touch"
+                    android:layout_height="@dimen/ittc_touch"
+                    android:contentDescription="@string/ittc_bd_view_list"
+                    android:padding="12dp"
+                    android:src="@drawable/ittc_ic_view_list" />
+
+                <ImageView
+                    android:id="@+id/ittc_leads_view_board"
+                    android:layout_width="@dimen/ittc_touch"
+                    android:layout_height="@dimen/ittc_touch"
+                    android:contentDescription="@string/ittc_bd_view_board"
+                    android:padding="12dp"
+                    android:src="@drawable/ittc_ic_view_board" />
+            </LinearLayout>
+        </LinearLayout>
 
         <!-- pipeline stages -->
         <HorizontalScrollView
@@ -345,5 +379,135 @@
         android:paddingBottom="@dimen/recyclerview_fab_padding"
         android:scrollbars="none"
         app:layoutManager="org.fossify.commons.views.MyLinearLayoutManager" />
+
+    <!-- 3.9: the pipeline board — the stages as chips (● New 42; a tap goes to its column), then a
+         column per stage side by side. While a card is dragged: the hint on top, "cancel" below. -->
+    <LinearLayout
+        android:id="@+id/ittc_leads_board"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/ittc_leads_header"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <HorizontalScrollView
+            android:id="@+id/ittc_leads_board_chips_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fadingEdgeLength="24dp"
+            android:overScrollMode="never"
+            android:requiresFadingEdge="horizontal"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/ittc_leads_board_chips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/ittc_space_l"
+                android:paddingTop="@dimen/ittc_space_s"
+                android:paddingEnd="@dimen/ittc_space_s"
+                android:paddingBottom="@dimen/ittc_space_xs" />
+        </HorizontalScrollView>
+
+        <FrameLayout
+            android:id="@+id/ittc_leads_board_frame"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/ittc_leads_board_list"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:paddingStart="@dimen/ittc_space_l"
+                android:paddingTop="@dimen/ittc_space_s"
+                android:paddingEnd="@dimen/ittc_space_xs"
+                android:paddingBottom="@dimen/ittc_space_l"
+                android:scrollbars="none" />
+
+            <!-- while dragging: what to do -->
+            <TextView
+                android:id="@+id/ittc_leads_board_hint"
+                android:accessibilityLiveRegion="polite"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top"
+                android:layout_marginStart="@dimen/ittc_space_l"
+                android:layout_marginTop="@dimen/ittc_space_xs"
+                android:layout_marginEnd="@dimen/ittc_space_l"
+                android:elevation="4dp"
+                android:gravity="center"
+                android:minHeight="40dp"
+                android:paddingStart="@dimen/ittc_space_m"
+                android:paddingEnd="@dimen/ittc_space_m"
+                android:text="@string/ittc_bd_drop_hint"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <!-- while dragging: dropped here, nothing changes -->
+            <TextView
+                android:id="@+id/ittc_leads_board_cancel"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:layout_gravity="bottom"
+                android:layout_marginStart="@dimen/ittc_space_l"
+                android:layout_marginEnd="@dimen/ittc_space_l"
+                android:layout_marginBottom="@dimen/ittc_space_m"
+                android:elevation="4dp"
+                android:gravity="center"
+                android:text="@string/ittc_bd_drop_cancel"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <!-- "Rahim moved to Interested   UNDO" (a few seconds) -->
+            <LinearLayout
+                android:id="@+id/ittc_leads_undo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top"
+                android:layout_marginStart="@dimen/ittc_space_l"
+                android:layout_marginTop="@dimen/ittc_space_xs"
+                android:layout_marginEnd="@dimen/ittc_space_l"
+                android:elevation="6dp"
+                android:gravity="center_vertical"
+                android:minHeight="48dp"
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/ittc_space_l"
+                android:paddingEnd="@dimen/ittc_space_xs"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/ittc_leads_undo_text"
+                    android:accessibilityLiveRegion="polite"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:paddingTop="@dimen/ittc_space_s"
+                    android:paddingBottom="@dimen/ittc_space_s"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/ittc_leads_undo_action"
+                    android:layout_width="wrap_content"
+                    android:layout_height="@dimen/ittc_touch"
+                    android:gravity="center"
+                    android:minWidth="64dp"
+                    android:paddingStart="@dimen/ittc_space_m"
+                    android:paddingEnd="@dimen/ittc_space_m"
+                    android:text="@string/ittc_bd_undo"
+                    android:textAllCaps="true"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </FrameLayout>
+    </LinearLayout>
 
 </org.fossify.phone.fragments.IttcLeadsFragment>

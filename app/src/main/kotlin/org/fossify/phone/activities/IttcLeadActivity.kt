@@ -53,7 +53,7 @@ import org.fossify.phone.direct.IttcNotify
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
-import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcStageMove
 import org.fossify.phone.helpers.IttcTheme
 import org.json.JSONArray
 import org.json.JSONObject
@@ -508,10 +508,7 @@ class IttcLeadActivity : SimpleActivity() {
     // ------------------------------------------------------------------
     // 🧭 The stage steps: first, previous, current, next, last (Admitted) — at most 5
     // ------------------------------------------------------------------
-    private fun isClosed(name: String): Boolean {
-        val s = name.lowercase()
-        return s.contains("not now") || s.contains("lost") || s.contains("cancel") || s.contains("drop")
-    }
+    private fun isClosed(name: String): Boolean = IttcStageMove.isClosed(name)
 
     private fun renderStepper(l: JSONObject) {
         val box = binding.ittcLeadStepper
@@ -1199,39 +1196,27 @@ class IttcLeadActivity : SimpleActivity() {
 
     /** Queue a change for this lead; [optimistic] shows it now (the lead is read again soon) */
     private fun queue(item: JSONObject, quiet: Boolean = false, optimistic: (JSONObject) -> Unit) {
-        IttcDisclosure.showOnce(this) {
-            item.put("lead_id", leadId)
-            val app = applicationContext
-            ensureBackgroundThread {
-                val ok = try {
-                    IttcDirect.enqueue(app, item)
-                    true
-                } catch (_: Throwable) {
-                    false
-                }
-                runOnUiThread {
-                    if (!alive()) return@runOnUiThread
-                    if (!ok) {
-                        toast(R.string.ittc_lp_no_app)
-                        return@runOnUiThread
-                    }
-                    queuedHere = true
-                    shownDetail = null
-                    lead?.let {
-                        try {
-                            optimistic(it)
-                        } catch (_: Throwable) {
-                        }
-                        render()
-                    }
-                    if (!quiet) toast(R.string.ittc_lp_saved)
-                    main.removeCallbacksAndMessages(null)
-                    // (once the queue has sent it; again a little later for a slow line)
-                    main.postDelayed({ if (alive()) load() }, 1_500)
-                    main.postDelayed({ if (alive()) load() }, 6_000)
-                }
+        // (3.9: the same queueing as the Leads board's stage moves)
+        IttcStageMove.queue(this, leadId, item) done@{ ok ->
+            if (!alive()) return@done
+            if (!ok) {
+                toast(R.string.ittc_lp_no_app)
+                return@done
             }
-            IttcDirect.refreshAsync(app, force = true, delayMs = 3_000)
+            queuedHere = true
+            shownDetail = null
+            lead?.let {
+                try {
+                    optimistic(it)
+                } catch (_: Throwable) {
+                }
+                render()
+            }
+            if (!quiet) toast(R.string.ittc_lp_saved)
+            main.removeCallbacksAndMessages(null)
+            // (once the queue has sent it; again a little later for a slow line)
+            main.postDelayed({ if (alive()) load() }, 1_500)
+            main.postDelayed({ if (alive()) load() }, 6_000)
         }
     }
 
@@ -1264,9 +1249,7 @@ class IttcLeadActivity : SimpleActivity() {
             // (the stage's own rules, as in the Tracker: a note, a date)
             val afterNote = { note: String? ->
                 val save = { due: Long? ->
-                    val item = JSONObject().put("kind", "stage").put("stage_id", st.id)
-                    note?.let { item.put("note", it) }
-                    due?.let { item.put("due_at", it) }
+                    val item = IttcStageMove.item(st.id, note, due)
                     queue(item) { lo ->
                         prepend(lo, "activity", activityEntry("stage_changed", JSONObject().put("from", currentId).put("to", st.id)))
                         lo.put("stage", st.name)
