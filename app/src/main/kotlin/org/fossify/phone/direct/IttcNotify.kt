@@ -302,7 +302,21 @@ object IttcNotify {
         // (made for quiet hours: it waits in the list, as the Tracker's push waits)
         val after = IttcBridge.parseTimeOf(r.optString("deliver_after").takeIf { !r.isNull("deliver_after") })
         if (after != null && after > System.currentTimeMillis() + 60_000) return
+        // (🎓 3.12: Personal mode — it waits in the inbox; a line on the way back to ITTC mode says how many)
+        if (org.fossify.phone.helpers.IttcMode.isPersonal(app)) {
+            org.fossify.phone.helpers.IttcModeAuto.holdInbox(app)
+            return
+        }
         post(app, id, r.optString("kind"), r.optString("title"), r.optString("body").takeIf { !r.isNull("body") })
+    }
+
+    /** 🎓 3.12: back in ITTC mode: [count] notifications came in Personal mode (one line, opens the inbox) */
+    internal fun postWaiting(app: Context, count: Int) {
+        post(
+            app, "ittc_mode_waiting", "",
+            app.resources.getQuantityString(org.fossify.phone.R.plurals.ittc_mode_inbox_waiting, count, count),
+            app.getString(org.fossify.phone.R.string.ittc_mode_inbox_waiting_text),
+        )
     }
 
     private fun post(app: Context, id: String, kind: String, title: String, body: String?) {

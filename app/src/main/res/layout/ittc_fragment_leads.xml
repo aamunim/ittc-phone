@@ -107,7 +107,8 @@
             <TextView
                 android:id="@+id/ittc_leads_board_cancel"
                 android:layout_width="match_parent"
-                android:layout_height="64dp"
+                android:layout_height="wrap_content"
+                android:minHeight="64dp"
                 android:layout_gravity="bottom"
                 android:layout_marginStart="@dimen/ittc_space_l"
                 android:layout_marginEnd="@dimen/ittc_space_l"
@@ -364,7 +365,8 @@
                 <TextView
                     android:id="@+id/ittc_leads_scope_pill"
                     android:layout_width="wrap_content"
-                    android:layout_height="40dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="40dp"
                     android:ellipsize="end"
                     android:gravity="center"
                     android:includeFontPadding="false"
@@ -376,7 +378,8 @@
                 <TextView
                     android:id="@+id/ittc_leads_stage_pill"
                     android:layout_width="wrap_content"
-                    android:layout_height="40dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="40dp"
                     android:layout_marginStart="@dimen/ittc_space_s"
                     android:ellipsize="end"
                     android:gravity="center"

@@ -38,6 +38,7 @@ import org.fossify.phone.extensions.launchCreateNewContactIntent
 import org.fossify.phone.extensions.setupWithContacts
 import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.IttcContactRows
+import org.fossify.phone.helpers.IttcMode
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcUi
 import org.fossify.phone.interfaces.RefreshItemsListener
@@ -422,6 +423,17 @@ class ContactsFragment(context: Context, attributeSet: AttributeSet) : MyViewPag
                 rows.leads = leads
                 (binding.fragmentList.adapter as? ContactsAdapter)?.apply { notifyItemRangeChanged(0, itemCount) }
             }
+        }
+    }
+
+    /** 🎓 ITTC 3.12: ITTC / Personal mode changed: the "Lead" pills go at once (Personal) or are looked up again (ITTC) */
+    fun ittcModeChanged() {
+        if (IttcMode.isPersonal(context)) {
+            if (rows.leads.isEmpty()) return
+            rows.leads = emptyMap()
+            (binding.fragmentList.adapter as? ContactsAdapter)?.apply { notifyItemRangeChanged(0, itemCount) }
+        } else {
+            refreshItems()
         }
     }
 

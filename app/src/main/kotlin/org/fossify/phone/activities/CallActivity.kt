@@ -75,6 +75,9 @@ class CallActivity : SimpleActivity() {
     private var ittcNoteDialog: androidx.appcompat.app.AlertDialog? = null
     private var ittcNoteInput: org.fossify.commons.views.MyEditText? = null
 
+    // 🎓 ITTC 3.12: never made again mid-call / mid-note for a new display size (it takes it next time)
+    override val recreateOnDisplaySizeChange = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
@@ -90,11 +93,28 @@ class CallActivity : SimpleActivity() {
         )
 
         updateTextColors(binding.callHolder)
+        ittcScaleCallText()
         initButtons()
         audioManager.mode = AudioManager.MODE_IN_CALL
         addLockScreenFlags()
         CallManager.addListener(callCallback)
         updateCallContactInfo(CallManager.getPrimaryCall())
+    }
+
+    // 🎓 ITTC 3.12: Settings → Display & text size → "Call screen" (90–140 %): the name and the number
+    // (on top of the text size; the name keeps its 2 lines and the number wraps, nothing is cut off)
+    private fun ittcScaleCallText() {
+        val scale = IttcDisplay.callScale(this)
+        if (scale == 1f) return
+        // (made bigger: never past 64 dp / 36 dp — or the size it had — so the buttons keep their room)
+        val dp = resources.displayMetrics.density
+        fun sized(px: Float, capDp: Int): Float = if (scale < 1f) px * scale else minOf(px * scale, maxOf(capDp * dp, px))
+        binding.callerNameLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, sized(binding.callerNameLabel.textSize, 64))
+        binding.callerNumber.apply {
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, sized(textSize, 36))
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -615,9 +635,33 @@ class CallActivity : SimpleActivity() {
             ittcLeadShown = false
             ittcNoteNumber = null
             val shown = callContact
-            IttcBridge.lookup(this@CallActivity, number) { lead ->
+            // 🎓 ITTC 3.12: a personal call (Personal mode, or the personal SIM; decided once per
+            // call): no lead card — with "hint" a small "ITTC lead" chip only; in doubt, nothing
+            val personal = try {
+                val primary = CallManager.getPrimaryCall()
+                // (the call already ended: decide without storing, so a later call isn't given this one's answer)
+                if (primary == null) {
+                    IttcMode.personalFor(this@CallActivity, null)
+                } else {
+                    val details = primary.details
+                    IttcMode.decideCall(this@CallActivity, details?.handle?.schemeSpecificPart ?: number, details?.accountHandle)
+                }
+            } catch (_: Throwable) {
+                true
+            }
+            // (the chip only for "hint": "log" saves the call quietly, with nothing on screen)
+            val hintOnly = personal && try {
+                IttcMode.leadCallInPersonal(this@CallActivity) == IttcMode.LEAD_HINT
+            } catch (_: Throwable) {
+                false
+            }
+            if (!personal || hintOnly) IttcBridge.lookup(this@CallActivity, number, anyMode = true) { lead ->
                 if (lead == null || shown != callContact || isFinishing || isDestroyed) return@lookup
                 try {
+                    if (hintOnly) {
+                        ittcShowLeadHint()
+                        return@lookup
+                    }
                     // (not in the phone's contacts: the number stays the title, the lead's name in the card)
                     val unsaved = name.isEmpty() || name == number
                     ittcShowLeadCard(lead, number, if (unsaved) lead.name.takeIf { it.isNotEmpty() } else null)
@@ -688,6 +732,26 @@ class CallActivity : SimpleActivity() {
             )
             ittcUpdateNoteButton()
             ittcLeadWriteNote.setOnClickListener { ittcWriteNote() }
+            // (🎓 3.12: hidden by a Personal mode hint earlier on this screen)
+            ittcLeadWriteNote.beVisible()
+            ittcLeadCard.alpha = 0f
+            ittcLeadCard.beVisible()
+            ittcLeadCard.animate().alpha(1f).setDuration(150L).start()
+        }
+    }
+
+    /** 🎓 ITTC 3.12: Personal mode — only a small "ITTC lead" chip (no name, stage, note or "Write a note") */
+    private fun ittcShowLeadHint() {
+        val p = IttcTheme.of(this)
+        binding.apply {
+            ittcLeadCard.background = null
+            IttcTheme.pill(ittcLeadBadge, p.callSoft, p.call)
+            ittcLeadBadge.text = getString(R.string.ittc_mode_hint_lead)
+            ittcLeadStage.beGone()
+            ittcLeadCourse.beGone()
+            ittcLeadInfo.beGone()
+            ittcLeadWriteNote.beGone()
+            ittcNoteNumber = null
             ittcLeadCard.alpha = 0f
             ittcLeadCard.beVisible()
             ittcLeadCard.animate().alpha(1f).setDuration(150L).start()

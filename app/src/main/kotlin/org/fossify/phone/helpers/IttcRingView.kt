@@ -27,8 +27,9 @@ class IttcRingView @JvmOverloads constructor(context: Context, attrs: AttributeS
         strokeWidth = stroke
         strokeCap = Paint.Cap.ROUND
     }
-    private val valueSize = 20f * density
-    private val subSize = 11f * density
+    // (sp: the text follows the text size; it still shrinks to fit inside the ring)
+    private val valueSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 20f, context.resources.displayMetrics)
+    private val subSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 11f, context.resources.displayMetrics)
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD

@@ -173,11 +173,14 @@ object IttcBridge {
     private fun clean(number: String?): String? =
         number?.filter { it.isDigit() || it == '+' }?.takeIf { it.count(Char::isDigit) >= 6 }
 
-    /** The lead with this number (off the main thread; the answer on the main thread, null if none) */
-    fun lookup(context: Context, number: String?, done: (Lead?) -> Unit) {
+    /**
+     * The lead with this number (off the main thread; the answer on the main thread, null if none).
+     * 🎓 3.12: none in Personal mode, unless [anyMode] (the call screen decides itself: [IttcMode.personalFor])
+     */
+    fun lookup(context: Context, number: String?, anyMode: Boolean = false, done: (Lead?) -> Unit) {
         val app = context.applicationContext
         val n = clean(number)
-        if (n == null) {
+        if (n == null || (!anyMode && IttcMode.isPersonal(app))) {
             done(null)
             return
         }
@@ -259,6 +262,8 @@ object IttcBridge {
      * known yet are asked together a moment later; [onNew] runs on the main thread when they are in.
      */
     fun recentLead(context: Context, number: String?, onNew: () -> Unit): Lead? {
+        // (🎓 3.12: Personal mode — a plain phone: no lead on any row)
+        if (IttcMode.isPersonal(context)) return null
         val n = clean(number) ?: return null
         val k = known[n]
         if (k != null && System.currentTimeMillis() - k.at < RECENTS_TTL_MS) return k.lead
@@ -316,6 +321,8 @@ object IttcBridge {
      */
     fun leadsFor(context: Context, numbers: Collection<String>): Map<String, Lead> {
         val app = context.applicationContext
+        // (🎓 3.12: Personal mode — no lead pills in Contacts / the number's page, no "Leads" filter)
+        if (IttcMode.isPersonal(app)) return emptyMap()
         val now = System.currentTimeMillis()
         trimKnown(now)
         val byClean = numbers.mapNotNull { n -> clean(n)?.let { it to n } }
@@ -548,7 +555,12 @@ object IttcBridge {
             }
         } catch (_: Throwable) {
             null
-        }?.also { metaCache = it; IttcTabBadges.leadsChanged() }
+        }?.also {
+            metaCache = it
+            IttcTabBadges.leadsChanged()
+            // (🎓 3.12: the admin's ITTC / Personal mode settings come with the Tracker's list too)
+            if (IttcDirect.isSignedIn(app)) IttcMode.adminSettingsChanged(app, it.settings)
+        }
     }
 
     fun parseMeta(json: String): PhoneMeta? {
@@ -792,10 +804,25 @@ object IttcBridge {
         } catch (_: Throwable) {
             true
         }
-        val canShow = lastCall && screensOpen > 0 && !locked
+        // 🎓 3.12: a personal call (Personal mode, or the personal SIM with "Office SIM is ITTC"):
+        // never an after-call screen; nothing sent — but a lead's call when the admin (or the person)
+        // chose "log": saved to the lead quietly. In doubt: as the mode is.
+        val personal = try {
+            // (as decided when the call started; a switch meanwhile changes nothing for it)
+            IttcMode.takeCallDecision(app, details.handle?.schemeSpecificPart, details.accountHandle)
+        } catch (_: Throwable) {
+            IttcMode.personalNow()
+        }
+        val logQuietly = personal && try {
+            IttcMode.leadCallInPersonal(app) == IttcMode.LEAD_LOG
+        } catch (_: Throwable) {
+            false
+        }
+        val canShow = !personal && lastCall && screensOpen > 0 && !locked
         rowIds.remove(number)
         shownFor = null
         forgetRecents()
+        if (personal && !logQuietly) return
         ended.execute {
             try {
                 if (IttcDirect.isActive(app)) {
@@ -826,8 +853,9 @@ object IttcBridge {
                     putString("number", number)
                     if (reason != null) putString("end_reason", reason)
                     // (the after-call screen has "Add a note": the Tracker sends no notification too.
-                    // Only if it really opened by now; else the Tracker's notification is the way in)
-                    if (show && shownFor == number) putString("shows_note", "1")
+                    // Only if it really opened by now; else the Tracker's notification is the way in.
+                    // 🎓 3.12: a lead's call in Personal mode saved quietly: no notification either)
+                    if ((show && shownFor == number) || logQuietly) putString("shows_note", "1")
                 }
                 withTracker(app) { it.call("call_ended", id, extras) }
             } catch (_: Throwable) {

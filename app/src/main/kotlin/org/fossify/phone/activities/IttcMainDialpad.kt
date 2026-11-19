@@ -61,6 +61,7 @@ import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
 import org.fossify.phone.helpers.IttcDialSearch
 import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcDisplay
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.ToneGeneratorHelper
@@ -125,14 +126,22 @@ class IttcMainDialpad(
         if (android.os.Build.VERSION.SDK_INT >= 35) heightDp -= 72
         // top bar 56 + tab bar 67 + matches 120 + the pad: number row and paddings 92 + 5 rows of keys
         // (the ≡ / call row is a key tall too)
-        val size = ((heightDp - 56 - 67 - 120 - 92) / 5).coerceAtMost(KEY_MAX_DP)
+        // 🎓 ITTC 3.12: Settings → Display & text size → "Dial pad keys" (90–130 %) sets the largest
+        // key; three keys and their room beside them always fit the width
+        val maxDp = (KEY_MAX_DP * IttcDisplay.dialpadScale(activity)).roundToInt()
+        val widthDp = activity.resources.configuration.screenWidthDp
+        val byWidth = if (widthDp > 0) (widthDp - 6 * KEY_SIDE_DP - 16) / 3 else maxDp
+        val size = ((heightDp - 56 - 67 - 120 - 92) / 5).coerceAtMost(maxDp).coerceAtMost(byWidth)
         keyDp = size.takeIf { it >= KEY_MIN_DP }
-        val px = IttcTheme.dp(activity, (keyDp ?: KEY_MAX_DP).toFloat())
-        // (smaller keys, smaller digits: nothing clipped at large font sizes)
-        val scale = (keyDp ?: KEY_MAX_DP).toFloat() / KEY_MAX_DP
+        val keySize = keyDp ?: maxDp.coerceAtMost(KEY_MAX_DP)
+        val px = IttcTheme.dp(activity, keySize.toFloat())
+        // (the digits follow the key, not the text size alone — the app's text size counts only up
+        // to 125 % so a big text size never clips them; smaller keys, smaller digits)
+        val fontScale = activity.resources.configuration.fontScale.coerceIn(0.85f, 1.25f)
+        val digitPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, KEY_DIGIT_DP, activity.resources.displayMetrics) *
+            keySize / KEY_MAX_DP * fontScale
         keys.forEach { (v, _) ->
-            val base = (v.getTag(R.id.ittc_dp_base_size) as? Float) ?: v.textSize.also { v.setTag(R.id.ittc_dp_base_size, it) }
-            v.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, base * scale)
+            if (v.textSize != digitPx) v.setTextSize(TypedValue.COMPLEX_UNIT_PX, digitPx)
         }
         (keys.map { it.first } + listOf(pad.ittcDpMenu, pad.ittcDpCall, pad.ittcDpHide)).forEach { v ->
             val lp = v.layoutParams ?: return@forEach
@@ -754,6 +763,8 @@ class IttcMainDialpad(
         private const val OPEN_MS = 160L
         private const val KEY_MAX_DP = 60
         private const val KEY_MIN_DP = 44
+        private const val KEY_SIDE_DP = 18
+        private const val KEY_DIGIT_DP = 26f
         private const val KEY_GAP_DP = 4
         private const val STATE_NUMBER = "ittc_dp_number"
         private const val STATE_OPEN = "ittc_dp_open"

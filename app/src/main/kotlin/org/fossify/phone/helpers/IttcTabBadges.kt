@@ -42,7 +42,8 @@ object IttcTabBadges {
      */
     fun leadsChanged() {
         val n = try {
-            countDue(IttcBridge.myLeadsCache, IttcBridge.metaCache)
+            // (🎓 3.12: Personal mode — no leads due shown)
+            if (IttcMode.personalNow()) 0 else countDue(IttcBridge.myLeadsCache, IttcBridge.metaCache)
         } catch (_: Throwable) {
             0
         }

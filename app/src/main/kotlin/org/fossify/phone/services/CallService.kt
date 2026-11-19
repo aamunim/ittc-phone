@@ -43,6 +43,11 @@ class CallService : InCallService() {
         CallManager.onCallAdded(call)
         CallManager.inCallService = this
         call.registerCallback(callListener)
+        // 🎓 ITTC 3.12: personal or ITTC, decided once as the call starts (never in the way of the call)
+        try {
+            org.fossify.phone.helpers.IttcMode.decideCall(this, call.details?.handle?.schemeSpecificPart, call.details?.accountHandle)
+        } catch (_: Throwable) {
+        }
 
         // Incoming/Outgoing (locked): high priority (FSI)
         // Incoming (unlocked): if user opted in, low priority ➜ manual activity start, otherwise high priority (FSI)

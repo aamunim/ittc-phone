@@ -1,6 +1,7 @@
 package org.fossify.commons.activities
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.addCallback
@@ -16,6 +17,7 @@ import org.fossify.commons.extensions.isBiometricAuthSupported
 import org.fossify.commons.extensions.onGlobalLayout
 import org.fossify.commons.extensions.overrideActivityTransition
 import org.fossify.commons.extensions.viewBinding
+import org.fossify.commons.helpers.AppTextScale
 import org.fossify.commons.helpers.PROTECTION_FINGERPRINT
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.interfaces.HashListener
@@ -23,6 +25,11 @@ import org.fossify.commons.interfaces.HashListener
 class AppLockActivity : EdgeToEdgeActivity(), HashListener {
 
     private val binding by viewBinding(ActivityAppLockBinding::inflate)
+
+    // 🎓 ITTC 3.12: the app's own text size here too
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppTextScale.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         overrideActivityTransition()

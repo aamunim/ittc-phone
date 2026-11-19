@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC Phone 3.12: display sizes (Settings → Display & text size), the main screen's side panel
+     and the header's mode button -->
+<resources>
+    <string name="ittc_ds_title" translatable="false">Display &amp; text size</string>
+    <string name="ittc_ds_summary" translatable="false">Text %1$d%% · %2$s rows</string>
+    <string name="ittc_ds_preview" translatable="false">PREVIEW</string>
+    <string name="ittc_ds_text_size" translatable="false">TEXT SIZE</string>
+    <string name="ittc_ds_percent" translatable="false">%1$d%%</string>
+    <string name="ittc_ds_small" translatable="false">Small</string>
+    <string name="ittc_ds_normal" translatable="false">Normal</string>
+    <string name="ittc_ds_large" translatable="false">Large</string>
+    <string name="ittc_ds_extra" translatable="false">Extra</string>
+    <string name="ittc_ds_note" translatable="false">Works on top of the phone\'s own font size</string>
+    <string name="ittc_ds_more" translatable="false">More sizes</string>
+    <string name="ittc_ds_rows" translatable="false">Rows &amp; buttons</string>
+    <string name="ittc_ds_rows_compact" translatable="false">Compact</string>
+    <string name="ittc_ds_rows_comfortable" translatable="false">Comfortable</string>
+    <string name="ittc_ds_rows_large" translatable="false">Large</string>
+    <string name="ittc_ds_dialpad" translatable="false">Dial pad keys</string>
+    <string name="ittc_ds_call" translatable="false">Call screen (name and number)</string>
+    <string name="ittc_ds_reset" translatable="false">Reset to normal</string>
+    <string name="ittc_ds_smaller" translatable="false">Smaller text</string>
+    <string name="ittc_ds_bigger" translatable="false">Bigger text</string>
+    <string name="ittc_ds_sample_name" translatable="false">Rahim Hasan</string>
+    <string name="ittc_ds_sample_line" translatable="false">CSE · Interested</string>
+    <string name="ittc_ds_sample_due" translatable="false">Next call today, 10:30 AM</string>
+    <string name="ittc_ds_sample_number" translatable="false">+880 1712 345678</string>
+    <string name="ittc_ds_sample_save" translatable="false">Save</string>
+    <string name="ittc_ds_sample_next" translatable="false">Next call</string>
+    <string name="ittc_ds_sample_key" translatable="false">5</string>
+
+    <!-- the side panel -->
+    <string name="ittc_sp_open" translatable="false">Open the menu</string>
+    <string name="ittc_sp_signed_in" translatable="false">Signed in to ITTC</string>
+    <string name="ittc_sp_signed_out" translatable="false">Not signed in to ITTC</string>
+    <string name="ittc_sp_guest" translatable="false">ITTC Phone</string>
+    <string name="ittc_sp_mode" translatable="false">MODE</string>
+    <string name="ittc_sp_mode_ittc" translatable="false">💼 ITTC</string>
+    <string name="ittc_sp_mode_personal" translatable="false">🏠 Personal</string>
+    <string name="ittc_sp_text_size" translatable="false">Aa  Text size</string>
+    <string name="ittc_sp_dark" translatable="false">Dark theme</string>
+    <string name="ittc_sp_open_dialpad" translatable="false">Open with the dial pad</string>
+    <string name="ittc_sp_settings" translatable="false">Settings</string>
+    <string name="ittc_sp_about" translatable="false">About</string>
+    <string name="ittc_sp_display" translatable="false">Display &amp; text size</string>
+
+    <!-- the header's mode button -->
+    <string name="ittc_mode_ittc_toast" translatable="false">ITTC mode</string>
+    <string name="ittc_mode_personal_toast" translatable="false">Personal mode</string>
+    <string name="ittc_mode_button_ittc" translatable="false">ITTC mode. Tap for Personal mode</string>
+    <string name="ittc_mode_button_personal" translatable="false">Personal mode. Tap for ITTC mode</string>
+    <string name="ittc_mode_icon_ittc" translatable="false">💼</string>
+    <string name="ittc_mode_icon_personal" translatable="false">🏠</string>
+</resources>

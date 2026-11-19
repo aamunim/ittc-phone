@@ -58,6 +58,9 @@ class IttcAfterCallActivity : SimpleActivity() {
     /** whether the note is empty (the stage hint changes only when this flips) */
     private var noteBlank = true
 
+    // 🎓 ITTC 3.12: never made again mid-call / mid-note for a new display size (it takes it next time)
+    override val recreateOnDisplaySizeChange = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         p = IttcTheme.of(this)

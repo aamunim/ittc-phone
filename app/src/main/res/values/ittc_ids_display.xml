@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- (🎓 ITTC 3.12: a text's own size before the side panel's live text size) -->
+    <item name="ittc_live_text_base" type="id" />
+    <!-- (the main screen's side panel and the drawer that holds it: its open state is kept) -->
+    <item name="ittc_drawer" type="id" />
+    <item name="ittc_a_menu_mode" type="id" />
+</resources>

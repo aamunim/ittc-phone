@@ -36,6 +36,7 @@ import androidx.recyclerview.widget.SnapHelper
 import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getColoredDrawableWithColor
+import org.fossify.phone.helpers.IttcDisplay
 import org.fossify.phone.R
 import org.fossify.phone.activities.IttcCUi
 import org.fossify.phone.activities.IttcLeadSheet
@@ -583,7 +584,8 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
 
     private inner class CardsAdapter : ListAdapter<IttcBridge.PhoneLead, CardHolder>(Diff) {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-            CardHolder(IttcItemBoardCardBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+            // (🎓 3.12: Settings → Display & text size → "Rows & buttons")
+            CardHolder(IttcItemBoardCardBinding.inflate(LayoutInflater.from(parent.context), parent, false).also { IttcDisplay.scaleRow(it.root) })
 
         override fun onBindViewHolder(holder: CardHolder, position: Int) = holder.bind(getItem(position))
     }

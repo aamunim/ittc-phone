@@ -39,6 +39,7 @@ import org.fossify.commons.extensions.getColoredDrawableWithColor
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.views.MyRecyclerView
+import org.fossify.phone.helpers.IttcDisplay
 import org.fossify.phone.R
 import org.fossify.phone.activities.IttcAddLeadActivity
 import org.fossify.phone.activities.IttcAdmitActivity
@@ -1848,7 +1849,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         private val nextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = p.primary }
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = p.onPrimary
-            textSize = IttcTheme.dp(context, 13f).toFloat()
+            // (sp: follows the text size)
+            textSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics)
             typeface = Typeface.DEFAULT_BOLD
         }
         private val callIcon: Drawable = resources.getColoredDrawableWithColor(R.drawable.ic_phone_vector, p.onPrimary)
@@ -2014,7 +2016,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-            Holder(IttcItemLeadBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+            // (🎓 3.12: Settings → Display & text size → "Rows & buttons")
+            Holder(IttcItemLeadBinding.inflate(LayoutInflater.from(parent.context), parent, false).also { IttcDisplay.scaleRow(it.root) })
 
         override fun getItemCount() = items.size
 

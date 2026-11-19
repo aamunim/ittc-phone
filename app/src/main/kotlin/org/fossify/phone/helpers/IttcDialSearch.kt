@@ -81,7 +81,8 @@ class IttcDialSearch {
          */
         fun leads(text: String, max: Int = 3): List<IttcBridge.PhoneLead> {
             val digits = text.filter { it.isDigit() }
-            if (digits.length < 2) return emptyList()
+            // (🎓 3.12: Personal mode — no lead matches on the dial pads)
+            if (digits.length < 2 || IttcMode.personalNow()) return emptyList()
             val leads = IttcBridge.myLeadsCache
             if (leads.isEmpty()) return emptyList()
             return leads.asSequence().filter { l ->

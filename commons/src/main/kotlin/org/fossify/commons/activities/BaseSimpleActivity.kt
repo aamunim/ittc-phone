@@ -107,6 +107,7 @@ import org.fossify.commons.helpers.CONFLICT_SKIP
 import org.fossify.commons.helpers.CREATE_DOCUMENT_SDK_30
 import org.fossify.commons.helpers.EXTERNAL_STORAGE_PROVIDER_AUTHORITY
 import org.fossify.commons.helpers.MEDIUM_ALPHA
+import org.fossify.commons.helpers.AppTextScale
 import org.fossify.commons.helpers.MyContextWrapper
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.OPEN_DOCUMENT_TREE_FOR_ANDROID_DATA_OR_OBB
@@ -183,7 +184,18 @@ abstract class BaseSimpleActivity : EdgeToEdgeActivity() {
         backCallback.isEnabled = true
     }
 
+    // 🎓 ITTC 3.12: the display sizes this screen was made with (a change while it was away: made again)
+    private var displaySizeVersion = -1
+
+    /** 🎓 ITTC 3.12: true once onResume asked for the screen to be made again (the rest of onResume can stop) */
+    var isRecreatingForDisplaySize = false
+        private set
+
+    /** 🎓 ITTC 3.12: false for a screen that must never be made again under the person (a call): it takes new sizes when it opens next */
+    protected open val recreateOnDisplaySizeChange: Boolean = true
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        displaySizeVersion = AppTextScale.version(this)
         if (useDynamicTheme) {
             setTheme(getThemeId(showTransparentTop = true))
         }
@@ -215,6 +227,11 @@ abstract class BaseSimpleActivity : EdgeToEdgeActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (recreateOnDisplaySizeChange && !isRecreatingForDisplaySize && displaySizeVersion != AppTextScale.version(this)) {
+            isRecreatingForDisplaySize = true
+            recreate()
+            return
+        }
         if (useDynamicTheme) {
             setTheme(getThemeId(showTransparentTop = true))
             updateBackgroundColor(getProperBackgroundColor())
@@ -248,10 +265,12 @@ abstract class BaseSimpleActivity : EdgeToEdgeActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
-        if (newBase.baseConfig.useEnglish && !isTiramisuPlus()) {
-            super.attachBaseContext(MyContextWrapper(newBase).wrap(newBase, "en"))
+        // 🎓 ITTC 3.12: the app's own text size on top of the phone's font size
+        val base = AppTextScale.wrap(newBase)
+        if (base.baseConfig.useEnglish && !isTiramisuPlus()) {
+            super.attachBaseContext(MyContextWrapper(base).wrap(base, "en"))
         } else {
-            super.attachBaseContext(newBase)
+            super.attachBaseContext(base)
         }
     }
 

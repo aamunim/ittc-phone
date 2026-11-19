@@ -173,7 +173,8 @@
                 <org.fossify.commons.views.MyTextView
                     android:id="@+id/ittc_number_call"
                     android:layout_width="0dp"
-                    android:layout_height="64dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="64dp"
                     android:layout_marginStart="@dimen/ittc_space_xs"
                     android:layout_marginEnd="@dimen/ittc_space_xs"
                     android:layout_weight="1"
@@ -193,7 +194,8 @@
                 <org.fossify.commons.views.MyTextView
                     android:id="@+id/ittc_number_sms"
                     android:layout_width="0dp"
-                    android:layout_height="64dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="64dp"
                     android:layout_marginStart="@dimen/ittc_space_xs"
                     android:layout_marginEnd="@dimen/ittc_space_xs"
                     android:layout_weight="1"
@@ -213,7 +215,8 @@
                 <org.fossify.commons.views.MyTextView
                     android:id="@+id/ittc_number_whatsapp"
                     android:layout_width="0dp"
-                    android:layout_height="64dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="64dp"
                     android:layout_marginStart="@dimen/ittc_space_xs"
                     android:layout_marginEnd="@dimen/ittc_space_xs"
                     android:layout_weight="1"
@@ -233,7 +236,8 @@
                 <org.fossify.commons.views.MyTextView
                     android:id="@+id/ittc_number_contact"
                     android:layout_width="0dp"
-                    android:layout_height="64dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="64dp"
                     android:layout_marginStart="@dimen/ittc_space_xs"
                     android:layout_marginEnd="@dimen/ittc_space_xs"
                     android:layout_weight="1"
@@ -253,7 +257,8 @@
                 <org.fossify.commons.views.MyTextView
                     android:id="@+id/ittc_number_block"
                     android:layout_width="0dp"
-                    android:layout_height="64dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="64dp"
                     android:layout_marginStart="@dimen/ittc_space_xs"
                     android:layout_marginEnd="@dimen/ittc_space_xs"
                     android:layout_weight="1"
