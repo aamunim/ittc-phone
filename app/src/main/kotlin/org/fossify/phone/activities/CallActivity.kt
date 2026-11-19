@@ -75,6 +75,9 @@ class CallActivity : SimpleActivity() {
     private var ittcNoteDialog: androidx.appcompat.app.AlertDialog? = null
     private var ittcNoteInput: org.fossify.commons.views.MyEditText? = null
 
+    // 🎓 ITTC 3.12: never made again mid-call / mid-note for a new display size (it takes it next time)
+    override val recreateOnDisplaySizeChange = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
@@ -90,11 +93,28 @@ class CallActivity : SimpleActivity() {
         )
 
         updateTextColors(binding.callHolder)
+        ittcScaleCallText()
         initButtons()
         audioManager.mode = AudioManager.MODE_IN_CALL
         addLockScreenFlags()
         CallManager.addListener(callCallback)
         updateCallContactInfo(CallManager.getPrimaryCall())
+    }
+
+    // 🎓 ITTC 3.12: Settings → Display & text size → "Call screen" (90–140 %): the name and the number
+    // (on top of the text size; the name keeps its 2 lines and the number wraps, nothing is cut off)
+    private fun ittcScaleCallText() {
+        val scale = IttcDisplay.callScale(this)
+        if (scale == 1f) return
+        // (made bigger: never past 64 dp / 36 dp — or the size it had — so the buttons keep their room)
+        val dp = resources.displayMetrics.density
+        fun sized(px: Float, capDp: Int): Float = if (scale < 1f) px * scale else minOf(px * scale, maxOf(capDp * dp, px))
+        binding.callerNameLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, sized(binding.callerNameLabel.textSize, 64))
+        binding.callerNumber.apply {
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, sized(textSize, 36))
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

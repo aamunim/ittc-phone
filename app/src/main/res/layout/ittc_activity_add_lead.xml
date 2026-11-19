@@ -166,7 +166,8 @@
             <TextView
                 android:id="@+id/ittc_add_save"
                 android:layout_width="match_parent"
-                android:layout_height="54dp"
+                android:layout_height="wrap_content"
+                android:minHeight="54dp"
                 android:layout_marginTop="@dimen/ittc_space_l"
                 android:gravity="center"
                 android:text="@string/ittc_al_save"

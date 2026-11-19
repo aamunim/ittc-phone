@@ -136,6 +136,14 @@
             android:screenOrientation="portrait"
             android:showOnLockScreen="true" />
 
+        <!-- 🎓 ITTC 3.12: Settings → Display & text size -->
+        <activity
+            android:name=".activities.IttcDisplayActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/ittc_ds_title"
+            android:parentActivityName=".activities.SettingsActivity" />
+
         <!-- 🎓 ITTC: after a lead call (own task: the call screen's task is removed when it ends) -->
         <activity
             android:name=".activities.IttcAboutActivity"

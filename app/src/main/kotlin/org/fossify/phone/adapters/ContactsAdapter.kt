@@ -28,6 +28,7 @@ import org.fossify.commons.interfaces.ItemTouchHelperContract
 import org.fossify.commons.interfaces.StartReorderDragListener
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.commons.views.MyRecyclerView
+import org.fossify.phone.helpers.IttcDisplay
 import org.fossify.phone.R
 import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.databinding.IttcItemContactBinding
@@ -144,7 +145,11 @@ class ContactsAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = Binding.getByItemViewType(viewType).inflate(layoutInflater, parent, false)
-        if (binding is ItemIttcContactBindingAdapter) ittcRows?.onCreateRow(binding.binding)
+        if (binding is ItemIttcContactBindingAdapter) {
+            // (🎓 3.12: Settings → Display & text size → "Rows & buttons"; before the row's own shapes)
+            IttcDisplay.scaleRow(binding.root)
+            ittcRows?.onCreateRow(binding.binding)
+        }
         return createViewHolder(binding.root)
     }
 

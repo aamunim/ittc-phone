@@ -52,6 +52,7 @@ import org.fossify.phone.fragments.IttcLeadsFragment
 import org.fossify.phone.fragments.MyViewPagerFragment
 import org.fossify.phone.fragments.RecentsFragment
 import org.fossify.phone.helpers.ITTC_TAB_LEADS
+import org.fossify.phone.helpers.IttcMode
 import org.fossify.phone.helpers.IttcTabBadges
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcUi
@@ -84,6 +85,12 @@ class MainActivity : SimpleActivity() {
     @Volatile
     private var ittcDialContacts: List<Contact> = emptyList()
     private var ittcUserTouched = false
+
+    // 🎓 ITTC 3.12: the side panel (☰) and the top bar's 💼 / 🏠 mode button (signed in only)
+    private lateinit var ittcPanel: IttcSidePanel
+    private var ittcModeItem: MenuItem? = null
+    private var ittcModeButton: TextView? = null
+    private val ittcModeListener: () -> Unit = { if (!isFinishing && !isDestroyed) showIttcMode() }
     private var ittcLastTab = -1
     private var ittcMovingPager = false
     private var ittcStoredOpenWithDialpad = true
@@ -111,12 +118,24 @@ class MainActivity : SimpleActivity() {
         super.onCreate(savedInstanceState)
         // 🎓 ITTC: each launch opens the Leads tab on All / All / All (a rotation keeps the choices)
         if (savedInstanceState == null) IttcLeadsFragment.resetSession()
-        setContentView(binding.root)
+        // 🎓 ITTC 3.12: the screen inside the side panel's drawer (☰ / a swipe from the left edge)
+        ittcPanel = IttcSidePanel(
+            activity = this,
+            content = binding.root,
+            onOpenWithDialpadChanged = {
+                ittcStoredOpenWithDialpad = config.ittcOpenWithDialpad
+                ittcDialpad.settingChanged()
+            },
+            onSettings = { launchSettings() },
+            onAbout = { launchAbout() },
+        )
+        setContentView(ittcPanel.drawer)
         appLaunched(BuildConfig.APPLICATION_ID)
         // 🎓 ITTC: the reason the app stopped last time, once (to report it)
         if (savedInstanceState == null) org.fossify.phone.helpers.IttcCrash.showIfAny(this)
         setupOptionsMenu()
         setupIttcTopBar()
+        ittcPanel.addMenuButton(binding.mainMenu)
         refreshMenuItems()
         setupEdgeToEdge(padBottomImeAndSystem = listOf(binding.mainTabsHolder))
         binding.ittcUpdateBanner.setOnClickListener { IttcAccountActivity.openPlay(this) }
@@ -165,6 +184,7 @@ class MainActivity : SimpleActivity() {
 
         setupTabs()
         IttcTabBadges.addListener(ittcBadgesListener)
+        IttcMode.addListener(ittcModeListener)
         Contact.sorting = config.sorting
         setupIttcDialpad(savedInstanceState)
         storedFontSize = config.fontSize
@@ -172,6 +192,8 @@ class MainActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 🎓 ITTC 3.12: a display size changed while away: the screen is being made again
+        if (isRecreatingForDisplaySize) return
         if (storedShowTabs != config.showTabs) {
             // (the last tab is kept by kind: still right with other tabs shown, or the first one)
             System.exit(0)
@@ -179,6 +201,7 @@ class MainActivity : SimpleActivity() {
         }
 
         updateMenuColors()
+        ittcPanel.applyColors()
         // 🎓 ITTC 3.6: the dial pad's colours (the theme may have changed) and its setting
         ittcDialpad.applyColors()
         if (ittcStoredOpenWithDialpad != config.ittcOpenWithDialpad) {
@@ -287,6 +310,11 @@ class MainActivity : SimpleActivity() {
     }
 
     override fun onBackPressedCompat(): Boolean {
+        // 🎓 ITTC 3.12: Back closes the side panel first
+        if (ittcPanel.isOpen) {
+            ittcPanel.close()
+            return true
+        }
         return if (binding.mainMenu.isSearchOpen) {
             binding.mainMenu.closeSearch()
             true
@@ -323,6 +351,8 @@ class MainActivity : SimpleActivity() {
     override fun onDestroy() {
         super.onDestroy()
         IttcTabBadges.removeListener(ittcBadgesListener)
+        IttcMode.removeListener(ittcModeListener)
+        if (::ittcPanel.isInitialized) ittcPanel.destroy()
         EventBus.getDefault().unregister(this)
     }
 
@@ -388,6 +418,8 @@ class MainActivity : SimpleActivity() {
 
     private fun setupOptionsMenu() {
         binding.mainMenu.apply {
+            // 🎓 ITTC 3.12: the mode button first (before the other icons)
+            setupIttcModeButton()
             requireToolbar().inflateMenu(R.menu.menu)
             toggleHideOnScroll(false)
             setupMenu()
@@ -840,6 +872,7 @@ class MainActivity : SimpleActivity() {
                     if (!isFinishing && !isDestroyed) {
                         binding.ittcUpdateBanner.beGone()
                         showIttcTopBar(false, 0)
+                        ittcPanel.showAccount(false, null, null)
                     }
                 }
                 return@ensureBackgroundThread
@@ -850,9 +883,21 @@ class MainActivity : SimpleActivity() {
             } catch (_: Throwable) {
                 0
             }
+            // 🎓 ITTC 3.12: who is signed in, for the side panel's header
+            val meName = try {
+                IttcDirect.me(app)?.optString("name")?.takeIf { it.isNotBlank() && it != "null" }
+            } catch (_: Throwable) {
+                null
+            }
+            val meEmail = try {
+                IttcDirect.email(app)
+            } catch (_: Throwable) {
+                null
+            }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 showIttcTopBar(true, unread)
+                ittcPanel.showAccount(true, meName, meEmail)
                 if (ittcResumed && !ittcNotifyStarted) {
                     ittcNotifyStarted = true
                     try {
@@ -946,8 +991,64 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+    // 🎓 ITTC 3.12: 💼 / 🏠 in the top bar's corner (signed in only): a tap switches ITTC / Personal
+    // mode, a long press opens the mode's settings (when the app has that screen)
+    private fun setupIttcModeButton() {
+        val size = resources.getDimensionPixelSize(R.dimen.ittc_touch)
+        val button = TextView(this).apply {
+            layoutParams = android.view.ViewGroup.LayoutParams(size, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            minimumHeight = size
+            gravity = Gravity.CENTER
+            // (dp: an icon in a fixed box, whatever the text size)
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 20f)
+            includeFontPadding = false
+            isClickable = true
+            isFocusable = true
+            setBackgroundResource(org.fossify.commons.R.drawable.ripple_all_corners)
+            setOnClickListener { toggleIttcMode() }
+            setOnLongClickListener {
+                openIttcModeSettings()
+                true
+            }
+        }
+        ittcModeButton = button
+        ittcModeItem = binding.mainMenu.requireToolbar().menu.add(Menu.NONE, R.id.ittc_a_menu_mode, Menu.NONE, R.string.ittc_sp_mode).apply {
+            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            actionView = button
+            isVisible = false
+        }
+        showIttcMode()
+    }
+
+    private fun showIttcMode() {
+        val button = ittcModeButton ?: return
+        val personal = IttcMode.isPersonal(this)
+        button.text = getString(if (personal) R.string.ittc_mode_icon_personal else R.string.ittc_mode_icon_ittc)
+        button.contentDescription = getString(if (personal) R.string.ittc_mode_button_personal else R.string.ittc_mode_button_ittc)
+    }
+
+    private fun toggleIttcMode() {
+        if (!IttcMode.canSwitch(this)) return
+        val personal = !IttcMode.isPersonal(this)
+        IttcMode.setPersonal(this, personal)
+        showIttcMode()
+        toast(if (personal) R.string.ittc_mode_personal_toast else R.string.ittc_mode_ittc_toast)
+    }
+
+    /** The mode's settings screen (made in a later version: nothing happens until the app has it) */
+    private fun openIttcModeSettings() {
+        val intent = Intent().setClassName(this, "org.fossify.phone.activities.IttcModeActivity")
+        if (intent.resolveActivity(packageManager) == null) return
+        try {
+            startActivity(intent)
+        } catch (_: Throwable) {
+        }
+    }
+
     private fun showIttcTopBar(signedIn: Boolean, unread: Int) {
         ittcSignedInTop = signedIn
+        ittcModeItem?.isVisible = signedIn
+        if (signedIn) showIttcMode()
         ittcSearchItem?.isVisible = signedIn
         ittcSearchForTab(currentKind())
         ittcBellItem?.isVisible = signedIn

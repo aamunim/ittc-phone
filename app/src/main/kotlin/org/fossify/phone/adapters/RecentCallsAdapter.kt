@@ -54,6 +54,7 @@ import org.fossify.commons.helpers.isNougatPlus
 import org.fossify.commons.models.RecyclerSelectionPayload
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.commons.views.MyRecyclerView
+import org.fossify.phone.helpers.IttcDisplay
 import org.fossify.phone.R
 import org.fossify.phone.activities.MainActivity
 import org.fossify.phone.activities.SimpleActivity
@@ -212,8 +213,9 @@ class RecentCallsAdapter(
                 ItemRecentsDateBinding.inflate(layoutInflater, parent, false)
             )
 
+            // (🎓 3.12: Settings → Display & text size → "Rows & buttons"; before the row's own shapes)
             VIEW_TYPE_CALL -> RecentCallViewHolder(
-                ItemRecentCallBinding.inflate(layoutInflater, parent, false)
+                ItemRecentCallBinding.inflate(layoutInflater, parent, false).also { IttcDisplay.scaleRow(it.root) }
             )
 
             else -> throw IllegalArgumentException("Unknown view type: $viewType")
