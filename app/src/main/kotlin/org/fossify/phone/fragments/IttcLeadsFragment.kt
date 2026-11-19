@@ -1,10 +1,15 @@
 package org.fossify.phone.fragments
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.app.Activity
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -13,21 +18,21 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextUtils
 import android.text.format.DateUtils
 import android.text.style.ForegroundColorSpan
-import android.transition.AutoTransition
-import android.transition.TransitionManager
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.doOnLayout
+import androidx.core.widget.NestedScrollView
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import org.fossify.commons.extensions.adjustAlpha
@@ -39,6 +44,7 @@ import org.fossify.commons.views.MyRecyclerView
 import org.fossify.phone.R
 import org.fossify.phone.activities.IttcAddLeadActivity
 import org.fossify.phone.activities.IttcAdmitActivity
+import org.fossify.phone.activities.IttcCUi
 import org.fossify.phone.activities.IttcLeadActivity
 import org.fossify.phone.activities.IttcLeadSheet
 import org.fossify.phone.activities.IttcStageMoveSheet
@@ -54,6 +60,7 @@ import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcDialer
 import org.fossify.phone.helpers.IttcDisclosure
+import org.fossify.phone.helpers.IttcRingView
 import org.fossify.phone.helpers.IttcStageMove
 import org.fossify.phone.helpers.IttcTabBadges
 import org.fossify.phone.helpers.IttcTheme
@@ -68,7 +75,7 @@ import java.util.concurrent.Executors
  * 🎓 ITTC: the "Leads" tab — open leads from the Admission Tracker: the signed-in user's own
  * (≤ 500); a super admin sees everyone's (≤ 2000) and picks whose in one chip: All / My /
  * Team Leads / Callers (all of them, or one person).
- * Chips: due today / overdue / never called / hot / all, and a row of pipeline stages.
+ * Filters: due today / overdue / never called / hot / all, and a pipeline stage.
  * Live: the Tracker announces each new list (a ContentObserver) and it shows at once.
  * 📞 calls at once; a tap on the row offers WhatsApp, SMS, the other number and the lead in the
  * Tracker. The toolbar search filters by name or number.
@@ -79,6 +86,9 @@ import java.util.concurrent.Executors
  * 3.9: ☰ list / ▦ board beside the filter chips — the board ([IttcLeadsBoard]) shows the same leads
  * as a column per stage; in direct mode a card dragged to another stage (or "Move to…" in its long
  * press sheet) moves the lead the lead page's way ([IttcStageMove]), with Undo.
+ * 3.10: a compact top — the Today card is one row of four numbers (Overdue / Today also filter the
+ * list; Target opens the day in full), the two chip rows are one filter bar (whose · when, the stage,
+ * ✕) with a filter sheet, and the top folds away while the list scrolls down.
  */
 class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     MyViewPagerFragment<IttcLeadsFragment.LeadsInnerBinding>(context, attributeSet) {
@@ -95,7 +105,9 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     private lateinit var binding: IttcFragmentLeadsBinding
     private var all: List<IttcBridge.PhoneLead> = emptyList()
-    private var filter = Filter.TODAY
+    /** the filter the tab opens with (and ✕ / "Clear all" go back to) */
+    private val defaultFilter = Filter.TODAY
+    private var filter = defaultFilter
     private var query = ""
     private var loadedOnce = false
     private var lastAsk = 0L
@@ -125,7 +137,6 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     @Volatile private var liveHeld = false
     /** 🎨 the 3.3 palette (follows the app's light / dark theme) */
     private var palette: IttcTheme.Palette? = null
-    private var heroColor = 0
     private var actionsPalette: IttcTheme.Palette? = null
 
     private fun pal(): IttcTheme.Palette = palette ?: IttcTheme.of(context).also { palette = it }
@@ -134,13 +145,14 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         /** start / release in order, never two at once (the refcount stays right) */
         private val liveExec = Executors.newSingleThreadExecutor()
         @Volatile private var remindersAt = 0L
-        private const val KEY_TODAY_COLLAPSED = "leads_today_collapsed"
+        /** (3.8's folded Today card, gone in 3.10: the remembered choice is removed) */
+        private const val KEY_TODAY_COLLAPSED_OLD = "leads_today_collapsed"
         private const val KEY_BOARD = "leads_board"
         private const val UNDO_MS = 5_000L
         /** a board move is shown over the server's list until the server has it (or this long after it left the phone) */
         private const val PENDING_SHOWN_MS = 60_000L
         private const val PENDING_MAX_MS = 10 * 60_000L
-        private const val TODAY_FOLD_MS = 180L
+        private const val TOP_FOLD_MS = 150L
     }
 
     override fun onFinishInflate() {
@@ -168,16 +180,29 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             context.toast(R.string.ittc_l2_calling_stopped)
             render()
         }
-        binding.ittcLeadsTeam.setOnClickListener { IttcTeamActivity.open(context) }
-        // 📊 the Today card folds to one line (remembered)
-        todayCollapsed = prefs.getBoolean(KEY_TODAY_COLLAPSED, false)
-        binding.ittcLeadsTodayToggle.setOnClickListener { toggleToday() }
-        binding.ittcLeadsTodayLine.setOnClickListener { toggleToday() }
-        applyTodayCollapsed(animate = false)
+        // 📊 3.10: the stats row — Overdue / Today set the list's filter, Done today / Target: the day's details
+        // (the 3.8 folding Today card is gone, and its remembered fold with it)
+        if (prefs.contains(KEY_TODAY_COLLAPSED_OLD)) prefs.edit().remove(KEY_TODAY_COLLAPSED_OLD).apply()
+        binding.ittcLeadsCellOverdue.setOnClickListener { tapFilterCell(Filter.OVERDUE) }
+        binding.ittcLeadsCellToday.setOnClickListener { tapFilterCell(Filter.TODAY) }
+        binding.ittcLeadsCellDone.setOnClickListener { showTodaySheet() }
+        binding.ittcLeadsCellTarget.setOnClickListener { showTodaySheet() }
+        // 🔎 one filter bar: whose · when / the stage open the filter sheet, ✕ back to the defaults
+        binding.ittcLeadsScopePill.setOnClickListener { showFilterSheet(focusStage = false) }
+        binding.ittcLeadsStagePill.setOnClickListener { showFilterSheet(focusStage = true) }
+        binding.ittcLeadsClear.setOnClickListener { clearFilters() }
+        binding.ittcLeadsFilters.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
+            if (right - left != oldRight - oldLeft) post { applyPillWidths() }
+        }
         // 🎨 the system's pressed ripple over the custom pill buttons; the list fills the page
-        listOf(binding.ittcLeadsAdd, binding.ittcLeadsCallAll, binding.ittcLeadsStop, binding.ittcLeadsTeam).forEach { IttcUi.ripple(it) }
+        listOf(
+            binding.ittcLeadsAdd, binding.ittcLeadsCallAll, binding.ittcLeadsStop,
+            binding.ittcLeadsCellOverdue, binding.ittcLeadsCellToday, binding.ittcLeadsCellDone, binding.ittcLeadsCellTarget,
+            binding.ittcLeadsScopePill, binding.ittcLeadsStagePill, binding.ittcLeadsClear,
+        ).forEach { IttcUi.ripple(it) }
         binding.ittcLeadsList.setHasFixedSize(true)
         setupSwipes()
+        setupTopFold()
         // ▦ 3.9: the board (remembered)
         boardOn = prefs.getBoolean(KEY_BOARD, false)
         binding.ittcLeadsViewList.setOnClickListener { setBoard(false) }
@@ -213,6 +238,9 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     override fun onConfigurationChanged(newConfig: Configuration?) {
         super.onConfigurationChanged(newConfig)
         boardOrNull?.configurationChanged()
+        // (the filter bar's pills: their room at the new width)
+        barSignature = null
+        render()
     }
 
     // (the app went to the background / came back: live updates only while it is on screen)
@@ -267,11 +295,10 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         // (the app's theme may have changed: the palette again)
         val p = IttcTheme.of(context)
         palette = p
-        heroColor = 0
         actionsPalette = null
         swipePainter = null
-        chipsSignature = null
-        stagesSignature = null
+        statsSignature = null
+        barSignature = null
         adapter.colorsChanged()
         boardOrNull?.colorsChanged()
         toggleStyled = null
@@ -282,6 +309,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     }
 
     fun refreshItems() {
+        // (the tab shown again / refreshed: its top is never left folded away)
+        if (::binding.isInitialized) showTop(animate = false)
         // (ask the Tracker for a fresh list now and then; it answers when it runs)
         ask(force = false)
         load()
@@ -411,131 +440,190 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private fun renderToday() {
         if (!::binding.isInitialized) return
         try {
-            renderTodayNow()
+            renderStatsNow()
         } catch (e: Throwable) {
-            IttcCrash.record(context, e, "Leads tab: today card")
-            binding.ittcLeadsToday.beVisibleIf(false)
+            IttcCrash.record(context, e, "Leads tab: today row")
+            binding.ittcLeadsStats.beVisibleIf(false)
         }
     }
 
-    private fun renderTodayNow() {
-        val b = binding
+    /** Today's numbers as the Today card had them (null: none to show — no row, as no card before) */
+    private class TodayNumbers(
+        val calls: Int,
+        val connected: Int,
+        val talkSec: Int,
+        val target: Int,
+        val team: Boolean,
+        /** stage changes · new leads (direct mode) */
+        val extra: String?,
+        val offline: Boolean,
+    )
+
+    private fun todayNumbers(): TodayNumbers? {
         val t = today
         val ph = phoneToday
-        val calls: Int
-        val connected: Int
-        val talkSec: Int
-        var extra: String? = null
         var target = meta?.dailyTarget ?: 0
-        var team = false
-        if (t != null) {
-            val me = t.optJSONObject("me") ?: JSONObject()
-            calls = me.optInt("calls")
-            connected = me.optInt("connected")
-            talkSec = me.optInt("talk_sec")
-            extra = context.getString(R.string.ittc_a_today_extra, me.optInt("stage_changes"), me.optInt("new_leads"))
-            t.optInt("target", 0).takeIf { it > 0 }?.let { target = it }
-            team = t.optJSONArray("team") != null
-        } else if (ph != null) {
-            calls = ph[0]
-            connected = ph[1]
-            talkSec = ph[2]
-        } else {
-            b.ittcLeadsToday.beVisibleIf(false)
+        return when {
+            t != null -> {
+                val me = t.optJSONObject("me") ?: JSONObject()
+                t.optInt("target", 0).takeIf { it > 0 }?.let { target = it }
+                TodayNumbers(
+                    calls = me.optInt("calls"),
+                    connected = me.optInt("connected"),
+                    talkSec = me.optInt("talk_sec"),
+                    target = target,
+                    team = t.optJSONArray("team") != null,
+                    extra = context.getString(R.string.ittc_a_today_extra, me.optInt("stage_changes"), me.optInt("new_leads")),
+                    offline = todayOffline,
+                )
+            }
+            ph != null -> TodayNumbers(ph[0], ph[1], ph[2], target, team = false, extra = null, offline = false)
+            else -> null
+        }
+    }
+
+    /** Overdue / Today as last counted for the stats row (the leads in the list's whose + stage, as the old chips) */
+    private var overdueN = 0
+    private var todayN = 0
+    /** (the row as last drawn: the same → not styled again) */
+    private var statsSignature: List<Any?>? = null
+
+    /**
+     * 📊 3.10: one row of four — Overdue N (red while there are any) · Today N · Done today N (calls
+     * made) · Target calls/target ›. Overdue / Today are the list's filter (the chosen one outlined).
+     */
+    private fun renderStatsNow() {
+        val b = binding
+        val n = todayNumbers()
+        if (n == null) {
+            b.ittcLeadsStats.beVisibleIf(false)
             return
         }
-        if (target > 0 && calls >= target) {
-            extra = listOfNotNull(context.getString(R.string.ittc_a_target_done), extra).joinToString(" · ")
-        }
-
-        // 🎨 light: the blue card with white text; dark: a deep blue card with the light text
         val p = pal()
-        val heroBg = if (p.dark) p.primarySoft else p.primary
-        val strong = if (p.dark) p.text else p.onPrimary
-        val soft = if (p.dark) p.muted else p.onPrimaryMuted
-        if (heroColor != heroBg) {
-            heroColor = heroBg
-            b.ittcLeadsToday.background = IttcTheme.rounded(context, heroBg, 20f)
-            b.ittcLeadsRing.setColors(if (p.dark) p.outline else p.onPrimary.adjustAlpha(0.22f), p.ring, strong, soft)
-            listOf(b.ittcLeadsTodayTitle, b.ittcLeadsStatCalls, b.ittcLeadsStatConnected, b.ittcLeadsStatTalk).forEach { it.setTextColor(strong) }
-            listOf(b.ittcLeadsStatCallsLabel, b.ittcLeadsStatConnectedLabel, b.ittcLeadsStatTalkLabel, b.ittcLeadsTodayStats).forEach { it.setTextColor(soft) }
-            b.ittcLeadsTodayLine.setTextColor(strong)
-            b.ittcLeadsTodayToggle.setColorFilter(strong)
-            b.ittcLeadsTeam.background = IttcTheme.rounded(context, if (p.dark) p.surfaceAlt else p.onPrimary.adjustAlpha(0.16f), 999f)
-            b.ittcLeadsTeam.setTextColor(strong)
-        }
+        val sig = listOf(p, filter, overdueN, todayN, n.calls, n.connected, n.target, n.offline)
+        if (sig != statsSignature) {
+            statsSignature = sig
+            b.ittcLeadsStats.background = IttcTheme.rounded(context, p.surface, 16f)
+            val overdue = overdueN > 0
+            styleCell(b.ittcLeadsCellOverdue, filter == Filter.OVERDUE, if (overdue) p.dangerSoft else Color.TRANSPARENT)
+            b.ittcLeadsCellOverdueN.text = overdueN.toString()
+            b.ittcLeadsCellOverdueN.setTextColor(if (overdue) p.danger else p.text)
+            b.ittcLeadsCellOverdueLabel.setTextColor(if (overdue) p.danger else p.muted)
+            b.ittcLeadsCellOverdue.contentDescription = context.getString(R.string.ittc_cp_overdue_desc, overdueN)
 
-        b.ittcLeadsRing.set(
-            calls,
-            target,
-            calls.toString(),
-            if (target > 0) context.getString(R.string.ittc_a_of_target, target) else context.getString(R.string.ittc_a_calls),
-        )
-        b.ittcLeadsRing.contentDescription = if (target > 0) {
-            context.getString(R.string.ittc_a_ring_target, calls, target)
-        } else {
-            context.getString(R.string.ittc_a_ring_calls, calls)
-        }
-        val todayTitle = context.getString(R.string.ittc_a_today) +
-            if (t != null && todayOffline) " · " + context.getString(R.string.ittc_a_offline) else ""
-        b.ittcLeadsTodayTitle.text = todayTitle
-        // (folded: the same day in one line)
-        val talk = IttcToday.duration(talkSec)
-        b.ittcLeadsTodayLine.text = if (target > 0) {
-            context.getString(R.string.ittc_l3_today_line_target, todayTitle, calls, target, connected, talk)
-        } else {
-            context.getString(R.string.ittc_l3_today_line, todayTitle, calls, connected, talk)
-        }
-        b.ittcLeadsStatCalls.text = calls.toString()
-        b.ittcLeadsStatConnected.text = connected.toString()
-        b.ittcLeadsStatTalk.text = IttcToday.duration(talkSec)
-        b.ittcLeadsTodayStats.text = extra
-        b.ittcLeadsTodayStats.beVisibleIf(!extra.isNullOrEmpty())
-        b.ittcLeadsTeam.beVisibleIf(team)
-        IttcUi.fadeIn(b.ittcLeadsToday)
-    }
+            styleCell(b.ittcLeadsCellToday, filter == Filter.TODAY, Color.TRANSPARENT)
+            b.ittcLeadsCellTodayN.text = todayN.toString()
+            b.ittcLeadsCellTodayN.setTextColor(p.text)
+            b.ittcLeadsCellTodayLabel.setTextColor(p.muted)
+            b.ittcLeadsCellToday.contentDescription = context.getString(R.string.ittc_cp_today_desc, todayN)
 
-    /** 📊 The Today card folded to one line (the person's choice, kept) */
-    private var todayCollapsed = false
+            styleCell(b.ittcLeadsCellDone, false, Color.TRANSPARENT)
+            b.ittcLeadsCellDoneN.text = n.calls.toString()
+            b.ittcLeadsCellDoneN.setTextColor(p.call)
+            b.ittcLeadsCellDoneLabel.setTextColor(p.muted)
+            b.ittcLeadsCellDone.contentDescription = context.getString(R.string.ittc_cp_done_desc, n.calls)
 
-    private fun toggleToday() {
-        todayCollapsed = !todayCollapsed
-        prefs.edit().putBoolean(KEY_TODAY_COLLAPSED, todayCollapsed).apply()
-        // (the card and what is under it move smoothly; the list's rows are left alone)
-        if (binding.ittcLeadsToday.visibility == VISIBLE && isAttachedToWindow) {
-            try {
-                TransitionManager.beginDelayedTransition(
-                    this,
-                    AutoTransition().setDuration(TODAY_FOLD_MS).excludeChildren(binding.ittcLeadsList, true)
-                        .excludeChildren(binding.ittcLeadsBoard, true),
-                )
-            } catch (_: Throwable) {
+            // (no target set: today's connected calls in its place)
+            styleCell(b.ittcLeadsCellTarget, false, Color.TRANSPARENT)
+            val hasTarget = n.target > 0
+            b.ittcLeadsCellTargetN.text = if (hasTarget) context.getString(R.string.ittc_cp_of, n.calls, n.target) else n.connected.toString()
+            b.ittcLeadsCellTargetN.setTextColor(if (hasTarget && n.calls >= n.target) p.call else p.text)
+            b.ittcLeadsCellTargetLabel.setText(if (hasTarget) R.string.ittc_cp_target else R.string.ittc_cp_connected)
+            b.ittcLeadsCellTargetLabel.setTextColor(p.muted)
+            val chevron = resources.getColoredDrawableWithColor(R.drawable.ic_chevron_right_vector, p.muted)
+            val size = IttcTheme.dp(context, 12f)
+            chevron.setBounds(0, 0, size, size)
+            b.ittcLeadsCellTargetLabel.setCompoundDrawablesRelative(null, null, chevron, null)
+            b.ittcLeadsCellOffline.setTextColor(p.muted)
+            b.ittcLeadsCellOffline.beVisibleIf(n.offline)
+            val targetDesc = if (hasTarget) {
+                context.getString(R.string.ittc_cp_target_desc, n.calls, n.target)
+            } else {
+                context.getString(R.string.ittc_cp_connected_desc, n.connected)
             }
+            b.ittcLeadsCellTarget.contentDescription = if (n.offline) targetDesc + " · " + context.getString(R.string.ittc_a_offline) else targetDesc
         }
-        applyTodayCollapsed(animate = true)
+        IttcUi.fadeIn(b.ittcLeadsStats)
     }
 
-    /** Folded: the one line (+ ⌄); open: the ring and the numbers (+ ⌃ in the corner). Never shows the card itself */
-    private fun applyTodayCollapsed(animate: Boolean) {
-        val b = binding
-        val folded = todayCollapsed
-        b.ittcLeadsTodayFull.visibility = if (folded) GONE else VISIBLE
-        b.ittcLeadsTodayLine.visibility = if (folded) VISIBLE else GONE
-        val side = IttcTheme.dp(context, 18f)
-        val vertical = IttcTheme.dp(context, if (folded) 8f else 18f)
-        b.ittcLeadsToday.setPadding(side, vertical, side, vertical)
-        val toggle = b.ittcLeadsTodayToggle
-        (toggle.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
-            lp.gravity = if (folded) Gravity.CENTER_VERTICAL or Gravity.END else Gravity.TOP or Gravity.END
-            lp.topMargin = if (folded) 0 else -IttcTheme.dp(context, 10f)
-            lp.marginEnd = -IttcTheme.dp(context, 10f)
-            toggle.layoutParams = lp
+    /** A stats cell: chosen — the soft accent with a 2 dp accent border; else [fill] (red-tinted overdue / none) */
+    private fun styleCell(v: View, on: Boolean, fill: Int) {
+        val p = pal()
+        v.background = if (on) IttcTheme.rounded(context, p.primarySoft, 12f, p.primary, 2f) else IttcTheme.rounded(context, fill, 12f)
+        v.isSelected = on
+    }
+
+    /** Overdue / Today tapped: that filter; tapped again when chosen: back to the tab's default */
+    private fun tapFilterCell(f: Filter) {
+        filter = if (filter == f) defaultFilter else f
+        render()
+    }
+
+    /** 📊 Today in full (what the Today card showed): the ring, calls · connected · talk time, the day's extras, Team */
+    private fun showTodaySheet() {
+        val act = activity ?: return
+        val n = todayNumbers() ?: return
+        try {
+            val c: Context = act
+            val p = pal()
+            val sheet = IttcCUi.sheet(act)
+            val body = sheet.body
+            val head = IttcCUi.row(c)
+            val title = context.getString(R.string.ittc_a_today) + if (n.offline) " · " + context.getString(R.string.ittc_a_offline) else ""
+            head.addView(IttcCUi.text(c, title, 18f, p.text, bold = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            if (n.team) {
+                head.addView(
+                    IttcCUi.button(c, context.getString(R.string.ittc_a_team), IttcCUi.Style.OUTLINE) {
+                        sheet.dialog.dismiss()
+                        IttcTeamActivity.open(context)
+                    },
+                )
+            }
+            body.addView(head)
+
+            val row = IttcCUi.row(c)
+            val ring = IttcRingView(c)
+            ring.setColors(p.outline, p.call, p.text, p.muted)
+            ring.set(
+                n.calls,
+                n.target,
+                n.calls.toString(),
+                if (n.target > 0) context.getString(R.string.ittc_a_of_target, n.target) else context.getString(R.string.ittc_a_calls),
+            )
+            ring.contentDescription = if (n.target > 0) {
+                context.getString(R.string.ittc_a_ring_target, n.calls, n.target)
+            } else {
+                context.getString(R.string.ittc_a_ring_calls, n.calls)
+            }
+            val ringSize = IttcTheme.dp(context, 88f)
+            row.addView(ring, LinearLayout.LayoutParams(ringSize, ringSize))
+            val numbers = IttcCUi.row(c)
+            listOf(
+                n.calls.toString() to R.string.ittc_a_calls,
+                n.connected.toString() to R.string.ittc_a_connected,
+                IttcToday.duration(n.talkSec) to R.string.ittc_a_talk_time,
+            ).forEach { (value, label) ->
+                val col = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }
+                col.addView(IttcCUi.text(c, value, 18f, p.text, bold = true).apply { maxLines = 1 })
+                col.addView(IttcCUi.text(c, context.getString(label), 11f, p.muted).apply { maxLines = 1 })
+                numbers.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            row.addView(
+                numbers,
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = IttcTheme.dp(context, 18f) },
+            )
+            body.addView(row, IttcCUi.topMargin(c, 14))
+
+            // (stage changes · new leads / target reached)
+            var extra = n.extra
+            if (n.target > 0 && n.calls >= n.target) {
+                extra = listOfNotNull(context.getString(R.string.ittc_a_target_done), extra).joinToString(" · ")
+            }
+            if (!extra.isNullOrEmpty()) body.addView(IttcCUi.text(c, extra, 12f, p.muted), IttcCUi.topMargin(c, 12))
+            IttcCUi.showSafely(act, sheet.dialog)
+        } catch (e: Throwable) {
+            IttcCrash.record(context, e, "Leads tab: today sheet")
         }
-        // (⌃ open → turned half way round: ⌄ folded)
-        val turn = if (folded) 180f else 0f
-        toggle.animate().cancel()
-        if (animate) toggle.animate().rotation(turn).setDuration(TODAY_FOLD_MS).start() else toggle.rotation = turn
-        toggle.contentDescription = context.getString(if (folded) R.string.ittc_l3_today_show else R.string.ittc_l3_today_hide)
     }
 
     // ------------------------------------------------------------- ▶ power dialer
@@ -629,24 +717,24 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     // ------------------------------------------------------------- scope
     private val isSuper get() = meta?.isSuper == true
 
-    private fun inScope(l: IttcBridge.PhoneLead): Boolean {
+    private fun inScope(l: IttcBridge.PhoneLead, sc: Scope = scope, who: String? = person): Boolean {
         if (!isSuper) return true // (the Tracker only hands over the user's own leads)
         val m = meta ?: return true
-        return when (scope) {
+        return when (sc) {
             Scope.ALL -> true
             Scope.MY -> l.assignedTo == m.meId
             Scope.TEAM_LEADS, Scope.CALLERS -> {
-                val p = person
-                if (p != null) {
-                    l.assignedTo == p
+                if (who != null) {
+                    l.assignedTo == who
                 } else {
-                    val role = if (scope == Scope.TEAM_LEADS) "team_lead" else "caller"
+                    val role = if (sc == Scope.TEAM_LEADS) "team_lead" else "caller"
                     l.assignedTo != null && m.people.any { it.id == l.assignedTo && it.role == role }
                 }
             }
         }
     }
 
+    /** "👤 My" / "👥 All" / "🧑‍💼 Team Leads" / "📞 Rahim" … (a super admin's whose) */
     private fun scopeLabel(): String {
         val m = meta
         val name = person?.let { id -> m?.people?.firstOrNull { it.id == id }?.name }
@@ -655,42 +743,44 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             Scope.ALL -> context.getString(R.string.ittc_scope_all)
             Scope.TEAM_LEADS -> name?.let { "🧑‍💼 $it" } ?: context.getString(R.string.ittc_scope_team_leads)
             Scope.CALLERS -> name?.let { "📞 $it" } ?: context.getString(R.string.ittc_scope_callers)
-        } + " ▾"
+        }
     }
 
-    /** One chip, one choice: All / My / Team Leads ▸ / Callers ▸ */
-    private fun pickScope(anchor: android.view.View) {
-        val m = meta ?: return
-        val menu = android.widget.PopupMenu(context, anchor)
-        val actions = HashMap<Int, () -> Unit>()
-        var id = 1
-        fun add(target: android.view.Menu, title: String, action: () -> Unit) {
-            val itemId = id++
-            target.add(0, itemId, itemId, title)
-            actions[itemId] = action
+    /** The "when to call" filters in the filter sheet's order */
+    private val whenFilters = listOf(Filter.OVERDUE, Filter.TODAY, Filter.NEW, Filter.HOT, Filter.ALL)
+
+    private fun filterName(f: Filter): String = context.getString(
+        when (f) {
+            Filter.OVERDUE -> R.string.ittc_cp_f_overdue
+            Filter.TODAY -> R.string.ittc_cp_f_today
+            Filter.NEW -> R.string.ittc_cp_f_new
+            Filter.HOT -> R.string.ittc_cp_f_hot
+            Filter.ALL -> R.string.ittc_cp_f_all
+        },
+    )
+
+    /** The toolbar search as a test (name, or ≥ 3 digits of a number); everything when there is none */
+    private fun searchTest(): (IttcBridge.PhoneLead) -> Boolean {
+        if (query.isEmpty()) return { _ -> true }
+        val q = query.lowercase(Locale.getDefault())
+        val digits = query.filter { it.isDigit() }
+        return { l ->
+            l.name.lowercase(Locale.getDefault()).contains(q) ||
+                (digits.length >= 3 && listOfNotNull(l.phone, l.altPhone, l.whatsapp).any { it.filter(Char::isDigit).contains(digits) })
         }
-        add(menu.menu, context.getString(R.string.ittc_scope_all)) { setScope(Scope.ALL, null) }
-        add(menu.menu, context.getString(R.string.ittc_scope_my)) { setScope(Scope.MY, null) }
-        listOf(
-            Triple(Scope.TEAM_LEADS, "team_lead", R.string.ittc_scope_team_leads to R.string.ittc_scope_all_team_leads),
-            Triple(Scope.CALLERS, "caller", R.string.ittc_scope_callers to R.string.ittc_scope_all_callers),
-        ).forEach { (sc, role, labels) ->
-            val sub = menu.menu.addSubMenu(0, id++, id, context.getString(labels.first))
-            add(sub, context.getString(labels.second)) { setScope(sc, null) }
-            m.people.filter { it.role == role }.forEach { p -> add(sub, p.name) { setScope(sc, p.id) } }
-        }
-        menu.setOnMenuItemClickListener { item ->
-            actions[item.itemId]?.invoke()
-            actions.containsKey(item.itemId)
-        }
-        menu.show()
     }
 
-    private fun setScope(sc: Scope, p: String?) {
-        scope = sc
-        person = p
-        saveChoice()
-        render()
+    /** The board was shown at the last render (no stage choice there) */
+    private var lastBoardMode = false
+
+    /** How many leads these choices would show (the list's own rules; the filter sheet's live counts) */
+    private fun countFor(sc: Scope, who: String?, st: String?, f: Filter): Int {
+        val today = startOfToday()
+        val found = searchTest()
+        val board = lastBoardMode
+        return all.count { l ->
+            inScope(l, sc, who) && (board || st == null || l.stageId == st) && (query.isNotEmpty() || matches(f, l, today)) && found(l)
+        }
     }
 
     /** Draw the tab; an error is kept (to report) and shown instead of stopping the app */
@@ -707,29 +797,28 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         }
     }
 
+    /** (the choices the top was last opened for: another one → the top shows again) */
+    private var topKey: List<Any?>? = null
+
     private fun renderNow() {
         val today = startOfToday()
         val scoped = all.filter { inScope(it) }
         // (a stage that is gone: all stages)
         val stages = meta?.stages.orEmpty()
         if (meta != null && stageId != null && stages.none { it.id == stageId }) stageId = null
-        // ▦ 3.9: the board has a column per stage (the stage chips row and the stage choice are the list's)
+        // ▦ 3.9: the board has a column per stage (the stage choice is the list's)
         val boardMode = boardOn && stages.isNotEmpty()
+        lastBoardMode = boardMode
         renderViewToggle(stages.isNotEmpty(), boardMode)
         val staged = if (boardMode) scoped else scoped.filter { stageId == null || it.stageId == stageId }
-        renderChips(today, staged)
-        if (boardMode) {
-            binding.ittcLeadsStagesScroll.beVisibleIf(false)
-        } else {
-            renderStages(scoped.filter { query.isNotEmpty() || matches(filter, it, today) }, stages)
-        }
+        // (the stats row's Overdue / Today: counted as the 3.9 filter chips were)
+        overdueN = staged.count { matches(Filter.OVERDUE, it, today) }
+        todayN = staged.count { matches(Filter.TODAY, it, today) }
+        renderFilterBar(boardMode, stages)
         renderStatus()
-        val q = query.lowercase(Locale.getDefault())
-        val digits = query.filter { it.isDigit() }
+        val found = searchTest()
         val shown = staged.filter { l ->
-            (query.isNotEmpty() || matches(filter, l, today)) &&
-                (q.isEmpty() || l.name.lowercase(Locale.getDefault()).contains(q) ||
-                    (digits.length >= 3 && listOfNotNull(l.phone, l.altPhone, l.whatsapp).any { it.filter(Char::isDigit).contains(digits) }))
+            (query.isNotEmpty() || matches(filter, l, today)) && found(l)
         }.sortedWith(compareBy<IttcBridge.PhoneLead> { it.nextCall == null }.thenBy { it.nextCall ?: Long.MAX_VALUE })
         if (boardMode) board.submit(shown, stages, today, boardLook()) else adapter.submit(shown)
         shownLeads = shown
@@ -766,175 +855,461 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             hideMoved()
         }
         binding.ittcLeadsHint.beVisibleIf(placeholder == null && !boardMode && !swipeLearned())
+        // 3.10: the top is shown again for other choices, the board and the placeholders; folded away
+        // over a list that no longer scrolls: back once it is laid out
+        val key = listOf(filter, stageId, scope, person, boardMode, query)
+        if (boardMode || placeholder != null || key != topKey) showTop(animate = false)
+        topKey = key
+        if (topHidden) {
+            val list = binding.ittcLeadsList
+            list.post { if (!list.canScrollVertically(-1)) showTop(animate = true) }
+        }
+    }
+
+    // ------------------------------------------------------------- 🔎 3.10: the filter bar
+    /** (the bar as last drawn: the same → not styled again) */
+    private var barSignature: List<Any?>? = null
+
+    /**
+     * [👤 whose · when ▾] (whose: a super admin's only) · [● stage ▾] (the list only) · [✕] when anything is
+     * not the default. A changed choice: the soft accent with an accent border; else the surface, outlined.
+     */
+    private fun renderFilterBar(boardMode: Boolean, stages: List<IttcBridge.Stage>) {
+        val b = binding
+        val p = pal()
+        val whoChanged = isSuper && (scope != Scope.MY || person != null)
+        val whenChanged = filter != defaultFilter
+        val showStage = !boardMode && stages.isNotEmpty()
+        val stage = stageId?.let { id -> stages.firstOrNull { it.id == id } }
+        val scopeText = (if (isSuper) scopeLabel() + " · " else "") + filterName(filter)
+        val stageText = stage?.name ?: context.getString(R.string.ittc_l3_stage_all)
+        val clear = whoChanged || whenChanged || (showStage && stage != null)
+        val sig = listOf(p, scopeText, whoChanged || whenChanged, showStage, stage?.id, stageText, clear, b.ittcLeadsViewToggle.visibility)
+        if (sig == barSignature) return
+        barSignature = sig
+        stylePill(b.ittcLeadsScopePill, "$scopeText ▾", whoChanged || whenChanged, null)
+        b.ittcLeadsScopePill.contentDescription = context.getString(R.string.ittc_cp_scope_desc, scopeText)
+        b.ittcLeadsStagePill.beVisibleIf(showStage)
+        if (showStage) {
+            stylePill(b.ittcLeadsStagePill, "$stageText ▾", stage != null, stage?.let { IttcTheme.stageColors(context, it.name).second })
+            b.ittcLeadsStagePill.contentDescription = context.getString(R.string.ittc_cp_stage_desc, stageText)
+        }
+        b.ittcLeadsClear.beVisibleIf(clear)
+        b.ittcLeadsClear.background = IttcTheme.rounded(context, p.surface, 999f, p.outline)
+        b.ittcLeadsClear.setColorFilter(p.text2)
+        applyPillWidths()
+    }
+
+    private fun stylePill(v: TextView, label: String, on: Boolean, dotColor: Int?) {
+        val p = pal()
+        v.text = label
+        if (on) IttcTheme.pill(v, p.primarySoft, p.primary, p.primary) else IttcTheme.pill(v, p.surface, p.text2, p.outline)
+        v.typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        if (dotColor != null) {
+            val size = IttcTheme.dp(context, 8f)
+            val dot = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(dotColor)
+                setSize(size, size)
+            }
+            v.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null)
+            v.compoundDrawablePadding = IttcTheme.dp(context, 6f)
+        } else {
+            v.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, null, null)
+        }
+        v.isSelected = on
+    }
+
+    /** The two pills share the room the bar leaves (each its full label when both fit; else the longer one is cut) */
+    private fun applyPillWidths() {
+        if (!::binding.isInitialized) return
+        val b = binding
+        val bar = b.ittcLeadsFilters
+        val scopePill = b.ittcLeadsScopePill
+        val stagePill = b.ittcLeadsStagePill
+        val gap = IttcTheme.dp(context, 8f)
+        var room = (if (bar.width > 0) bar.width else resources.displayMetrics.widthPixels) - bar.paddingLeft - bar.paddingRight
+        if (b.ittcLeadsViewToggle.visibility == VISIBLE) room -= gap + 2 * resources.getDimensionPixelSize(R.dimen.ittc_touch)
+        if (b.ittcLeadsClear.visibility == VISIBLE) room -= gap + IttcTheme.dp(context, 36f)
+        val showStage = stagePill.visibility == VISIBLE
+        if (showStage) room -= gap
+        room = room.coerceAtLeast(IttcTheme.dp(context, 96f))
+        fun wanted(v: TextView) = v.paint.measureText(v.text.toString()).toInt() + v.compoundPaddingLeft + v.compoundPaddingRight + 1
+        var scopeMax = room
+        var stageMax = room
+        if (showStage) {
+            val a = wanted(scopePill)
+            val st = wanted(stagePill)
+            val half = room / 2
+            if (a + st > room) {
+                when {
+                    a <= half -> stageMax = room - a
+                    st <= half -> scopeMax = room - st
+                    else -> {
+                        scopeMax = half
+                        stageMax = room - half
+                    }
+                }
+            }
+        }
+        if (scopePill.maxWidth != scopeMax) scopePill.maxWidth = scopeMax
+        if (stagePill.maxWidth != stageMax) stagePill.maxWidth = stageMax
+    }
+
+    /** ✕: the default filter, all stages, my leads */
+    private fun clearFilters() {
+        filter = defaultFilter
+        stageId = null
+        scope = Scope.MY
+        person = null
+        saveChoice()
+        render()
+    }
+
+    /** The filter sheet's choices until "Show N leads" */
+    private class Choice(var filter: Filter, var scope: Scope, var person: String?, var stageId: String?)
+
+    private fun showFilterSheet(focusStage: Boolean) {
+        val act = activity ?: return
+        try {
+            showFilterSheetNow(act, focusStage)
+        } catch (e: Throwable) {
+            IttcCrash.record(context, e, "Leads tab: filter sheet")
+        }
     }
 
     /**
-     * 🎨 3.8 chips: one height (36 dp), 8 dp apart. The filter row is segmented: the chosen one filled
-     * with the accent, the rest soft; "Overdue" red while there are any; a super admin's "whose" chip
-     * soft blue. Stages: a dot in the stage's colour, the name and the count; chosen: the stage's colours
-     * with a thin border.
+     * 🔎 "Show leads": WHOSE (a super admin: My / All / Team Leads / Callers, then one of them), WHEN TO
+     * CALL (Overdue / Today / New / Hot / All) as two columns of buttons with their counts, STAGE (the
+     * list: a row per stage) and "Show N leads". The counts follow the choices made here at once; the
+     * list changes on "Show".
      */
-    private enum class ChipKind { NORMAL, DANGER, SCOPE }
+    private fun showFilterSheetNow(act: Activity, focusStage: Boolean) {
+        val c: Context = act
+        val p = pal()
+        val sheet = IttcCUi.sheet(act)
+        val body = sheet.body
+        val ch = Choice(filter, scope, person, stageId)
+        val stages = if (lastBoardMode) emptyList<IttcBridge.Stage>() else meta?.stages.orEmpty()
+        var stageHeader: View? = null
+        fun sectionTitle(text: String): View {
+            val v = IttcCUi.section(c, text)
+            body.addView(v, IttcCUi.topMargin(c, 18).apply { bottomMargin = IttcCUi.dp(c, 2) })
+            return v
+        }
+        fun draw() {
+            body.removeAllViews()
+            val head = IttcCUi.row(c)
+            head.addView(
+                IttcCUi.text(c, context.getString(R.string.ittc_cp_sheet_title), 18f, p.text, bold = true),
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            head.addView(
+                IttcCUi.button(c, context.getString(R.string.ittc_cp_clear_all), IttcCUi.Style.GHOST) {
+                    ch.filter = defaultFilter
+                    ch.scope = Scope.MY
+                    ch.person = null
+                    ch.stageId = null
+                    draw()
+                }.apply { setTextColor(p.primary) },
+            )
+            body.addView(head)
 
-    private fun baseChip(label: CharSequence, bold: Boolean, onClick: (View) -> Unit): TextView =
-        TextView(context).apply {
-            text = label
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            val m = meta
+            if (isSuper && m != null) {
+                sectionTitle(context.getString(R.string.ittc_cp_whose))
+                grid(
+                    body,
+                    listOf(
+                        Scope.MY to R.string.ittc_scope_my,
+                        Scope.ALL to R.string.ittc_scope_all,
+                        Scope.TEAM_LEADS to R.string.ittc_scope_team_leads,
+                        Scope.CALLERS to R.string.ittc_scope_callers,
+                    ).map { (sc, label) ->
+                        optionButton(c, context.getString(label), countFor(sc, null, ch.stageId, ch.filter), ch.scope == sc && ch.person == null, false) {
+                            ch.scope = sc
+                            ch.person = null
+                            draw()
+                        }
+                    },
+                )
+                // (Team Leads / Callers: one of them)
+                if (ch.scope == Scope.TEAM_LEADS || ch.scope == Scope.CALLERS) {
+                    val role = if (ch.scope == Scope.TEAM_LEADS) "team_lead" else "caller"
+                    val people = m.people.filter { it.role == role }
+                    if (people.isNotEmpty()) {
+                        sectionTitle(context.getString(if (role == "team_lead") R.string.ittc_scope_team_leads else R.string.ittc_scope_callers))
+                        grid(
+                            body,
+                            people.map { pr ->
+                                optionButton(c, pr.name, countFor(ch.scope, pr.id, ch.stageId, ch.filter), ch.person == pr.id, false) {
+                                    ch.person = if (ch.person == pr.id) null else pr.id
+                                    draw()
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+
+            sectionTitle(context.getString(R.string.ittc_cp_when))
+            grid(
+                body,
+                whenFilters.map { f ->
+                    val n = countFor(ch.scope, ch.person, ch.stageId, f)
+                    optionButton(c, filterName(f), n, ch.filter == f, f == Filter.OVERDUE && n > 0) {
+                        ch.filter = f
+                        draw()
+                    }
+                },
+            )
+
+            if (stages.isNotEmpty()) {
+                stageHeader = sectionTitle(context.getString(R.string.ittc_cp_stage))
+                body.addView(
+                    stageRow(c, null, context.getString(R.string.ittc_l3_stage_all), countFor(ch.scope, ch.person, null, ch.filter), ch.stageId == null) {
+                        ch.stageId = null
+                        draw()
+                    },
+                )
+                stages.forEach { st ->
+                    body.addView(
+                        stageRow(c, IttcTheme.stageColors(context, st.name).second, st.name, countFor(ch.scope, ch.person, st.id, ch.filter), ch.stageId == st.id) {
+                            ch.stageId = if (ch.stageId == st.id) null else st.id
+                            draw()
+                        },
+                    )
+                }
+            }
+
+            val total = countFor(ch.scope, ch.person, ch.stageId, ch.filter)
+            body.addView(
+                IttcCUi.button(c, if (total == 1) context.getString(R.string.ittc_cp_show_one) else context.getString(R.string.ittc_cp_show_n, total), IttcCUi.Style.PRIMARY) {
+                    sheet.dialog.dismiss()
+                    filter = ch.filter
+                    scope = ch.scope
+                    person = ch.person
+                    stageId = ch.stageId
+                    saveChoice()
+                    render()
+                }.apply { minHeight = IttcCUi.dp(c, 48) },
+                IttcCUi.topMargin(c, 20),
+            )
+        }
+        draw()
+        IttcCUi.showSafely(act, sheet.dialog)
+        // (from the stage pill: the stages in sight)
+        if (focusStage) {
+            stageHeader?.let { h ->
+                h.doOnLayout {
+                    h.post { (body.parent as? NestedScrollView)?.smoothScrollTo(0, h.top) }
+                }
+            }
+        }
+    }
+
+    /** Two columns of [items] (48 dp rows, 8 dp apart) */
+    private fun grid(body: LinearLayout, items: List<View>) {
+        val c = body.context
+        val height = IttcCUi.dp(c, 48)
+        items.chunked(2).forEach { pair ->
+            val r = IttcCUi.row(c)
+            r.addView(pair[0], LinearLayout.LayoutParams(0, height, 1f).apply { marginEnd = IttcCUi.dp(c, 8) })
+            r.addView(pair.getOrNull(1) ?: View(c), LinearLayout.LayoutParams(0, height, 1f))
+            body.addView(r, IttcCUi.topMargin(c, 8))
+        }
+    }
+
+    /** A filter sheet choice: "Today  12" (chosen: the soft accent, 2 dp border; overdue: red-tinted) */
+    private fun optionButton(c: Context, label: String, count: Int, on: Boolean, danger: Boolean, onClick: () -> Unit): TextView {
+        val p = pal()
+        val fg = when {
+            on -> p.primary
+            danger -> p.danger
+            else -> p.text
+        }
+        return TextView(c).apply {
+            text = SpannableStringBuilder(label).apply {
+                append("  ")
+                val start = length
+                append(count.toString())
+                setSpan(ForegroundColorSpan(fg.adjustAlpha(0.7f)), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextColor(fg)
+            typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.CENTER
             includeFontPadding = false
-            val pad = IttcTheme.dp(context, 14f)
+            val pad = IttcCUi.dp(c, 10)
             setPadding(pad, 0, pad, 0)
-            setOnClickListener { onClick(it) }
-        }
-
-    private fun chipView(label: String, on: Boolean, kind: ChipKind = ChipKind.NORMAL, onClick: (View) -> Unit): TextView =
-        baseChip(label, on || kind != ChipKind.NORMAL, onClick).apply {
-            val p = pal()
-            when {
-                on && kind == ChipKind.DANGER -> IttcTheme.pill(this, p.danger, p.surface)
-                on -> IttcTheme.pill(this, p.primary, p.onPrimary)
-                kind == ChipKind.DANGER -> IttcTheme.pill(this, p.dangerSoft, p.danger, p.danger.adjustAlpha(0.3f))
-                kind == ChipKind.SCOPE -> IttcTheme.pill(this, p.primarySoft, p.primary, p.primary.adjustAlpha(0.3f))
-                else -> IttcTheme.pill(this, p.surfaceAlt, p.text2)
+            background = when {
+                on -> IttcTheme.rounded(c, p.primarySoft, 12f, p.primary, 2f)
+                danger -> IttcTheme.rounded(c, p.dangerSoft, 12f, p.danger.adjustAlpha(0.3f))
+                else -> IttcTheme.rounded(c, p.surface, 12f, p.outline)
             }
             isSelected = on
+            contentDescription = context.getString(R.string.ittc_cp_option_desc, label, count)
             IttcUi.ripple(this)
+            setOnClickListener { onClick() }
         }
+    }
 
-    /** A stage chip: ● name count ([colors] null: "All stages", no dot) */
-    private fun stageChip(name: String, count: Int, on: Boolean, colors: Pair<Int, Int>?, onClick: (View) -> Unit): TextView {
+    /** A filter sheet stage row (48 dp): ● name … count ✓ ([dotColor] null: "All stages", no dot) */
+    private fun stageRow(c: Context, dotColor: Int?, name: String, count: Int, on: Boolean, onClick: () -> Unit): View {
         val p = pal()
-        val (bg, fg) = when {
-            on && colors != null -> colors
-            on -> p.primarySoft to p.primary
-            else -> p.surface to p.text2
-        }
-        val label = SpannableStringBuilder(name).apply {
-            append("  ")
-            val start = length
-            append(count.toString())
-            setSpan(ForegroundColorSpan(fg.adjustAlpha(0.7f)), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-        return baseChip(label, on, onClick).apply {
-            val stroke = if (on) fg.adjustAlpha(0.45f) else p.outline
-            IttcTheme.pill(this, bg, fg, stroke)
-            if (colors != null) {
-                val size = IttcTheme.dp(context, 8f)
-                val dot = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(colors.second)
-                    setSize(size, size)
-                }
-                setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null)
-                compoundDrawablePadding = IttcTheme.dp(context, 6f)
-            }
+        val r = IttcCUi.row(c).apply {
+            minimumHeight = IttcCUi.dp(c, 48)
+            setPadding(IttcCUi.dp(c, 10), 0, IttcCUi.dp(c, 10), 0)
+            background = IttcTheme.rounded(c, if (on) p.primarySoft else Color.TRANSPARENT, 12f)
+            isClickable = true
+            isFocusable = true
             isSelected = on
-            IttcUi.ripple(this)
+            contentDescription = context.getString(R.string.ittc_cp_option_desc, name, count)
+            setOnClickListener { onClick() }
         }
-    }
-
-    private fun addChip(row: ViewGroup, chip: TextView) {
-        row.addView(
-            chip,
-            ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, IttcTheme.dp(context, 36f)).apply {
-                marginEnd = IttcTheme.dp(context, 8f)
+        val size = IttcCUi.dp(c, 10)
+        r.addView(
+            View(c).apply {
+                if (dotColor != null) {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(dotColor)
+                    }
+                }
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
             },
+            LinearLayout.LayoutParams(size, size),
         )
+        r.addView(
+            IttcCUi.text(c, name, 15f, if (on) p.primary else p.text, bold = on).apply {
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = IttcCUi.dp(c, 12) },
+        )
+        r.addView(
+            IttcCUi.text(c, count.toString(), 13f, p.muted).apply { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = IttcCUi.dp(c, 8) },
+        )
+        val check = IttcCUi.dp(c, 20)
+        r.addView(
+            ImageView(c).apply {
+                setImageDrawable(resources.getColoredDrawableWithColor(R.drawable.ic_check_vector, p.primary))
+                visibility = if (on) VISIBLE else INVISIBLE
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+            },
+            LinearLayout.LayoutParams(check, check).apply { marginStart = IttcCUi.dp(c, 8) },
+        )
+        IttcUi.ripple(r)
+        return r
     }
 
-    /** The chosen chip scrolled into sight (after it is laid out), when the choice changed */
-    private fun revealChip(scroll: HorizontalScrollView, chip: View?) {
-        chip ?: return
-        chip.doOnLayout {
-            if (chip.parent == null || scroll.width == 0) return@doOnLayout
-            val room = IttcTheme.dp(context, 24f)
-            val left = chip.left - room
-            val right = chip.right + room
-            val x = scroll.scrollX
-            when {
-                left < x -> scroll.smoothScrollTo(left.coerceAtLeast(0), 0)
-                right > x + scroll.width -> scroll.smoothScrollTo(right - scroll.width, 0)
+    // ------------------------------------------------------------- 3.10: the top folds away while the list scrolls down
+    /** the stats row + the filter bar are folded away (the list only) */
+    private var topHidden = false
+    private var topAnim: ValueAnimator? = null
+    /** the list's scroll in one direction since it last turned */
+    private var scrollRun = 0
+
+    private fun setupTopFold() {
+        val step = IttcTheme.dp(context, 12f)
+        binding.ittcLeadsList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                // (a layout's own (0, 0) and anything not moved by a finger / fling: nothing)
+                if (dy == 0 || recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE) return
+                if (!recyclerView.canScrollVertically(-1)) {
+                    scrollRun = 0
+                    showTop(animate = true)
+                    return
+                }
+                if ((dy > 0) != (scrollRun > 0)) scrollRun = 0
+                scrollRun += dy
+                if (scrollRun > step) {
+                    scrollRun = 0
+                    hideTop()
+                } else if (scrollRun < -step) {
+                    scrollRun = 0
+                    showTop(animate = true)
+                }
             }
+        })
+    }
+
+    /** Fold the top away — only over the list, and only when the list still scrolls without it */
+    private fun hideTop() {
+        if (topHidden || lastBoardMode || !isAttachedToWindow) return
+        val list = binding.ittcLeadsList
+        val top = binding.ittcLeadsTop
+        val h = top.height
+        if (h == 0 || list.visibility != VISIBLE) return
+        if (list.computeVerticalScrollRange() <= list.height + h) return
+        topHidden = true
+        animateTop(h, 0)
+    }
+
+    /** The top back (at once, or sliding down) */
+    private fun showTop(animate: Boolean) {
+        if (!topHidden) return
+        topHidden = false
+        val top = binding.ittcLeadsTop
+        val width = top.width.takeIf { it > 0 } ?: binding.ittcLeadsHeader.width
+        if (!animate || !isAttachedToWindow || width <= 0) {
+            topAnim?.cancel()
+            settleTop()
+            return
+        }
+        top.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        val from = if (top.visibility == VISIBLE) top.height else 0
+        animateTop(from, top.measuredHeight)
+    }
+
+    private fun setTopHeight(h: Int) {
+        val top = binding.ittcLeadsTop
+        val lp = top.layoutParams ?: return
+        if (lp.height == h) return
+        lp.height = h
+        top.layoutParams = lp
+    }
+
+    /** The top at rest: folded — gone (TalkBack skips it too); shown — its own height */
+    private fun settleTop() {
+        val top = binding.ittcLeadsTop
+        if (topHidden) {
+            setTopHeight(0)
+            top.visibility = GONE
+            // (the taller list reached its top after all — e.g. it now fits: never left folded with no way back)
+            val list = binding.ittcLeadsList
+            list.post { if (topHidden && !list.canScrollVertically(-1)) showTop(animate = true) }
+        } else {
+            setTopHeight(ViewGroup.LayoutParams.WRAP_CONTENT)
+            top.visibility = VISIBLE
         }
     }
 
-    // (the chips as last drawn: the same labels, counts, choice and colours → not made again)
-    private var chipsSignature: List<Any?>? = null
-    private var stagesSignature: List<Any?>? = null
-    /** the choices last scrolled into sight (another one → scrolled to) */
-    private var chipsRevealed: Any? = Unit
-    private var stagesRevealed: Any? = Unit
+    private fun animateTop(from: Int, to: Int) {
+        topAnim?.cancel()
+        val top = binding.ittcLeadsTop
+        setTopHeight(from)
+        top.visibility = VISIBLE
+        topAnim = ValueAnimator.ofInt(from, to).apply {
+            duration = TOP_FOLD_MS
+            addUpdateListener { setTopHeight(it.animatedValue as Int) }
+            addListener(object : AnimatorListenerAdapter() {
+                private var cancelled = false
 
-    private val chipFilters = listOf(
-        Filter.TODAY to R.string.ittc_chip_today,
-        Filter.OVERDUE to R.string.ittc_chip_overdue,
-        Filter.NEW to R.string.ittc_chip_new,
-        Filter.HOT to R.string.ittc_chip_hot,
-        Filter.ALL to R.string.ittc_chip_all,
-    )
+                override fun onAnimationCancel(animation: Animator) {
+                    cancelled = true
+                }
 
-    private fun renderChips(today: Long, list: List<IttcBridge.PhoneLead>) {
-        val row = binding.ittcLeadsChips
-        val counts = chipFilters.map { (f, _) -> list.count { matches(f, it, today) } }
-        val scopeText = if (isSuper) scopeLabel() else null
-        val signature = listOf(pal(), scopeText, filter, counts)
-        if (signature == chipsSignature && row.childCount > 0) return
-        chipsSignature = signature
-        row.removeAllViews()
-        // (a super admin: whose leads, one choice in one chip)
-        if (scopeText != null) addChip(row, chipView(scopeText, false, ChipKind.SCOPE) { pickScope(it) })
-        var chosen: View? = null
-        chipFilters.forEachIndexed { i, (f, label) ->
-            val n = counts[i]
-            // (overdue is red while there are any)
-            val kind = if (f == Filter.OVERDUE && n > 0) ChipKind.DANGER else ChipKind.NORMAL
-            val chip = chipView(context.getString(label, n), f == filter, kind) {
-                filter = f
-                render()
-            }
-            if (f == filter) chosen = chip
-            addChip(row, chip)
-        }
-        if (chipsRevealed != filter) {
-            chipsRevealed = filter
-            revealChip(binding.ittcLeadsChipsScroll, chosen)
-        }
-    }
-
-    /** 🧭 All stages · New 42 · Interested 18 · … (the counts follow the chips above) */
-    private fun renderStages(list: List<IttcBridge.PhoneLead>, stages: List<IttcBridge.Stage>) {
-        val row = binding.ittcLeadsStages
-        binding.ittcLeadsStagesScroll.beVisibleIf(stages.isNotEmpty())
-        val counts = list.groupingBy { it.stageId }.eachCount()
-        val signature = listOf(pal(), stageId, list.size, stages, counts)
-        if (signature == stagesSignature) return
-        stagesSignature = signature
-        row.removeAllViews()
-        if (stages.isEmpty()) return
-        val all = stageChip(context.getString(R.string.ittc_l3_stage_all), list.size, stageId == null, null) {
-            stageId = null
-            saveChoice()
-            render()
-        }
-        addChip(row, all)
-        var chosen: View? = if (stageId == null) all else null
-        stages.forEach { st ->
-            val n = counts[st.id] ?: 0
-            // (a stage with nobody in it stays out of the way, unless it is the chosen one)
-            if (n == 0 && st.id != stageId) return@forEach
-            val chip = stageChip(st.name, n, st.id == stageId, IttcTheme.stageColors(context, st.name)) {
-                stageId = if (stageId == st.id) null else st.id
-                saveChoice()
-                render()
-            }
-            if (st.id == stageId) chosen = chip
-            addChip(row, chip)
-        }
-        if (stagesRevealed != stageId) {
-            stagesRevealed = stageId
-            revealChip(binding.ittcLeadsStagesScroll, chosen)
+                override fun onAnimationEnd(animation: Animator) {
+                    if (topAnim === animation) topAnim = null
+                    if (!cancelled) settleTop()
+                }
+            })
+            start()
         }
     }
 
@@ -1072,6 +1447,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         }
 
         override fun drop(l: IttcBridge.PhoneLead, stage: IttcBridge.Stage) = requestMove(l, stage)
+
+        override fun sheetActivity(): Activity? = activity
     }
 
     /** What the board's cards look like besides their leads (as the list's rows: theme, owner shown, the minute) */

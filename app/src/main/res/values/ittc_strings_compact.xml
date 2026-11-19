@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.10: the Leads tab's compact top — today's numbers in one row, one filter bar and its
+     sheet, the board columns' ◀ / ▶ header and the stages to jump to -->
+<resources>
+    <!-- the stats row -->
+    <string name="ittc_cp_overdue" translatable="false">Overdue</string>
+    <string name="ittc_cp_today" translatable="false">Today</string>
+    <string name="ittc_cp_done" translatable="false">Done today</string>
+    <string name="ittc_cp_target" translatable="false">Target</string>
+    <string name="ittc_cp_connected" translatable="false">Connected</string>
+    <string name="ittc_cp_of" translatable="false">%1$d/%2$d</string>
+    <string name="ittc_cp_overdue_desc" translatable="false">Overdue: %d leads. Tap to show them</string>
+    <string name="ittc_cp_today_desc" translatable="false">Due today: %d leads. Tap to show them</string>
+    <string name="ittc_cp_done_desc" translatable="false">Calls made today: %d</string>
+    <string name="ittc_cp_target_desc" translatable="false">%1$d of %2$d calls. Tap for today\'s details</string>
+    <string name="ittc_cp_connected_desc" translatable="false">%d connected today. Tap for today\'s details</string>
+
+    <!-- the filter bar -->
+    <string name="ittc_cp_f_overdue" translatable="false">Overdue</string>
+    <string name="ittc_cp_f_today" translatable="false">Today</string>
+    <string name="ittc_cp_f_new" translatable="false">New</string>
+    <string name="ittc_cp_f_hot" translatable="false">🔥 Hot</string>
+    <string name="ittc_cp_f_all" translatable="false">All leads</string>
+    <string name="ittc_cp_scope_desc" translatable="false">Showing: %s. Tap to change</string>
+    <string name="ittc_cp_stage_desc" translatable="false">Stage: %s. Tap to change</string>
+    <string name="ittc_cp_clear" translatable="false">Clear filters</string>
+
+    <!-- the filter sheet -->
+    <string name="ittc_cp_sheet_title" translatable="false">Show leads</string>
+    <string name="ittc_cp_clear_all" translatable="false">Clear all</string>
+    <string name="ittc_cp_whose" translatable="false">Whose</string>
+    <string name="ittc_cp_when" translatable="false">When to call</string>
+    <string name="ittc_cp_stage" translatable="false">Stage</string>
+    <string name="ittc_cp_show_n" translatable="false">Show %d leads</string>
+    <string name="ittc_cp_show_one" translatable="false">Show 1 lead</string>
+    <string name="ittc_cp_option_desc" translatable="false">%1$s, %2$d leads</string>
+
+    <!-- the board -->
+    <string name="ittc_cp_col_prev" translatable="false">Previous stage</string>
+    <string name="ittc_cp_col_next" translatable="false">Next stage</string>
+    <string name="ittc_cp_col_pos" translatable="false">%1$d/%2$d ▾</string>
+    <string name="ittc_cp_col_desc" translatable="false">%1$s, %2$d leads, stage %3$d of %4$d. Tap to go to another stage</string>
+    <string name="ittc_cp_jump_title" translatable="false">Go to a stage</string>
+</resources>
