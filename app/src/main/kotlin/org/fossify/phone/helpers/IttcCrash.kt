@@ -117,6 +117,13 @@ object IttcCrash {
             }
         } catch (_: Throwable) {
         }
+        // (a caught out-of-memory: the reserve back for the next one, if there is room again)
+        if (installed && reserve == null) {
+            try {
+                reserve = ByteArray(256 * 1024)
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     /** At the start: the last error, once */

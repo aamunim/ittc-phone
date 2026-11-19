@@ -1071,12 +1071,16 @@ object IttcDirect {
         val items = synchronized(outboxLock) { readArray(file(app, OUTBOX)) }
         val now = System.currentTimeMillis()
         val gen = generation
+        // 👥 leads with a change kept back in this pass: their hand over waits (never before the result)
+        val held = HashSet<String>()
         for (i in 0 until items.length()) {
             // (signed out / someone else signed in meanwhile: the rest never goes with their token)
             if (gen != generation || !isSignedIn(app)) return pendingCount(app)
             val item = items.optJSONObject(i) ?: continue
             val qid = item.optString("qid")
-            val result = try {
+            val kind = item.optString("kind")
+            val leadId = item.optString("lead_id")
+            val result = if (kind == "handover" && (leadId in held || earlierPendingFor(app, qid, leadId))) Keep else try {
                 send(app, item)
             } catch (e: IttcApi.ApiError) {
                 when {
@@ -1095,9 +1099,36 @@ object IttcDirect {
                 result == Done || now - item.optLong("at") > 7 * 24 * 3600_000L -> remove(app, qid)
                 result is Update -> update(app, result.item)
             }
+            if (result != Done && leadId.isNotEmpty() && kind != "call" && kind != "call_at") held += leadId
         }
         changed(app)
         return pendingCount(app)
+    }
+
+    /** 👥 A change to [leadId] queued before the item [qid] (calls not counted) still in the outbox */
+    private fun earlierPendingFor(app: Context, qid: String, leadId: String): Boolean = synchronized(outboxLock) {
+        if (leadId.isEmpty()) return@synchronized false
+        val arr = readArray(file(app, OUTBOX))
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (o.optString("qid") == qid) return@synchronized false
+            if (o.optString("lead_id") == leadId && o.optString("kind") !in setOf("call", "call_at")) return@synchronized true
+        }
+        false
+    }
+
+    /** 👥 A hand over the server refused or skipped: said (a toast), and the lists read again (the page's guess undone) */
+    private fun handOverFailed(app: Context, item: JSONObject, reason: String) {
+        val name = item.optString("to_name").takeIf { it.isNotBlank() && it != "null" }
+            ?: app.getString(org.fossify.phone.R.string.ittc_ho_them)
+        val text = app.getString(org.fossify.phone.R.string.ittc_ho_refused, name, reason)
+        main.post {
+            try {
+                android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show()
+            } catch (_: Throwable) {
+            }
+        }
+        refreshAsync(app, force = true)
     }
 
     private sealed class Result
@@ -1154,11 +1185,27 @@ object IttcDirect {
             Done
         }
         "handover" -> {
-            rpc(
-                app, "hand_over_leads",
-                JSONObject().put("p_lead_ids", JSONArray().put(item.getString("lead_id"))).put("p_to", item.getString("to"))
-                    .apply { item.optString("note").takeIf { it.isNotBlank() }?.let { put("p_note", it) } },
-            )
+            val answer = try {
+                rpc(
+                    app, "hand_over_leads",
+                    JSONObject().put("p_lead_ids", JSONArray().put(item.getString("lead_id"))).put("p_to", item.getString("to"))
+                        .apply { item.optString("note").takeIf { it.isNotBlank() }?.let { put("p_note", it) } },
+                )
+            } catch (e: IttcApi.ApiError) {
+                // (refused for good: said; anything else is kept and tried again, as every item)
+                if (e.status in 400..499 && e.status !in setOf(401, 404, 408, 425, 429) &&
+                    e.message?.contains("not active", true) != true
+                ) {
+                    handOverFailed(app, item, e.message ?: app.getString(org.fossify.phone.R.string.ittc_ho_skipped))
+                }
+                throw e
+            }
+            val done = try {
+                JSONObject(answer).optInt("done", -1)
+            } catch (_: Throwable) {
+                -1
+            }
+            if (done == 0) handOverFailed(app, item, app.getString(org.fossify.phone.R.string.ittc_ho_skipped))
             Done
         }
         else -> Done

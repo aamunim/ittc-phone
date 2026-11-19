@@ -28,9 +28,9 @@ import org.json.JSONObject
  *    older server without it (404 / PGRST202) or no internet: the last list kept here, else the
  *    people my_phone_data sent (super admins only).
  *  - [pick]: the list, then a note for them (optional) — the after-call screen's dialogs.
- *  - [queueAfterLead]: the outbox item ({"kind":"handover"}, as the lead page queues it), sent
- *    only after this lead's other changes waiting (the call's result) have gone: once the lead is
- *    someone else's, they might no longer be allowed.
+ *  - [queueNow] / [queueAfterLead]: the outbox item ({"kind":"handover"}, as the lead page queues
+ *    it); the outbox holds it back until this lead's changes queued before it (the call's result)
+ *    have gone: once the lead is someone else's, they might no longer be allowed.
  */
 object IttcHandover {
     private const val PREFS = "ittc_handover"
@@ -95,10 +95,11 @@ object IttcHandover {
     /** "Name  ·  team lead" */
     fun label(p: IttcBridge.Person): String = if (p.role.isBlank()) p.name else "${p.name}  ·  ${p.role.replace('_', ' ')}"
 
-    /** The outbox item (the lead's id is added when queued) */
-    fun item(to: String, note: String?): JSONObject {
+    /** The outbox item (the lead's id is added when queued); [toName] for the message if it is refused */
+    fun item(to: String, note: String?, toName: String? = null): JSONObject {
         val item = JSONObject().put("kind", "handover").put("to", to)
         note?.trim()?.takeIf { it.isNotEmpty() }?.let { item.put("note", it) }
+        toName?.takeIf { it.isNotBlank() }?.let { item.put("to_name", it) }
         return item
     }
 
@@ -121,35 +122,26 @@ object IttcHandover {
     }
 
     /**
-     * Queue the hand over of [leadId] to [to] — after this lead's other changes waiting on the
-     * phone (e.g. the call's result just saved) have been sent, or after about a minute (no
-     * internet: the queue keeps its order then anyway). [queued] runs (any thread) once it is kept.
+     * Queue the hand over of [leadId] to [to] now (kept on the phone). The outbox sends it only
+     * after this lead's changes queued before it (e.g. the call's result) have gone.
+     * Returns whether it was kept. Call off the main thread.
      */
-    fun queueAfterLead(context: Context, leadId: String, to: String, note: String?, queued: ((Boolean) -> Unit)? = null) {
+    fun queueNow(context: Context, leadId: String, to: String, toName: String?, note: String?): Boolean {
+        val app = context.applicationContext
+        return try {
+            IttcDirect.enqueue(app, item(to, note, toName).put("lead_id", leadId))
+            IttcDirect.refreshAsync(app, force = true, delayMs = 3_000)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** [queueNow] off the main thread; [queued] (any thread) with whether it was kept */
+    fun queueAfterLead(context: Context, leadId: String, to: String, toName: String?, note: String?, queued: ((Boolean) -> Unit)? = null) {
         val app = context.applicationContext
         ensureBackgroundThread {
-            var waited = 0
-            while (waited < 60_000) {
-                val pending = try {
-                    IttcDirect.pendingFor(app, leadId)
-                } catch (_: Throwable) {
-                    0
-                }
-                if (pending == 0) break
-                try {
-                    Thread.sleep(1_500)
-                } catch (_: InterruptedException) {
-                    break
-                }
-                waited += 1_500
-            }
-            val ok = try {
-                IttcDirect.enqueue(app, item(to, note).put("lead_id", leadId))
-                IttcDirect.refreshAsync(app, force = true, delayMs = 3_000)
-                true
-            } catch (_: Throwable) {
-                false
-            }
+            val ok = queueNow(app, leadId, to, toName, note)
             queued?.invoke(ok)
         }
     }

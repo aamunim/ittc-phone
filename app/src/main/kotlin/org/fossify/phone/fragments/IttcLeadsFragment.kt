@@ -167,6 +167,15 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         private var sessionPerson: String? = null
         private var sessionStage: String? = null
         private var sessionOwner: String? = null
+        /** A new launch (not a rotation / theme change): the choices start again at All / All / All */
+        fun resetSession() {
+            sessionFilter = null
+            sessionScope = null
+            sessionPerson = null
+            sessionStage = null
+            sessionOwner = null
+        }
+
         /** (3.11 kept them across starts: gone) */
         private val OLD_CHOICE_KEYS = listOf("leads_scope", "leads_person", "leads_stage")
         /** (3.8's folded Today card, gone in 3.10: the remembered choice is removed) */

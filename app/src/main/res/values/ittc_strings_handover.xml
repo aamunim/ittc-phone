@@ -4,8 +4,11 @@
     <string name="ittc_ho_give" translatable="false">Give</string>
     <string name="ittc_ho_button" translatable="false">👥 Hand over</string>
     <string name="ittc_ho_chosen" translatable="false">👥 Hand over to %s · change</string>
-    <string name="ittc_ho_will" translatable="false">Will hand over to %s when you save or close</string>
-    <string name="ittc_ho_done" translatable="false">👥 Handed over to %s</string>
+    <string name="ittc_ho_will" translatable="false">Will hand over to %s</string>
+    <string name="ittc_ho_done" translatable="false">Will hand over to %s</string>
+    <string name="ittc_ho_refused" translatable="false">Couldn\'t hand over to %1$s: %2$s</string>
+    <string name="ittc_ho_skipped" translatable="false">it is theirs already, or you can\'t see this lead</string>
+    <string name="ittc_ho_them" translatable="false">them</string>
     <string name="ittc_ho_failed" translatable="false">Could not hand over. Try again from the lead page.</string>
     <string name="ittc_ho_cancelled" translatable="false">Hand over cancelled</string>
 </resources>

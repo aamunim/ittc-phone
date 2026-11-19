@@ -1390,7 +1390,7 @@ class IttcLeadActivity : SimpleActivity() {
         pickList(getString(R.string.ittc_lp_hand_over), people.map { p -> IttcHandover.label(p) }) { i ->
             val p = people[i]
             noteDialog(getString(R.string.ittc_lp_hand_over_to, p.name), required = false) { note ->
-                val item = IttcHandover.item(p.id, note)
+                val item = IttcHandover.item(p.id, note, p.name)
                 queue(item) { lo ->
                     lo.put("assigned_to", p.id)
                     lo.put("owner", p.name)
