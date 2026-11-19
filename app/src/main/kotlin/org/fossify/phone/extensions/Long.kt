@@ -6,8 +6,8 @@ import java.util.TimeZone
 
 // 🎓 ITTC 3.13: one calendar per thread, not a new one (and a date formatter) for every call row.
 //   Every RecentCall works out its day when it is made or copied — thousands of times while the
-//   call log loads, which a 2 GB phone feels. Same result as toDayCode("yyyy-MM-dd"): the phone's
-//   own time zone, digits 0–9.
+//   call log loads, which a 2 GB phone feels. As toDayCode("yyyy-MM-dd") in the phone's own time
+//   zone, always with the digits 0–9 (the day code is only compared with other day codes).
 private val dayCalendar = object : ThreadLocal<Calendar>() {
     override fun initialValue(): Calendar = Calendar.getInstance(Locale.ENGLISH)
 }

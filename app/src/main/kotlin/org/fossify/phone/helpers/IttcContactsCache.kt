@@ -49,7 +49,10 @@ object IttcContactsCache {
         val settings = app.baseConfig.let { it.sorting to it.startNameWithSurname }
         synchronized(lock) {
             val kept = contacts
-            if (kept != null && !stale && !fresh && readWith == settings) {
+            val now = System.currentTimeMillis()
+            // (a read running — after a change — is waited for, never answered with the list before it)
+            val reading = loading && now - loadingAt < STUCK_MS
+            if (kept != null && !stale && !fresh && !reading && readWith == settings) {
                 val copy = ArrayList(kept)
                 main.post { callback(copy) }
                 return
@@ -57,13 +60,16 @@ object IttcContactsCache {
             waiting += callback
             // (a read already running: wait for it — unless it never answered: a read that died
             // on its own thread must not keep everyone waiting, so after 20 s a new one starts)
-            val now = System.currentTimeMillis()
-            if (loading && now - loadingAt < STUCK_MS) return
+            if (reading) return
             loading = true
             loadingAt = now
             readWith = settings
             // (a change during the read marks it old again: read once more next time)
             stale = false
+            // (a contact's name is made as it is read, in this order: set it first — ContactsHelper
+            // sets it only at the end of its read, so the first read would take the old one)
+            Contact.sorting = settings.first
+            Contact.startWithSurname = settings.second
         }
         try {
             ContactsHelper(app).getContacts(getAll = true, showOnlyContactsWithNumbers = true) { list ->
@@ -106,6 +112,8 @@ object IttcContactsCache {
             try {
                 app.contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, o)
                 observer = o
+                // (watching only now — e.g. the contacts permission was just given: read again)
+                stale = true
             } catch (ignored: Exception) {
                 // (no contacts permission yet: the list is read afresh each time, as before)
             }

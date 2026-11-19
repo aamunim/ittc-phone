@@ -9,6 +9,7 @@ import android.provider.CallLog.Calls.PRESENTATION_UNKNOWN
 import android.telephony.PhoneNumberUtils
 import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
+import org.fossify.commons.models.BlockedNumber
 import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.R
 import org.fossify.phone.activities.SimpleActivity
@@ -45,8 +46,13 @@ class RecentsHelper(private val context: Context) {
                 }
 
                 this.queryLimit = queryLimit
-                // 🎓 ITTC 3.13: the look-up tables once for this read (both halves below use them)
+                // 🎓 ITTC 3.13: the look-up tables, the SIM cards and the blocked numbers once for this
+                // read (both halves below use them)
                 val index = MatchIndex(contacts)
+                val sims = HashMap<String, SIMAccount>().also { map ->
+                    context.getAvailableSIMCardLabels().forEach { map[it.handle.id] = it }
+                }
+                val blockedNumbers = context.getBlockedNumbers()
                 val recentCalls = if (previousRecents.isNotEmpty()) {
                     val previousRecentCalls = previousRecents
                         .flatMap { it.groupedCalls ?: listOf(it) }
@@ -55,6 +61,8 @@ class RecentsHelper(private val context: Context) {
                     val newerRecents = getRecents(
                         contacts = contacts,
                         index = index,
+                        accountIdToSimAccountMap = sims,
+                        blockedNumbers = blockedNumbers,
                         selection = "${Calls.DATE} > ?",
                         selectionParams = arrayOf("${previousRecentCalls.first().startTS}")
                     )
@@ -62,13 +70,15 @@ class RecentsHelper(private val context: Context) {
                     val olderRecents = getRecents(
                         contacts = contacts,
                         index = index,
+                        accountIdToSimAccountMap = sims,
+                        blockedNumbers = blockedNumbers,
                         selection = "${Calls.DATE} < ?",
                         selectionParams = arrayOf("${previousRecentCalls.last().startTS}")
                     )
 
                     newerRecents + previousRecentCalls + olderRecents
                 } else {
-                    getRecents(contacts, index)
+                    getRecents(contacts, index, sims, blockedNumbers)
                 }
 
                 callback(
@@ -133,6 +143,8 @@ class RecentsHelper(private val context: Context) {
     private fun getRecents(
         contacts: List<Contact>,
         index: MatchIndex,
+        accountIdToSimAccountMap: Map<String, SIMAccount>,
+        blockedNumbers: ArrayList<BlockedNumber>,
         selection: String? = null,
         selectionParams: Array<String>? = null,
     ): List<RecentCall> {
@@ -152,11 +164,6 @@ class RecentsHelper(private val context: Context) {
             Calls.PHONE_ACCOUNT_ID,
             Calls.NUMBER_PRESENTATION
         )
-
-        val accountIdToSimAccountMap = HashMap<String, SIMAccount>()
-        context.getAvailableSIMCardLabels().forEach {
-            accountIdToSimAccountMap[it.handle.id] = it
-        }
 
         val cursor = if (isNougatPlus()) {
             // https://issuetracker.google.com/issues/175198972?pli=1#comment6
@@ -277,8 +284,6 @@ class RecentsHelper(private val context: Context) {
             } while (cursor.moveToNext() && recentCalls.size < queryLimit)
         }
 
-        val blockedNumbers = context.getBlockedNumbers()
-
         return recentCalls
             .filter { !context.isNumberBlocked(it.phoneNumber, blockedNumbers) }
     }
@@ -376,7 +381,7 @@ class RecentsHelper(private val context: Context) {
         }
 
         fun havingNumber(number: String): Contact? {
-            val key = lastSeven(number.normalizePhoneNumber()) ?: lastSeven(number)
+            val key = lastSeven(number.normalizePhoneNumber())
             if (key == null) return contacts.firstOrNull { it.doesHavePhoneNumber(number) }
             val tries = ((byLastSeven[key] ?: emptyList<Int>()) + short).distinct().sorted()
             for (i in tries) {

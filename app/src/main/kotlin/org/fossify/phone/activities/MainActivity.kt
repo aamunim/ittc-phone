@@ -366,6 +366,8 @@ class MainActivity : SimpleActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        ittcPendingOthers?.let { binding.mainTabsHolder.removeCallbacks(it) }
+        ittcPendingOthers = null
         IttcTabBadges.removeListener(ittcBadgesListener)
         IttcMode.removeListener(ittcModeListener)
         if (::ittcPanel.isInitialized) ittcPanel.destroy()
@@ -721,6 +723,8 @@ class MainActivity : SimpleActivity() {
                 }
                 ittcStyleTab(it, true, animate = changed && ittcUserTouched)
                 ittcSearchForTab(kindAt(it.position))
+                // (🎓 3.13: a tab whose refresh was waiting for Call History: refresh it now)
+                if (kindAt(it.position) != TAB_CALL_HISTORY) ittcRunPendingOthers()
 
                 when (kindAt(it.position)) {
                     TAB_CALL_HISTORY -> {
@@ -847,10 +851,37 @@ class MainActivity : SimpleActivity() {
 
     fun refreshFragments() {
         cacheContacts()
+        // 🎓 ITTC 3.13: Call History on screen: it loads first, the other tabs a moment later (on a
+        // 2 GB phone they all reading the phone's contacts at once made Call History wait for them);
+        // opening one of those tabs meanwhile loads it at once
+        val recentsShown = currentKind() == TAB_CALL_HISTORY
+        if (!recentsShown) ittcRefreshOthers()
+        getRecentsFragment()?.refreshItems()
+        if (recentsShown) {
+            ittcPendingOthers?.let { binding.mainTabsHolder.removeCallbacks(it) }
+            val later = Runnable {
+                ittcPendingOthers = null
+                if (!isFinishing && !isDestroyed) ittcRefreshOthers()
+            }
+            ittcPendingOthers = later
+            binding.mainTabsHolder.postDelayed(later, 1200L)
+        }
+    }
+
+    /** 🎓 3.13: the other tabs' refresh, waiting while Call History loads (null: none waiting) */
+    private var ittcPendingOthers: Runnable? = null
+
+    private fun ittcRefreshOthers() {
         getContactsFragment()?.refreshItems()
         getFavoritesFragment()?.refreshItems()
-        getRecentsFragment()?.refreshItems()
         getLeadsFragment()?.refreshItems()
+    }
+
+    /** 🎓 3.13: the other tabs' waiting refresh, now (another tab was opened) */
+    private fun ittcRunPendingOthers() {
+        val pending = ittcPendingOthers ?: return
+        binding.mainTabsHolder.removeCallbacks(pending)
+        pending.run()
     }
 
     private fun getAllFragments(): ArrayList<MyViewPagerFragment<*>?> = tabKinds.mapTo(ArrayList<MyViewPagerFragment<*>?>()) { fragmentOf(it) }
@@ -1191,17 +1222,31 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+    /** 🎓 3.13: the shared contacts read (and the private contacts) cachedContacts was last filled from */
+    private var ittcFilledVersion = -1
+    private var ittcFilledPrivate: Int? = null
+
     fun cacheContacts() {
         val privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
         // 🎓 ITTC 3.13: one shared read (Call History asks at the same moment; read again only after a change)
         org.fossify.phone.helpers.IttcContactsCache.get(this) { contacts ->
+            val readVersion = org.fossify.phone.helpers.IttcContactsCache.version
+            var privateCount = -1
             if (SMT_PRIVATE !in config.ignoredContactSources) {
                 val privateContacts = MyContactsContentProvider.getContacts(this, privateCursor)
+                // (their content, not just how many: a renamed private contact fills again)
+                privateCount = privateContacts.hashCode()
                 if (privateContacts.isNotEmpty()) {
                     contacts.addAll(privateContacts)
                     contacts.sort()
                 }
             }
+            // 🎓 3.13: the same contacts as last time: keep them (filling again made Call History's rows
+            // look their contacts up afresh, and the dial pad rebuild its search)
+            val same = readVersion == ittcFilledVersion && privateCount == ittcFilledPrivate && cachedContacts.isNotEmpty()
+            if (same) return@get
+            ittcFilledVersion = readVersion
+            ittcFilledPrivate = privateCount
 
             try {
                 cachedContacts.clear()
