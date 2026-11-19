@@ -33,8 +33,8 @@ internal object IttcApi {
             .build()
     }
 
-    /** A server answer that is not OK; [status] 0 = no internet */
-    class ApiError(val status: Int, message: String) : IOException(message)
+    /** A server answer that is not OK; [status] 0 = no internet; [code] the server's own (e.g. PostgREST's "PGRST202") */
+    class ApiError(val status: Int, message: String, val code: String? = null) : IOException(message)
 
     // ------------------------------------------------------------------ auth
     data class Tokens(val access: String, val refresh: String, val expiresAt: Long, val userId: String, val email: String?)
@@ -148,10 +148,18 @@ internal object IttcApi {
             } catch (e: IOException) {
                 throw ApiError(0, "No internet")
             }
-            if (!it.isSuccessful) throw ApiError(it.code, message(text) ?: "Server error ${it.code}")
+            if (!it.isSuccessful) throw ApiError(it.code, message(text) ?: "Server error ${it.code}", errorCode(text))
             return text
         }
     }
+
+    /** The server's error code ({"code": "PGRST202", …}); null when there is none */
+    private fun errorCode(body: String): String? =
+        try {
+            JSONObject(body).optString("code").takeIf { it.isNotBlank() }
+        } catch (_: Throwable) {
+            null
+        }
 
     /** The readable part of a server error ({"message": …} or {"error_description": …}) */
     private fun message(body: String): String? =

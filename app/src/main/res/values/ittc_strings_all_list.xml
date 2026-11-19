@@ -5,4 +5,6 @@
     <string name="ittc_al_all_list" translatable="false">All list</string>
     <string name="ittc_al_desc_my" translatable="false">My list: only my leads. Tap to show all leads</string>
     <string name="ittc_al_desc_all" translatable="false">All list: every lead I can see. Tap to show only my leads</string>
+    <!-- a lead of the All list the person may see but not change (stage, notes, details) -->
+    <string name="ittc_al_view_only" translatable="false">You can see this lead but not change it. Calls and the next call still work</string>
 </resources>

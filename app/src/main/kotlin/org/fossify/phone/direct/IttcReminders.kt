@@ -32,18 +32,22 @@ object IttcReminders {
 
     fun setEnabled(c: Context, on: Boolean) {
         prefs(c).edit().putBoolean("on", on).putBoolean("chosen", true).apply()
-        if (!on) cancelAll(c) else schedule(c, IttcBridge.myLeadsCache)
+        if (!on) cancelAll(c) else schedule(c, IttcBridge.myLeadsCache, IttcBridge.cacheIsDirect)
     }
 
-    /** Set the alarms for these leads (my own, due in the next 24 h); the old ones go */
-    fun schedule(context: Context, leads: List<IttcBridge.PhoneLead>) {
+    /**
+     * Set the alarms for these leads (my own, due in the next 24 h); the old ones go.
+     * [ownersKnown]: the list is the server's own (direct mode), which always says whose — every
+     * lead in it may be someone else's or unassigned.
+     */
+    fun schedule(context: Context, leads: List<IttcBridge.PhoneLead>, ownersKnown: Boolean = false) {
         val app = context.applicationContext
         cancelAll(app)
         if (!enabled(app)) return
         val now = System.currentTimeMillis()
         val me = (if (IttcDirect.isSignedIn(app)) IttcDirect.meta(app) else null)?.meId ?: IttcBridge.metaCache?.meId
         // (3.11: the list may hold everyone's I may see: only my own ring)
-        val due = IttcBridge.ownOnly(leads, me).filter { l ->
+        val due = IttcBridge.ownOnly(leads, me, ownersKnown).filter { l ->
             val at = l.nextCall ?: return@filter false
             at > now && at < now + 24 * 3600_000L && l.callNumber != null
         }.sortedBy { it.nextCall }.take(MAX)

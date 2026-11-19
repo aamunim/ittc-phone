@@ -121,6 +121,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private var whoseDirect = lastDirect
     /** the list says whose each lead is (an older Tracker does not: all of it is mine) */
     private var ownersKnown = false
+    /** who the list was last for (another person signed in: their whose choice is read again) */
+    private var lastMeId: String? = null
     /** one person in Team Leads / Callers; null = all of them */
     private var person: String? = null
     private var stageId: String? = null
@@ -173,8 +175,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     override fun setupFragment() {
         binding.ittcLeadsList.adapter = adapter
-        scope = prefs.getString("leads_scope", null)?.let { v -> Scope.values().firstOrNull { it.name == v } } ?: Scope.MY
-        person = prefs.getString("leads_person", null)
+        readChoice()
         stageId = prefs.getString("leads_stage", null)
         binding.ittcLeadsStatus.setOnClickListener {
             if (trackerClosed && IttcBridge.openTracker(context)) return@setOnClickListener
@@ -219,6 +220,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         // (the last list at once, then the Tracker's)
         all = IttcBridge.myLeadsCache
         meta = IttcBridge.metaCache
+        lastMeId = meta?.meId
         today = IttcToday.peek()
         render()
     }
@@ -291,6 +293,12 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private fun reload() {
         removeCallbacks(reloadNow)
         postDelayed(reloadNow, 300)
+    }
+
+    /** Whose (My / All / a person) as kept */
+    private fun readChoice() {
+        scope = prefs.getString("leads_scope", null)?.let { v -> Scope.values().firstOrNull { it.name == v } } ?: Scope.MY
+        person = prefs.getString("leads_person", null)
     }
 
     private fun saveChoice() {
@@ -404,6 +412,12 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                 if (observer == null && isAttachedToWindow) observer = IttcBridge.watchLeads(context) { reload() }
                 loadedOnce = true
                 all = withPending(leads ?: emptyList(), queued)
+                // (3.11: signed out / someone else signed in: the whose choice as kept now — sign-out
+                // forgot the last person's; every choice is saved when made, so reading it is safe)
+                if (m?.meId != lastMeId) {
+                    lastMeId = m?.meId
+                    readChoice()
+                }
                 meta = m
                 noTracker = leads == null
                 // (the main screen's Leads badge: my leads due today or overdue)
@@ -845,7 +859,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
 
     private fun renderNow() {
         val today = startOfToday()
-        ownersKnown = all.any { it.assignedTo != null }
+        // (direct mode: the server always says whose — even when every lead is unassigned)
+        ownersKnown = direct || IttcBridge.cacheIsDirect || all.any { it.assignedTo != null }
         val scoped = all.filter { inScope(it) }
         // (a stage that is gone: all stages)
         val stages = meta?.stages.orEmpty()
@@ -1560,8 +1575,10 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private fun showBoardOptions(l: IttcBridge.PhoneLead) {
         val act = activity ?: return
         try {
-            val targets = if (direct) meta?.stages.orEmpty().filter { it.forCourse(l.courseId) } else emptyList()
-            val onMove: ((IttcBridge.Stage) -> Unit)? = if (direct) ({ st: IttcBridge.Stage -> requestMove(l, st) }) else null
+            // (3.11: no "Move to…" on a lead I may only see)
+            val movable = direct && l.canEdit
+            val targets = if (movable) meta?.stages.orEmpty().filter { it.forCourse(l.courseId) } else emptyList()
+            val onMove: ((IttcBridge.Stage) -> Unit)? = if (movable) ({ st: IttcBridge.Stage -> requestMove(l, st) }) else null
             IttcLeadSheet.show(act, l, direct, canHandOver = isSuper, moveTo = targets, onMove = onMove)
         } catch (e: Throwable) {
             IttcCrash.record(context, e, "Leads board: lead sheet")
@@ -1576,6 +1593,11 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     private fun requestMove(l: IttcBridge.PhoneLead, st: IttcBridge.Stage) {
         val act = activity ?: return
         if (!direct || l.stageId == st.id) return
+        // (3.11: a lead of the All list I may see but not change)
+        if (!l.canEdit) {
+            context.toast(R.string.ittc_al_view_only)
+            return
+        }
         if (!st.forCourse(l.courseId)) {
             context.toast(context.getString(R.string.ittc_bd_not_for_course, st.name))
             return
