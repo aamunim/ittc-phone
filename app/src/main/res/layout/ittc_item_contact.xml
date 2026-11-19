@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 🎓 ITTC 3.8: one Contacts tab row, a piece of its letter's card — the photo or the initials,
-     the name, "Mobile · 01712 345678", and a "Lead" pill when the number is an ITTC lead.
+     the name, "Mobile · 01712 345678", a "Lead" pill when the number is an ITTC lead, and a ›
+     to the contact's details page (a tap on the row calls).
      (the ids of the old row are kept: ContactsAdapter binds both) -->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -107,9 +108,27 @@
         android:textStyle="bold"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/ittc_contact_details"
         app:layout_constraintTop_toTopOf="parent"
         tools:visibility="visible" />
+
+    <!-- › the contact's details page (a tap on the row calls): 40 dp wide, the row's full height
+         to tap; tinted in code; its drawable is mirrored for right-to-left -->
+    <ImageView
+        android:id="@+id/ittc_contact_details"
+        android:layout_width="40dp"
+        android:layout_height="0dp"
+        android:layout_marginEnd="@dimen/ittc_space_xs"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/ittc_ct_details"
+        android:minHeight="48dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:scaleType="center"
+        android:src="@drawable/ittc_ic_chevron_end"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
     <!-- (not used here: ContactsAdapter's rows all have one) -->
     <ImageView

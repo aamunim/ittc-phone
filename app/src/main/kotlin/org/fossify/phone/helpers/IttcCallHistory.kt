@@ -122,9 +122,12 @@ object IttcCallHistory {
     )
 
     /** All calls with this number (same key), newest first; off the main thread */
+    fun loadCalls(context: Context, number: String): List<Entry> = loadCalls(context, listOf(number))
+
+    /** All calls with any of these numbers (same keys: a contact's numbers), newest first, in one pass over the log; off the main thread */
     @SuppressLint("MissingPermission") // (READ_CALL_LOG checked first)
-    fun loadCalls(context: Context, number: String): List<Entry> {
-        val wanted = key(number)
+    fun loadCalls(context: Context, numbers: Collection<String>): List<Entry> {
+        val wanted = numbers.map { key(it) }.filter { it.isNotEmpty() }.toHashSet()
         if (wanted.isEmpty() || !context.hasPermission(PERMISSION_READ_CALL_LOG)) return emptyList()
 
         val simIds = HashMap<String, Int>()
@@ -137,7 +140,7 @@ object IttcCallHistory {
             context.contentResolver.query(Calls.CONTENT_URI, projection, null, null, "${Calls.DATE} DESC")?.use { cursor ->
                 while (cursor.moveToNext()) {
                     val callNumber = cursor.getStringValueOrNull(Calls.NUMBER) ?: continue
-                    if (key(callNumber) != wanted) continue
+                    if (key(callNumber) !in wanted) continue
                     entries += Entry(
                         id = cursor.getIntValue(Calls._ID),
                         number = callNumber,

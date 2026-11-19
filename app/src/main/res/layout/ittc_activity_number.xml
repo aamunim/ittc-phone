@@ -276,6 +276,34 @@
                     android:textStyle="bold" />
             </LinearLayout>
 
+            <!-- 🎓 contact mode (a contact opened from the Contacts tab): every number, email, address,
+                 work, dates, websites, groups and notes; rows added in code, gone for one number -->
+            <LinearLayout
+                android:id="@+id/ittc_number_info"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/ittc_space_l"
+                android:layout_marginTop="@dimen/ittc_space_s"
+                android:layout_marginEnd="@dimen/ittc_space_l"
+                android:background="@drawable/ittc_bg_card"
+                android:orientation="vertical"
+                android:paddingTop="@dimen/ittc_space_s"
+                android:paddingBottom="@dimen/ittc_space_s"
+                android:visibility="gone" />
+
+            <!-- contact mode: "Call history" above the calls -->
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/ittc_number_history_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/ittc_space_l"
+                android:paddingStart="@dimen/ittc_space_xl"
+                android:paddingEnd="@dimen/ittc_space_xl"
+                android:text="@string/ittc_cd_history"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
             <org.fossify.commons.views.MyTextView
                 android:id="@+id/ittc_number_placeholder"
                 android:layout_width="match_parent"

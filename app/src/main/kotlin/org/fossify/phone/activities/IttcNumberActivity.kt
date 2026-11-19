@@ -1,6 +1,8 @@
 package org.fossify.phone.activities
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
@@ -8,19 +10,29 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.CallLog.Calls
 import android.provider.ContactsContract
+import android.provider.ContactsContract.CommonDataKinds
+import android.text.TextUtils
+import android.text.format.DateFormat
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.FeatureLockedDialog
+import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.addBlockedNumber
+import org.fossify.commons.extensions.beGone
+import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
+import org.fossify.commons.extensions.copyToClipboard
 import org.fossify.commons.extensions.formatDateOrTime
 import org.fossify.commons.extensions.formatPhoneNumber
 import org.fossify.commons.extensions.formatSecondsToShortTimeString
 import org.fossify.commons.extensions.formatTime
 import org.fossify.commons.extensions.getColoredDrawableWithColor
+import org.fossify.commons.extensions.getPhoneNumberTypeText
 import org.fossify.commons.extensions.hasPermission
 import org.fossify.commons.extensions.isOrWasThankYouInstalled
 import org.fossify.commons.extensions.launchSendSMSIntent
@@ -34,6 +46,8 @@ import org.fossify.commons.helpers.PERMISSION_READ_CONTACTS
 import org.fossify.commons.helpers.PERMISSION_WRITE_CALL_LOG
 import org.fossify.commons.helpers.SimpleContactsHelper
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.models.RadioItem
+import org.fossify.commons.models.contacts.Contact
 import org.fossify.phone.R
 import org.fossify.phone.databinding.ItemRecentsDateBinding
 import org.fossify.phone.databinding.IttcActivityNumberBinding
@@ -44,17 +58,24 @@ import org.fossify.phone.extensions.config
 import org.fossify.phone.extensions.getDayCode
 import org.fossify.phone.extensions.startAddContactIntent
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
+import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
+import org.fossify.phone.helpers.IttcContactsCache
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcUi
 import org.fossify.phone.helpers.RecentsHelper
 import org.joda.time.DateTime
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 /**
  * 🎓 ITTC: one number's call history (a tap on a Recents row): who it is, call / SMS / WhatsApp /
  * contact / block, a summary, and every call with the number by day, newest first.
  * 3.5: the card look — a summary card on top, action tiles (call in teal), a small card per call.
+ * Contact mode ([openContact], the Contacts tab's photo or ›): the same page for a whole contact — a
+ * "Contact info" card (numbers, emails, addresses, work, dates, websites, groups, notes), the calls with
+ * any of its numbers, the lead of any of them, and "Edit" to change it in the contacts app.
  */
 class IttcNumberActivity : SimpleActivity() {
     private val binding by viewBinding(IttcActivityNumberBinding::inflate)
@@ -70,6 +91,18 @@ class IttcNumberActivity : SimpleActivity() {
     /** 🎨 the 3.3 palette (the app's light / dark theme) */
     private lateinit var palette: IttcTheme.Palette
 
+    /** Contact mode: the contact's id (0: one number, as from Recents) and the raw contact tapped */
+    private var contactId = 0
+    private var contactRawId = 0
+    /** Every number the page covers, the main one first (one number: just [number]) */
+    private var numbers = listOf<String>()
+    /** Contact mode: the contact as the phone has it now (null: not read yet, or no longer there) */
+    private var contact: Contact? = null
+    /** The contacts app was opened to edit: read the contacts afresh on the way back */
+    private var editOpened = false
+
+    private val contactMode get() = contactId > 0
+
     private data class ContactInfo(val name: String?, val photoUri: String?, val uri: Uri?)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,6 +113,9 @@ class IttcNumberActivity : SimpleActivity() {
             finish()
             return
         }
+        contactId = intent.getIntExtra(EXTRA_CONTACT_ID, 0)
+        contactRawId = intent.getIntExtra(EXTRA_RAW_ID, 0)
+        numbers = distinctNumbers(listOf(number) + intent.getStringArrayListExtra(EXTRA_NUMBERS).orEmpty())
 
         setContentView(binding.root)
         palette = IttcTheme.of(this)
@@ -87,14 +123,12 @@ class IttcNumberActivity : SimpleActivity() {
             setupEdgeToEdge(padBottomSystem = listOf(ittcNumberScrollview))
             setupMaterialScrollListener(ittcNumberScrollview, ittcNumberAppbar)
 
-            ittcNumberCall.setOnClickListener { startCallWithConfirmationCheck(number, displayName()) }
-            ittcNumberSms.setOnClickListener { launchSendSMSIntent(number) }
-            ittcNumberWhatsapp.setOnClickListener { openWhatsApp() }
-            ittcNumberContact.setOnClickListener {
-                val uri = contactUri
-                if (uri != null) launchViewContactIntent(uri) else startAddContactIntent(number)
-            }
-            ittcNumberBlock.setOnClickListener { tryBlocking() }
+            if (contactMode) ittcNumberToolbar.title = getString(R.string.ittc_cd_title)
+            ittcNumberCall.setOnClickListener { callTile() }
+            ittcNumberSms.setOnClickListener { pickNumber(R.string.ittc_hist_sms) { launchSendSMSIntent(it) } }
+            ittcNumberWhatsapp.setOnClickListener { pickNumber(R.string.ittc_hist_whatsapp) { openWhatsApp(it) } }
+            ittcNumberContact.setOnClickListener { contactTile() }
+            ittcNumberBlock.setOnClickListener { pickNumber(R.string.ittc_hist_block) { tryBlocking(it) } }
             ittcNumberDelete.setOnClickListener { askConfirmDelete() }
         }
 
@@ -122,6 +156,8 @@ class IttcNumberActivity : SimpleActivity() {
                 it.setTextColor(p.text)
             }
             ittcNumberDelete.setTextColor(p.danger)
+            IttcTheme.card(ittcNumberInfo, p)
+            ittcNumberHistoryTitle.setTextColor(p.muted)
             // (the tiles' pressed ripple keeps to their rounded corners)
             listOf(ittcNumberCall, ittcNumberSms, ittcNumberWhatsapp, ittcNumberContact, ittcNumberBlock).forEach { it.clipToOutline = true }
         }
@@ -131,6 +167,7 @@ class IttcNumberActivity : SimpleActivity() {
         super.onResume()
         setupTopAppBar(binding.ittcNumberAppbar, NavigationIcon.Arrow)
         // (back from a call or the contacts app: the calls and the name may have changed)
+        if (contactMode) loadContactUri()
         loadContact()
         loadLead()
         loadCalls()
@@ -139,6 +176,444 @@ class IttcNumberActivity : SimpleActivity() {
     private fun displayName() = contactName ?: givenName ?: number
 
     private fun shownNumber() = if (config.formatPhoneNumbers) number.formatPhoneNumber() else number
+
+    private fun formatted(n: String) = if (config.formatPhoneNumbers) n.formatPhoneNumber() else n
+
+    /** The numbers once each (the same number saved as "01…" and "+8801…" is one), in order */
+    private fun distinctNumbers(list: List<String>): List<String> {
+        val seen = HashSet<String>()
+        return list.filter { it.isNotBlank() && seen.add(IttcCallHistory.key(it).ifEmpty { it }) }
+    }
+
+    private fun keysOf(list: List<String>): Set<String> = list.map { IttcCallHistory.key(it).ifEmpty { it } }.toSet()
+
+    /**
+     * Contact mode: the Contact tile edits the contact — from the start, not only once the contacts list
+     * answers (a "Save" there would make a second copy). A contact found to be gone leaves contact mode.
+     */
+    private fun editsContact() = contactMode
+
+    /** Contact mode: the contact's lookup uri, from its id alone (off the main thread) */
+    private fun loadContactUri(then: (() -> Unit)? = null) {
+        val id = contactId
+        ensureBackgroundThread {
+            val uri = lookupUriOf(id)
+            runOnUiThread {
+                if (isDestroyed || isFinishing || id != contactId) return@runOnUiThread
+                contactUri = uri
+                showHeader(shownPhoto)
+                then?.invoke()
+            }
+        }
+    }
+
+    /**
+     * 2+ numbers: a choice of number for SMS / WhatsApp / Block (titled with the tile); one number: it.
+     */
+    private fun pickNumber(titleId: Int, action: (String) -> Unit) {
+        val list = numbers
+        if (list.size <= 1) {
+            action(number)
+            return
+        }
+        val phones = contact?.phoneNumbers.orEmpty()
+        val items = ArrayList<RadioItem>()
+        list.forEachIndexed { i, n ->
+            val key = IttcCallHistory.key(n).ifEmpty { n }
+            val saved = phones.firstOrNull { IttcCallHistory.key(it.value).ifEmpty { it.value } == key }
+            val type = saved?.let { getPhoneNumberTypeText(it.type, it.label) }.orEmpty()
+            val shown = formatted(n)
+            items.add(RadioItem(i, if (type.isEmpty()) shown else "$shown ($type)", n))
+        }
+        RadioGroupDialog(this, items, titleId = titleId) { action(it as String) }
+    }
+
+    /** Call: the number; a contact with 2+ numbers → the contact (its default number, else a choice) */
+    private fun callTile() {
+        val c = contact
+        if (contactMode && c != null && numbers.size > 1) {
+            // (findContact's numbers: once each, the default kept)
+            startCallWithConfirmationCheck(c)
+        } else {
+            startCallWithConfirmationCheck(number, displayName())
+        }
+    }
+
+    /** Contact: edit it (contact mode), open it (a saved number), or save the number */
+    private fun contactTile() {
+        val uri = contactUri
+        if (editsContact()) {
+            if (uri == null && contact == null) {
+                // (tapped before anything answered: the uri first, then edit)
+                loadContactUri { if (contactUri != null) contactTile() }
+                return
+            }
+            editOpened = true
+            if (uri != null) {
+                val edit = Intent(Intent.ACTION_EDIT, uri).apply { putExtra("finishActivityOnSaveCompleted", true) }
+                try {
+                    startActivity(edit)
+                    return
+                } catch (_: Throwable) {
+                }
+                launchViewContactIntent(uri)
+                return
+            }
+            // (a contact kept by Fossify Contacts only, with no lookup uri: its own way, as before)
+            contact?.let { startContactDetailsIntent(it) }
+            return
+        }
+        if (uri != null) launchViewContactIntent(uri) else startAddContactIntent(number)
+    }
+
+    /**
+     * Contact mode: the contact from the kept contacts list (read off the main thread by
+     * IttcContactsCache) — its name, photo, numbers and the info card; then its lookup uri for "Edit".
+     * Back from editing it: read afresh, so the change shows.
+     */
+    private fun loadWholeContact() {
+        val fresh = editOpened
+        editOpened = false
+        IttcContactsCache.get(this, fresh) { list ->
+            if (isDestroyed || isFinishing) return@get
+            if (!contactMode) return@get
+            val found = findContact(list)
+            if (found == null) {
+                if (list.isEmpty()) {
+                    // (no contacts could be read — no access, or a broken provider: not known to be gone;
+                    // the photo and name by the number meanwhile)
+                    loadContactByNumber()
+                } else {
+                    leaveContactMode()
+                }
+                return@get
+            }
+            contact = found
+            contactName = found.getNameToDisplay().takeIf { it.isNotBlank() }
+            shownPhoto = found.photoUri.takeIf { it.isNotEmpty() }
+            val now = distinctNumbers(found.phoneNumbers.sortedByDescending { it.isPrimary }.map { it.value })
+            if (now.isNotEmpty() && keysOf(now) != keysOf(numbers)) {
+                // (a number was added or removed in the contacts app: the lead and the calls again)
+                val mainKey = IttcCallHistory.key(number).ifEmpty { number }
+                if (now.none { IttcCallHistory.key(it).ifEmpty { it } == mainKey }) number = now.first()
+                numbers = distinctNumbers(listOf(number) + now)
+                shownKey = null
+                loadLead()
+                loadCalls()
+            }
+            showHeader(shownPhoto)
+            showInfo(found)
+        }
+    }
+
+    /**
+     * The contact was deleted: the page becomes the main number's own page, as from Recents (its own
+     * name, title, calls and lead; Delete history covers this number only).
+     */
+    private fun leaveContactMode() {
+        contactId = 0
+        contactRawId = 0
+        contact = null
+        contactUri = null
+        contactName = null
+        givenName = null
+        shownPhoto = null
+        binding.ittcNumberToolbar.title = getString(R.string.ittc_hist_title)
+        numbers = listOf(number)
+        shownKey = null
+        showInfo(null)
+        showHeader()
+        loadContactByNumber()
+        loadLead()
+        loadCalls()
+    }
+
+    /** The tapped contact; one person saved in several accounts is one page with all of it */
+    private fun findContact(list: List<Contact>): Contact? {
+        val main = list.firstOrNull { it.rawId == contactRawId && it.contactId == contactId }
+            ?: list.firstOrNull { it.contactId == contactId }
+            ?: return null
+        val same = list.filter { it.contactId == main.contactId && it.isPrivate() == main.isPrivate() }
+        val others = listOf(main) + same.filter { it !== main }
+        // (every number once — the same number saved twice is one — the default first, so it is the one kept)
+        val seen = HashSet<String>()
+        val phones = others.flatMap { it.phoneNumbers }
+            .filter { it.value.isNotBlank() }
+            .sortedByDescending { it.isPrimary }
+            .filter { seen.add(IttcCallHistory.key(it.value).ifEmpty { it.value }) }
+        if (same.size <= 1) return main.copy(phoneNumbers = ArrayList(phones))
+        return main.copy(
+            phoneNumbers = ArrayList(phones),
+            emails = ArrayList(others.flatMap { it.emails }.distinctBy { it.value.trim().lowercase() }),
+            addresses = ArrayList(others.flatMap { it.addresses }.distinctBy { it.value.trim() }),
+            events = ArrayList(others.flatMap { it.events }.distinctBy { it.type to it.value }),
+            websites = ArrayList(others.flatMap { it.websites }.distinct()),
+            groups = ArrayList(others.flatMap { it.groups }.distinctBy { it.title }),
+            notes = others.map { it.notes.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("\n\n"),
+            organization = others.map { it.organization }.firstOrNull { it.isNotEmpty() } ?: main.organization,
+            photoUri = main.photoUri.ifEmpty { others.firstOrNull { it.photoUri.isNotEmpty() }?.photoUri.orEmpty() },
+        )
+    }
+
+    /** The contact's lookup uri (for "Edit") from its id; null when it can't be found. Off the main thread */
+    @SuppressLint("MissingPermission")
+    private fun lookupUriOf(id: Int): Uri? {
+        if (id <= 0 || !hasPermission(PERMISSION_READ_CONTACTS)) return null
+        return try {
+            ContactsContract.Contacts.getLookupUri(contentResolver, ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, id.toLong()))
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    // ----------------------------------------------------------------------------- the info card
+    private class InfoAction(val icon: Int, val color: Int, val label: String, val run: () -> Unit)
+
+    /** Contact mode: every number, email, address, work, date, website, group and note (only those it has) */
+    private fun showInfo(c: Contact?) {
+        val box = binding.ittcNumberInfo
+        box.removeAllViews()
+        binding.ittcNumberHistoryTitle.beVisibleIf(c != null)
+        if (c == null) {
+            box.beGone()
+            return
+        }
+        val p = palette
+        box.addView(TextView(this).apply {
+            setText(R.string.ittc_cd_info)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(p.muted)
+            setPaddingRelative(dp(16f), dp(4f), dp(16f), dp(2f))
+        })
+        var groupsShown = 0
+        fun group(add: () -> Unit) {
+            if (groupsShown > 0) {
+                box.addView(View(this).apply { setBackgroundColor(p.divider) }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1f)).apply {
+                    marginStart = dp(52f)
+                    topMargin = dp(2f)
+                    bottomMargin = dp(2f)
+                })
+            }
+            groupsShown++
+            add()
+        }
+
+        // (findContact's numbers: once each, the default first)
+        val phones = c.phoneNumbers
+        if (phones.isNotEmpty()) group {
+            phones.forEach { n ->
+                val shown = formatted(n.value)
+                var label = getPhoneNumberTypeText(n.type, n.label)
+                if (n.isPrimary && phones.size > 1) label = listOf(label, getString(R.string.ittc_cd_default)).filter { it.isNotEmpty() }.joinToString(" · ")
+                infoRow(
+                    icon = R.drawable.ic_phone_vector,
+                    value = shown,
+                    label = label,
+                    a11y = getString(R.string.ittc_cd_call_number, listOf(shown, label).filter { it.isNotEmpty() }.joinToString(", ")),
+                    copy = n.value,
+                    actions = listOf(
+                        InfoAction(R.drawable.ic_sms_vector, p.primary, getString(R.string.ittc_cd_sms_number, shown)) { launchSendSMSIntent(n.value) },
+                        InfoAction(R.drawable.ittc_ic_whatsapp, WHATSAPP_GREEN, getString(R.string.ittc_cd_whatsapp_number, shown)) { openWhatsApp(n.value) },
+                    ),
+                ) { startCallWithConfirmationCheck(n.value, displayName()) }
+            }
+        }
+
+        val emails = c.emails.filter { it.value.isNotBlank() }
+        if (emails.isNotEmpty()) group {
+            emails.forEach { e ->
+                val label = typeText(e.type, e.label)
+                infoRow(R.drawable.ic_mail_vector, e.value, label, getString(R.string.ittc_cd_email_to, e.value), copy = e.value) { sendEmail(e.value) }
+            }
+        }
+
+        val addresses = c.addresses.mapNotNull { a ->
+            val text = a.value.trim().ifEmpty {
+                listOf(a.street, a.neighborhood, a.city, a.region, a.postcode, a.country).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")
+            }
+            if (text.isEmpty()) null else text to typeText(a.type, a.label)
+        }
+        if (addresses.isNotEmpty()) group {
+            addresses.forEach { (text, label) ->
+                infoRow(R.drawable.ic_place_vector, text, label, getString(R.string.ittc_cd_map, text), copy = text, multiLine = true) { openMap(text) }
+            }
+        }
+
+        val work = c.organization
+        if (work.isNotEmpty()) group {
+            val company = work.company.trim()
+            val job = work.jobPosition.trim()
+            val value = company.ifEmpty { job }
+            val label = if (company.isNotEmpty() && job.isNotEmpty()) job else getString(R.string.ittc_cd_work)
+            infoRow(R.drawable.ic_business_vector, value, label, null, copy = listOf(job, company).filter { it.isNotEmpty() }.joinToString(", "), onClick = null)
+        }
+
+        val events = c.events.filter { it.value.isNotBlank() }
+        if (events.isNotEmpty()) group {
+            events.forEach { e ->
+                val label = when (e.type) {
+                    CommonDataKinds.Event.TYPE_BIRTHDAY -> getString(R.string.birthday)
+                    CommonDataKinds.Event.TYPE_ANNIVERSARY -> getString(R.string.anniversary)
+                    else -> getString(R.string.ittc_cd_other)
+                }
+                infoRow(R.drawable.ittc_ic_event, eventDate(e.value), label, null, copy = null, onClick = null)
+            }
+        }
+
+        val sites = c.websites.map { it.trim() }.filter { it.isNotEmpty() }
+        if (sites.isNotEmpty()) group {
+            sites.forEach { site ->
+                infoRow(R.drawable.ic_link_vector, site, getString(R.string.ittc_cd_websites), getString(R.string.ittc_cd_open_site, site), copy = site) { openWebsite(site) }
+            }
+        }
+
+        val groups = c.groups.map { it.title.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (groups.isNotEmpty()) group {
+            infoRow(R.drawable.ic_people_outline_vector, groups.joinToString(", "), getString(R.string.ittc_cd_groups), null, copy = null, onClick = null)
+        }
+
+        val notes = c.notes.trim()
+        if (notes.isNotEmpty()) group {
+            infoRow(R.drawable.ic_info_outline_vector, notes, getString(R.string.ittc_cd_notes), null, copy = notes, multiLine = true, onClick = null)
+        }
+
+        box.beVisible()
+    }
+
+    /**
+     * One line of the info card: an icon, the value, its label under it, and small buttons at the end.
+     * A tap runs [onClick] (null: not tappable); a long press copies [copy].
+     */
+    private fun infoRow(
+        icon: Int,
+        value: String,
+        label: String?,
+        a11y: String?,
+        copy: String?,
+        actions: List<InfoAction> = emptyList(),
+        multiLine: Boolean = false,
+        onClick: (() -> Unit)?,
+    ) {
+        val p = palette
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(56f)
+            setPaddingRelative(dp(16f), dp(6f), dp(4f), dp(6f))
+        }
+        row.addView(ImageView(this).apply {
+            setImageDrawable(resources.getColoredDrawableWithColor(icon, p.primary))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(20f), dp(20f)))
+
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(TextView(this).apply {
+            text = value
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(p.text)
+            textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+            if (!multiLine) {
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            }
+        })
+        if (!label.isNullOrEmpty()) {
+            texts.addView(TextView(this).apply {
+                text = label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(p.muted)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+            })
+        }
+        row.addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = dp(16f)
+            marginEnd = dp(4f)
+        })
+
+        actions.forEach { a ->
+            row.addView(ImageView(this).apply {
+                setImageDrawable(resources.getColoredDrawableWithColor(a.icon, a.color))
+                scaleType = ImageView.ScaleType.CENTER
+                contentDescription = a.label
+                borderlessRipple(this)
+                setOnClickListener { a.run() }
+            }, LinearLayout.LayoutParams(dp(48f), dp(48f)))
+        }
+
+        if (onClick != null) {
+            row.contentDescription = a11y
+            row.setOnClickListener { onClick() }
+        }
+        if (copy != null) {
+            row.setOnLongClickListener {
+                copyToClipboard(copy)
+                true
+            }
+        }
+        if (onClick != null || copy != null) IttcUi.ripple(row)
+        binding.ittcNumberInfo.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+    }
+
+    private fun dp(v: Float) = IttcTheme.dp(this, v)
+
+    private fun borderlessRipple(view: View) {
+        val value = TypedValue()
+        if (theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true) && value.resourceId != 0) {
+            view.setBackgroundResource(value.resourceId)
+        }
+    }
+
+    /** An email's or an address's type: Home / Work / Mobile / its own label / Other */
+    private fun typeText(type: Int, label: String): String = when (type) {
+        CommonDataKinds.BaseTypes.TYPE_CUSTOM -> label.ifEmpty { getString(R.string.ittc_cd_other) }
+        CommonDataKinds.Email.TYPE_HOME -> getString(R.string.ittc_cd_email_home)
+        CommonDataKinds.Email.TYPE_WORK -> getString(R.string.ittc_cd_email_work)
+        CommonDataKinds.Email.TYPE_MOBILE -> getString(R.string.ittc_cd_email_mobile)
+        else -> getString(R.string.ittc_cd_other)
+    }
+
+    /** "2000-05-14" → "14 May 2000", "--05-14" (no year) → "14 May"; anything else as it is */
+    private fun eventDate(value: String): String = try {
+        val noYear = value.startsWith("--")
+        val parsed = SimpleDateFormat(if (noYear) "--MM-dd" else "yyyy-MM-dd", Locale.US).parse(value)
+        if (parsed == null) {
+            value
+        } else {
+            val pattern = DateFormat.getBestDateTimePattern(Locale.getDefault(), if (noYear) "d MMMM" else "d MMMM yyyy")
+            DateFormat.format(pattern, parsed).toString()
+        }
+    } catch (_: Throwable) {
+        value
+    }
+
+    private fun sendEmail(address: String) {
+        val mail = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", address, null))
+        try {
+            startActivity(Intent.createChooser(mail, null))
+        } catch (_: Throwable) {
+            toast(R.string.ittc_hist_no_app)
+        }
+    }
+
+    private fun openMap(address: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(address))))
+        } catch (_: Throwable) {
+            toast(R.string.ittc_hist_no_app)
+        }
+    }
+
+    private fun openWebsite(site: String) {
+        val url = if (site.contains("://")) site else "http://$site"
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: Throwable) {
+            toast(R.string.ittc_hist_no_app)
+        }
+    }
 
     private fun showHeader(photoUri: String? = null) {
         val p = palette
@@ -168,7 +643,11 @@ class IttcNumberActivity : SimpleActivity() {
                 ittcNumberCall to R.drawable.ic_phone_vector,
                 ittcNumberSms to R.drawable.ic_sms_vector,
                 ittcNumberWhatsapp to R.drawable.ic_sms_vector,
-                ittcNumberContact to if (contactUri != null) R.drawable.ic_person_vector else R.drawable.ic_add_person_vector,
+                ittcNumberContact to when {
+                    editsContact() -> R.drawable.ic_edit_vector
+                    contactUri != null -> R.drawable.ic_person_vector
+                    else -> R.drawable.ic_add_person_vector
+                },
                 ittcNumberBlock to R.drawable.ic_block_vector,
             )
             icons.forEach { (view, icon) ->
@@ -179,7 +658,13 @@ class IttcNumberActivity : SimpleActivity() {
                 }
                 view.setCompoundDrawablesRelativeWithIntrinsicBounds(null, resources.getColoredDrawableWithColor(icon, color), null, null)
             }
-            ittcNumberContact.setText(if (contactUri != null) R.string.ittc_hist_contact else R.string.ittc_hist_save)
+            ittcNumberContact.setText(
+                when {
+                    editsContact() -> R.string.ittc_cd_edit
+                    contactUri != null -> R.string.ittc_hist_contact
+                    else -> R.string.ittc_hist_save
+                }
+            )
             ittcNumberDelete.setCompoundDrawablesRelativeWithIntrinsicBounds(
                 resources.getColoredDrawableWithColor(R.drawable.ic_delete_vector, p.danger), null, null, null
             )
@@ -187,6 +672,11 @@ class IttcNumberActivity : SimpleActivity() {
     }
 
     private fun loadContact() {
+        if (contactMode) loadWholeContact() else loadContactByNumber()
+    }
+
+    /** One number (as from Recents): the contact that has it, if any */
+    private fun loadContactByNumber() {
         ensureBackgroundThread {
             val info = lookupContact(number)
             runOnUiThread {
@@ -228,9 +718,12 @@ class IttcNumberActivity : SimpleActivity() {
 
     /** The ITTC lead line: "🎓 Lead · Course · Stage" (the lead's name when no contact has the number) */
     private fun loadLead() {
+        val wanted = numbers
         ensureBackgroundThread {
+            // (a contact: the first of its numbers that is a lead)
             val lead = try {
-                IttcBridge.leadsFor(this, listOf(number))[number]
+                val found = IttcBridge.leadsFor(this, wanted)
+                wanted.firstNotNullOfOrNull { found[it] }
             } catch (_: Throwable) {
                 null
             }
@@ -242,6 +735,8 @@ class IttcNumberActivity : SimpleActivity() {
             val canOpen = direct || IttcBridge.trackerInstalled(this)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
+                // (loaded for numbers the page no longer covers: a newer load is on its way)
+                if (wanted != numbers) return@runOnUiThread
                 showLeadBox(lead, direct, canOpen)
                 val p = palette
                 val unsaved = contactName == null && givenName == null
@@ -333,10 +828,12 @@ class IttcNumberActivity : SimpleActivity() {
             return
         }
 
+        val wanted = numbers
         ensureBackgroundThread {
-            val calls = IttcCallHistory.loadCalls(this, number)
+            val calls = IttcCallHistory.loadCalls(this, wanted)
             runOnUiThread {
-                if (!isDestroyed && !isFinishing) showCalls(calls, noAccess = false)
+                // (loaded for numbers the page no longer covers: a newer load is on its way)
+                if (!isDestroyed && !isFinishing && wanted == numbers) showCalls(calls, noAccess = false)
             }
         }
     }
@@ -380,6 +877,8 @@ class IttcNumberActivity : SimpleActivity() {
         val incomingIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_received_vector, p.primary)
         val missedIcon = resources.getColoredDrawableWithColor(R.drawable.ic_call_missed_vector, p.danger)
         val showSim = areMultipleSIMsAvailable()
+        // (a contact with 2+ numbers: which number each call was with)
+        val showNumber = numbers.size > 1
 
         val until = minOf(calls.size, shownRows + PAGE)
         for (i in shownRows until until) {
@@ -417,7 +916,8 @@ class IttcNumberActivity : SimpleActivity() {
                 }
             )
             row.ittcCallTime.apply {
-                text = call.startTS.formatTime(this@IttcNumberActivity)
+                val time = call.startTS.formatTime(this@IttcNumberActivity)
+                text = if (showNumber) "$time · ${formatted(call.number)}" else time
                 setTextColor(p.muted)
             }
             row.ittcCallKind.apply {
@@ -501,8 +1001,8 @@ class IttcNumberActivity : SimpleActivity() {
     }
 
     /** wa.me wants the number with its country code: a Bangladeshi "01…" is "8801…" */
-    private fun openWhatsApp() {
-        val key = IttcCallHistory.key(number)
+    private fun openWhatsApp(target: String = number) {
+        val key = IttcCallHistory.key(target)
         val waNumber = when {
             key.length == 11 && key.startsWith("01") -> "88$key"
             key.startsWith("00") -> key.substring(2)
@@ -516,16 +1016,16 @@ class IttcNumberActivity : SimpleActivity() {
     }
 
     // (as the Recents list's "Block number")
-    private fun tryBlocking() {
+    private fun tryBlocking(target: String = number) {
         if (!isOrWasThankYouInstalled()) {
             FeatureLockedDialog(this) { }
             return
         }
 
-        val question = String.format(getString(R.string.block_confirmation), number)
+        val question = String.format(getString(R.string.block_confirmation), target)
         ConfirmationDialog(this, question) {
             ensureBackgroundThread {
-                if (addBlockedNumber(number)) {
+                if (addBlockedNumber(target)) {
                     IttcCallHistory.recentsDirty = true
                     runOnUiThread { toast(R.string.ittc_hist_blocked) }
                 }
@@ -547,7 +1047,7 @@ class IttcNumberActivity : SimpleActivity() {
     private fun deleteHistory() {
         val shownIds = entries.map { it.id }
         ensureBackgroundThread {
-            val ids = (shownIds + IttcCallHistory.idsFor(this, listOf(number))).distinct()
+            val ids = (shownIds + IttcCallHistory.idsFor(this, numbers)).distinct()
             RecentsHelper(this).removeRecentCalls(ids) {
                 IttcCallHistory.recentsDirty = true
                 runOnUiThread {
@@ -561,6 +1061,9 @@ class IttcNumberActivity : SimpleActivity() {
     companion object {
         const val EXTRA_NUMBER = "ittc_number"
         const val EXTRA_NAME = "ittc_name"
+        const val EXTRA_CONTACT_ID = "ittc_contact_id"
+        const val EXTRA_RAW_ID = "ittc_contact_raw_id"
+        const val EXTRA_NUMBERS = "ittc_numbers"
         private const val WHATSAPP_GREEN = 0xFF25D366.toInt()
         private const val PAGE = 40
         private const val SHOW_MORE_TAG = "ittc_show_more"
@@ -571,6 +1074,31 @@ class IttcNumberActivity : SimpleActivity() {
                 putExtra(EXTRA_NUMBER, number)
                 if (!name.isNullOrBlank()) putExtra(EXTRA_NAME, name)
                 if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(this)
+            }
+        }
+
+        /**
+         * 🎓 A contact's details page (the Contacts tab's photo or ›): its main number, name, id and every
+         * number. A contact without a number opens in the contacts app, as before.
+         */
+        fun openContact(context: Context, contact: Contact) {
+            val all = contact.phoneNumbers.map { it.value }.filter { it.isNotBlank() }
+            // (no number, or a private contact only Fossify Contacts keeps — not in the phone's contacts
+            // list this page reads: the contacts app, as before)
+            if (all.isEmpty() || contact.contactId <= 0 || contact.isPrivate()) {
+                (context as? Activity)?.startContactDetailsIntent(contact)
+                return
+            }
+            // (the default number as saved, else the first as saved — never the normalized "+8801…")
+            val primary = contact.phoneNumbers.firstOrNull { it.isPrimary && it.value.isNotBlank() }?.value ?: all.first()
+            Intent(context, IttcNumberActivity::class.java).apply {
+                putExtra(EXTRA_NUMBER, primary)
+                contact.getNameToDisplay().takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_NAME, it) }
+                putExtra(EXTRA_CONTACT_ID, contact.contactId)
+                putExtra(EXTRA_RAW_ID, contact.rawId)
+                putStringArrayListExtra(EXTRA_NUMBERS, ArrayList(all))
+                if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(this)
             }
         }
