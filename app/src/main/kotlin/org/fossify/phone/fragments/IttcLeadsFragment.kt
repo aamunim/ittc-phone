@@ -1,8 +1,6 @@
 package org.fossify.phone.fragments
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
-import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
@@ -303,6 +301,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         boardOrNull?.colorsChanged()
         toggleStyled = null
         setBackgroundColor(p.bg)
+        // (3.10: the header lies over the list: the list scrolls under it)
+        binding.ittcLeadsHeader.setBackgroundColor(p.bg)
         binding.ittcLeadsPlaceholder.setTextColor(p.text2)
         binding.ittcLeadsHint.setTextColor(p.muted)
         render()
@@ -794,6 +794,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             binding.ittcLeadsPlaceholder.beVisibleIf(true)
             binding.ittcLeadsList.beVisibleIf(false)
             binding.ittcLeadsBoard.beVisibleIf(false)
+            showTop(animate = false)
         }
     }
 
@@ -895,7 +896,8 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
             b.ittcLeadsStagePill.contentDescription = context.getString(R.string.ittc_cp_stage_desc, stageText)
         }
         b.ittcLeadsClear.beVisibleIf(clear)
-        b.ittcLeadsClear.background = IttcTheme.rounded(context, p.surface, 999f, p.outline)
+        // (the 36 dp circle inside its 44 dp touch area)
+        b.ittcLeadsClear.background = InsetDrawable(IttcTheme.rounded(context, p.surface, 999f, p.outline), IttcTheme.dp(context, 4f))
         b.ittcLeadsClear.setColorFilter(p.text2)
         applyPillWidths()
     }
@@ -930,7 +932,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         val gap = IttcTheme.dp(context, 8f)
         var room = (if (bar.width > 0) bar.width else resources.displayMetrics.widthPixels) - bar.paddingLeft - bar.paddingRight
         if (b.ittcLeadsViewToggle.visibility == VISIBLE) room -= gap + 2 * resources.getDimensionPixelSize(R.dimen.ittc_touch)
-        if (b.ittcLeadsClear.visibility == VISIBLE) room -= gap + IttcTheme.dp(context, 36f)
+        if (b.ittcLeadsClear.visibility == VISIBLE) room -= IttcTheme.dp(context, 4f) + resources.getDimensionPixelSize(R.dimen.ittc_touch)
         val showStage = stagePill.visibility == VISIBLE
         if (showStage) room -= gap
         room = room.coerceAtLeast(IttcTheme.dp(context, 96f))
@@ -956,10 +958,10 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         if (stagePill.maxWidth != stageMax) stagePill.maxWidth = stageMax
     }
 
-    /** ✕: the default filter, all stages, my leads */
+    /** ✕: the default filter, all stages (the list's stage stays while the board shows), my leads */
     private fun clearFilters() {
         filter = defaultFilter
-        stageId = null
+        if (!lastBoardMode) stageId = null
         scope = Scope.MY
         person = null
         saveChoice()
@@ -1009,7 +1011,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                     ch.filter = defaultFilter
                     ch.scope = Scope.MY
                     ch.person = null
-                    ch.stageId = null
+                    if (!lastBoardMode) ch.stageId = null
                     draw()
                 }.apply { setTextColor(p.primary) },
             )
@@ -1026,7 +1028,7 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
                         Scope.TEAM_LEADS to R.string.ittc_scope_team_leads,
                         Scope.CALLERS to R.string.ittc_scope_callers,
                     ).map { (sc, label) ->
-                        optionButton(c, context.getString(label), countFor(sc, null, ch.stageId, ch.filter), ch.scope == sc && ch.person == null, false) {
+                        optionButton(c, context.getString(label), countFor(sc, null, ch.stageId, ch.filter), ch.scope == sc, false) {
                             ch.scope = sc
                             ch.person = null
                             draw()
@@ -1208,15 +1210,37 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
     }
 
     // ------------------------------------------------------------- 3.10: the top folds away while the list scrolls down
-    /** the stats row + the filter bar are folded away (the list only) */
+    /**
+     * The header lies over the list (the list keeps its full height, with a top padding of the header's
+     * height), so folding moves only the header (its translationY): the list never moves, its scroll is
+     * the finger's own. Folded, the stats row + the filter bar are above the screen; Call all, the status
+     * line and the hint (the rest of the header) slide up to the top.
+     */
     private var topHidden = false
-    private var topAnim: ValueAnimator? = null
     /** the list's scroll in one direction since it last turned */
     private var scrollRun = 0
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupTopFold() {
+        val list = binding.ittcLeadsList
+        val header = binding.ittcLeadsHeader
         val step = IttcTheme.dp(context, 12f)
-        binding.ittcLeadsList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+        // (a touch on the header's empty parts stays there: never a tap on a row hidden under it)
+        header.setOnTouchListener { _, _ -> true }
+        // the list's top padding follows the header's height (at the top: it stays at the top)
+        header.addOnLayoutChangeListener { _, _, newTop, _, newBottom, _, oldTop, _, oldBottom ->
+            if (newBottom - newTop != oldBottom - oldTop) post { syncListPadding() }
+            // (folded while the top's height changed: still just out of sight)
+            if (topHidden && header.translationY != -binding.ittcLeadsTop.height.toFloat()) {
+                header.animate().cancel()
+                header.translationY = -binding.ittcLeadsTop.height.toFloat()
+            }
+        }
+        // (folded over a list that no longer scrolls up — it got shorter, a new list: back)
+        list.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (topHidden && !list.canScrollVertically(-1)) post { if (topHidden && !list.canScrollVertically(-1)) showTop(animate = true) }
+        }
+        list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                 // (a layout's own (0, 0) and anything not moved by a finger / fling: nothing)
                 if (dy == 0 || recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE) return
@@ -1238,78 +1262,42 @@ class IttcLeadsFragment(context: Context, attributeSet: AttributeSet) :
         })
     }
 
-    /** Fold the top away — only over the list, and only when the list still scrolls without it */
+    /** The list's top padding: the header's height (+ the list's own 4 dp); at the top it stays at the top */
+    private fun syncListPadding() {
+        if (!::binding.isInitialized) return
+        val list = binding.ittcLeadsList
+        val want = binding.ittcLeadsHeader.height + resources.getDimensionPixelSize(R.dimen.ittc_space_xs)
+        if (list.paddingTop == want) return
+        val atTop = !list.canScrollVertically(-1)
+        list.setPadding(list.paddingLeft, want, list.paddingRight, list.paddingBottom)
+        if (atTop) list.scrollToPosition(0)
+    }
+
+    /** Fold the top away — only over the list, and only once the list has scrolled past the header */
     private fun hideTop() {
         if (topHidden || lastBoardMode || !isAttachedToWindow) return
         val list = binding.ittcLeadsList
-        val top = binding.ittcLeadsTop
-        val h = top.height
+        val header = binding.ittcLeadsHeader
+        val h = binding.ittcLeadsTop.height
         if (h == 0 || list.visibility != VISIBLE) return
-        if (list.computeVerticalScrollRange() <= list.height + h) return
+        if (list.computeVerticalScrollOffset() <= header.height) return
         topHidden = true
-        animateTop(h, 0)
+        // (out of sight: TalkBack skips it too)
+        binding.ittcLeadsTop.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        header.animate().translationY(-h.toFloat()).setDuration(TOP_FOLD_MS).start()
     }
 
     /** The top back (at once, or sliding down) */
     private fun showTop(animate: Boolean) {
         if (!topHidden) return
         topHidden = false
-        val top = binding.ittcLeadsTop
-        val width = top.width.takeIf { it > 0 } ?: binding.ittcLeadsHeader.width
-        if (!animate || !isAttachedToWindow || width <= 0) {
-            topAnim?.cancel()
-            settleTop()
-            return
-        }
-        top.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-        val from = if (top.visibility == VISIBLE) top.height else 0
-        animateTop(from, top.measuredHeight)
-    }
-
-    private fun setTopHeight(h: Int) {
-        val top = binding.ittcLeadsTop
-        val lp = top.layoutParams ?: return
-        if (lp.height == h) return
-        lp.height = h
-        top.layoutParams = lp
-    }
-
-    /** The top at rest: folded — gone (TalkBack skips it too); shown — its own height */
-    private fun settleTop() {
-        val top = binding.ittcLeadsTop
-        if (topHidden) {
-            setTopHeight(0)
-            top.visibility = GONE
-            // (the taller list reached its top after all — e.g. it now fits: never left folded with no way back)
-            val list = binding.ittcLeadsList
-            list.post { if (topHidden && !list.canScrollVertically(-1)) showTop(animate = true) }
+        val header = binding.ittcLeadsHeader
+        binding.ittcLeadsTop.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        header.animate().cancel()
+        if (animate && isAttachedToWindow) {
+            header.animate().translationY(0f).setDuration(TOP_FOLD_MS).start()
         } else {
-            setTopHeight(ViewGroup.LayoutParams.WRAP_CONTENT)
-            top.visibility = VISIBLE
-        }
-    }
-
-    private fun animateTop(from: Int, to: Int) {
-        topAnim?.cancel()
-        val top = binding.ittcLeadsTop
-        setTopHeight(from)
-        top.visibility = VISIBLE
-        topAnim = ValueAnimator.ofInt(from, to).apply {
-            duration = TOP_FOLD_MS
-            addUpdateListener { setTopHeight(it.animatedValue as Int) }
-            addListener(object : AnimatorListenerAdapter() {
-                private var cancelled = false
-
-                override fun onAnimationCancel(animation: Animator) {
-                    cancelled = true
-                }
-
-                override fun onAnimationEnd(animation: Animator) {
-                    if (topAnim === animation) topAnim = null
-                    if (!cancelled) settleTop()
-                }
-            })
-            start()
+            header.translationY = 0f
         }
     }
 

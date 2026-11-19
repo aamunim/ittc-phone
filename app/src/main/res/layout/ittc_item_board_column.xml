@@ -27,16 +27,16 @@
 
         <ImageView
             android:id="@+id/ittc_board_col_prev"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="@dimen/ittc_touch"
+            android:layout_height="@dimen/ittc_touch"
             android:contentDescription="@string/ittc_cp_col_prev"
-            android:padding="8dp"
+            android:padding="10dp"
             android:src="@drawable/ic_chevron_left_vector" />
 
         <LinearLayout
             android:id="@+id/ittc_board_col_pick"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="@dimen/ittc_touch"
             android:layout_weight="1"
             android:gravity="center"
             android:orientation="horizontal"
@@ -82,10 +82,10 @@
 
         <ImageView
             android:id="@+id/ittc_board_col_next"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="@dimen/ittc_touch"
+            android:layout_height="@dimen/ittc_touch"
             android:contentDescription="@string/ittc_cp_col_next"
-            android:padding="8dp"
+            android:padding="10dp"
             android:src="@drawable/ic_chevron_right_vector" />
     </LinearLayout>
 

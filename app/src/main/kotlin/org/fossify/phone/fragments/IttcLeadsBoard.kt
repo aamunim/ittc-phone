@@ -130,6 +130,8 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
     private var scrollDir = 0
     /** the drag strip's own scrolling (-1 / 0 / 1) near its ends */
     private var stripDir = 0
+    /** the finger is over the drag strip (its chip under the finger: no scrolling the strip to another) */
+    private var fingerInStrip = false
     private val tmp = Rect()
 
     fun colorsChanged() {
@@ -858,6 +860,21 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         }
         styleCancel(id == CANCEL)
         styleChips()
+        // (a column under the finger: its chip in the drop strip scrolled into sight)
+        if (id != null && id != CANCEL && !fingerInStrip) revealChip(id)
+    }
+
+    /** The drop strip's chip for stage [id] scrolled fully into sight (when it is not) */
+    private fun revealChip(id: String) {
+        val scroll = b.ittcLeadsBoardChipsScroll
+        val chip = chipViews.firstOrNull { it.tag == id } ?: return
+        if (scroll.width == 0 || chip.width == 0) return
+        val room = dp(16f)
+        val x = scroll.scrollX
+        when {
+            chip.left - room < x -> scroll.smoothScrollTo((chip.left - room).coerceAtLeast(0), 0)
+            chip.right + room > x + scroll.width -> scroll.smoothScrollTo(chip.right + room - scroll.width, 0)
+        }
     }
 
     private val autoScroll = object : Runnable {
@@ -883,6 +900,7 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         val yi = y.toInt()
         val strip = rectOf(b.ittcLeadsBoardChipsScroll)
         val inStrip = strip != null && strip.contains(xi, yi)
+        fingerInStrip = inStrip
         val frame = rectOf(b.ittcLeadsBoardFrame)
         val edge = dp(48f)
         val dir = when {
@@ -938,6 +956,7 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         dragging = null
         scrollDir = 0
         stripDir = 0
+        fingerInStrip = false
         b.ittcLeadsBoardList.removeCallbacks(autoScroll)
         dragSource?.alpha = 1f
         dragSource = null
