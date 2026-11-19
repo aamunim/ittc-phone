@@ -1,8 +1,10 @@
 package org.fossify.phone.fragments
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -11,6 +13,7 @@ import android.graphics.drawable.InsetDrawable
 import android.os.Parcelable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.DragEvent
@@ -20,9 +23,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.view.doOnLayout
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
@@ -32,7 +35,9 @@ import androidx.recyclerview.widget.SimpleItemAnimator
 import androidx.recyclerview.widget.SnapHelper
 import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.beVisibleIf
+import org.fossify.commons.extensions.getColoredDrawableWithColor
 import org.fossify.phone.R
+import org.fossify.phone.activities.IttcCUi
 import org.fossify.phone.activities.IttcLeadSheet
 import org.fossify.phone.databinding.IttcFragmentLeadsBinding
 import org.fossify.phone.databinding.IttcItemBoardCardBinding
@@ -46,8 +51,9 @@ import kotlin.math.min
 
 /**
  * 🎓 ITTC 3.9: the Leads tab's pipeline board — a column per stage side by side (a horizontal list
- * that stops at each column; the next one peeks in), a row of stage chips above it (● New 42: a tap
- * goes to the column; the column in sight is marked), and in each column its lead cards.
+ * that stops at each column; the next one peeks in), and in each column its lead cards.
+ * 3.10: no stage chips above it — each column's header is [◀] [name · count · 2/7 ▾] [▶]: the arrows
+ * go to the previous / next column, the name opens a sheet of all the stages to jump to one.
  *
  * Built from the list the tab already has (no extra reading): [submit] gets the leads after the
  * tab's filters (whose / Today… / search) and only the columns that changed are drawn again (each
@@ -57,8 +63,9 @@ import kotlin.math.min
  * and, still holding, move the finger — the card is lifted (View.startDragAndDrop, a slightly bigger,
  * tilted copy) once it has moved past the touch slop. Let go without moving: the lead's sheet (with
  * "Move to…", also the way for TalkBack users). While dragging: a hint on top, the column under the
- * finger outlined in its stage colour with a "Drop here" slot, the stage chips take a drop too, the
- * board scrolls by itself near its left / right edge and "Drop here to cancel" waits at the bottom.
+ * finger outlined in its stage colour with a "Drop here" slot, a strip of every stage (shown only while
+ * dragging, under the hint) takes a drop too and scrolls by itself near its ends, the board scrolls by
+ * itself near its left / right edge and "Drop here to cancel" waits at the bottom.
  * All drops go through one listener on the board's root, which finds the target itself (columns
  * scrolled in during the drag work too).
  */
@@ -78,6 +85,8 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         fun whatsApp(number: String)
         /** A card was dropped on another stage's column / chip */
         fun drop(l: IttcBridge.PhoneLead, stage: IttcBridge.Stage)
+        /** The screen to open a sheet on (null: none now) */
+        fun sheetActivity(): Activity?
     }
 
     /** One column: a stage (null: the leads in no known stage, "Other") and its leads in order */
@@ -107,7 +116,6 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
     private val columnsAdapter = ColumnsAdapter()
     private val layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
     private val snap = StartSnapHelper()
-    private var current = -1
     private val chipViews = ArrayList<TextView>()
     private var chipsSignature: Any? = null
 
@@ -120,6 +128,10 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
     private var lastX = 0f
     private var lastY = 0f
     private var scrollDir = 0
+    /** the drag strip's own scrolling (-1 / 0 / 1) near its ends */
+    private var stripDir = 0
+    /** the finger is over the drag strip (its chip under the finger: no scrolling the strip to another) */
+    private var fingerInStrip = false
     private val tmp = Rect()
 
     fun colorsChanged() {
@@ -136,11 +148,6 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         // (a column's change is drawn in place: no cross-fade of the whole column)
         list.itemAnimator = null
         snap.attachToRecyclerView(list)
-        list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                if (dx != 0) updateCurrent()
-            }
-        })
         b.ittcLeadsBoard.setOnDragListener { _, e -> onDrag(e) }
     }
 
@@ -191,13 +198,9 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             cols.indices.forEach { i -> if (cols[i] != old[i]) columnsAdapter.notifyItemChanged(i, PAYLOAD_DATA) }
         }
         renderChips()
-        // (the first time, or the columns changed: which column is in sight, once they are laid out)
-        if (current < 0 || old.size != cols.size || old.indices.any { old[it].id != cols[it].id }) {
-            b.ittcLeadsBoardList.post { updateCurrent() }
-        }
     }
 
-    // ------------------------------------------------------------------ chips
+    // ------------------------------------------------------------------ the drag strip's chips
     private fun renderChips() {
         val row = b.ittcLeadsBoardChips
         val sig = listOf(host.palette(), columns.map { Triple(it.id, it.name, it.leads.size) })
@@ -208,7 +211,7 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         chipsSignature = sig
         row.removeAllViews()
         chipViews.clear()
-        columns.forEachIndexed { i, col ->
+        columns.forEach { col ->
             val chip = TextView(context).apply {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                 maxLines = 1
@@ -228,7 +231,6 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
                 )
                 compoundDrawablePadding = dp(6f)
                 contentDescription = context.getString(R.string.ittc_bd_column_desc, col.name, col.leads.size)
-                setOnClickListener { scrollTo(i) }
             }
             chipViews += chip
             row.addView(
@@ -239,16 +241,17 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         styleChips(force = true)
     }
 
-    /** (the look each chip has now: current, drop target, plain — restyled only when it changes) */
+    /** (the look each chip has now: drop target, not a target for this lead, plain — restyled only when it changes) */
     private val chipLooks = HashMap<TextView, Int>()
 
     private fun styleChips(force: Boolean = false) {
         val p = host.palette()
         chipViews.forEachIndexed { i, chip ->
             val col = columns.getOrNull(i) ?: return@forEachIndexed
+            // (while dragging: a stage the lead cannot go to (its own, another course's) faded)
             val state = when {
                 target == col.id -> 2
-                i == current -> 1
+                dragging != null && valid(col.id) == null -> 1
                 else -> 0
             }
             if (!force && chipLooks[chip] == state) return@forEachIndexed
@@ -268,11 +271,10 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
                     IttcTheme.pill(chip, sBg, sFg)
                     (chip.background as? GradientDrawable)?.setStroke(dp(2f), sFg)
                 }
-                1 -> IttcTheme.pill(chip, sBg, sFg, sFg.adjustAlpha(0.45f))
                 else -> IttcTheme.pill(chip, p.surface, p.text2, p.outline)
             }
-            chip.isSelected = state == 1
-            IttcUi.ripple(chip)
+            chip.alpha = if (state == 1) 0.4f else 1f
+            chip.isSelected = state == 2
         }
         if (force) chipLooks.keys.retainAll(chipViews.toSet())
     }
@@ -287,41 +289,66 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         layoutManager.startSmoothScroll(scroller)
     }
 
-    /** The column whose start is nearest the board's start: marked in the chips (and scrolled into sight) */
-    private fun updateCurrent() {
-        val list = b.ittcLeadsBoardList
-        var best = -1
-        var bestDist = Int.MAX_VALUE
-        for (i in 0 until list.childCount) {
-            val v = list.getChildAt(i)
-            val pos = list.getChildAdapterPosition(v)
-            if (pos == RecyclerView.NO_POSITION) continue
-            val d = abs(layoutManager.getDecoratedLeft(v) - list.paddingLeft)
-            if (d < bestDist) {
-                bestDist = d
-                best = pos
+    /** 3.10: the stages to jump to (dot, name, count; the one in sight ✓) — a tap goes to its column */
+    private fun showJumpSheet(here: Int) {
+        val act = host.sheetActivity() ?: return
+        try {
+            val p = host.palette()
+            val sheet = IttcCUi.sheet(act)
+            val body = sheet.body
+            body.addView(IttcCUi.text(act, context.getString(R.string.ittc_cp_jump_title), 18f, p.text, bold = true))
+            columns.forEachIndexed { i, col ->
+                val on = i == here
+                val row = IttcCUi.row(act).apply {
+                    minimumHeight = dp(48f)
+                    setPadding(dp(10f), 0, dp(10f), 0)
+                    background = IttcTheme.rounded(context, if (on) p.primarySoft else Color.TRANSPARENT, 12f)
+                    isClickable = true
+                    isFocusable = true
+                    isSelected = on
+                    contentDescription = context.getString(R.string.ittc_bd_column_desc, col.name, col.leads.size)
+                    setOnClickListener {
+                        sheet.dialog.dismiss()
+                        scrollTo(i)
+                    }
+                }
+                val size = dp(10f)
+                row.addView(
+                    View(context).apply {
+                        background = GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(if (col.stage != null) colorsOf(col.name).second else p.muted)
+                        }
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },
+                    LinearLayout.LayoutParams(size, size),
+                )
+                row.addView(
+                    IttcCUi.text(act, col.name, 15f, if (on) p.primary else p.text, bold = on).apply {
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(12f) },
+                )
+                row.addView(
+                    IttcCUi.text(act, col.leads.size.toString(), 13f, p.muted).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8f) },
+                )
+                val check = dp(20f)
+                row.addView(
+                    ImageView(context).apply {
+                        setImageDrawable(res.getColoredDrawableWithColor(R.drawable.ic_check_vector, p.primary))
+                        visibility = if (on) View.VISIBLE else View.INVISIBLE
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },
+                    LinearLayout.LayoutParams(check, check).apply { marginStart = dp(8f) },
+                )
+                IttcUi.ripple(row)
+                body.addView(row, IttcCUi.topMargin(act, if (i == 0) 12 else 2))
             }
-        }
-        // (at the very end: the last column, even when it cannot reach the start)
-        if (!list.canScrollHorizontally(1) && list.childCount > 0 && columns.isNotEmpty() && list.canScrollHorizontally(-1)) best = columns.lastIndex
-        if (best == current || best < 0) return
-        current = best
-        styleChips()
-        chipViews.getOrNull(best)?.let { reveal(it) }
-    }
-
-    private fun reveal(chip: View) {
-        val scroll = b.ittcLeadsBoardChipsScroll
-        chip.doOnLayout {
-            if (chip.parent == null || scroll.width == 0) return@doOnLayout
-            val room = dp(24f)
-            val left = chip.left - room
-            val right = chip.right + room
-            val x = scroll.scrollX
-            when {
-                left < x -> scroll.smoothScrollTo(left.coerceAtLeast(0), 0)
-                right > x + scroll.width -> scroll.smoothScrollTo(right - scroll.width, 0)
-            }
+            IttcCUi.showSafely(act, sheet.dialog)
+        } catch (_: Throwable) {
         }
     }
 
@@ -386,10 +413,10 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             return ColumnHolder(vb)
         }
 
-        override fun onBindViewHolder(holder: ColumnHolder, position: Int) = holder.bind(columns[position], full = true)
+        override fun onBindViewHolder(holder: ColumnHolder, position: Int) = holder.bind(columns[position], position, full = true)
 
         override fun onBindViewHolder(holder: ColumnHolder, position: Int, payloads: MutableList<Any>) {
-            if (payloads.isEmpty()) onBindViewHolder(holder, position) else holder.bind(columns[position], full = false)
+            if (payloads.isEmpty()) onBindViewHolder(holder, position) else holder.bind(columns[position], position, full = false)
         }
 
         override fun onViewRecycled(holder: ColumnHolder) {
@@ -411,6 +438,8 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         var stageId: String? = null
         var gen = -1
         var lit: Boolean? = null
+        /** this column's place on the board (for ◀ / ▶ and the jump sheet) */
+        var index = 0
 
         init {
             vb.root.background = bg
@@ -427,6 +456,13 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
                 // (a card redrawn in place: no cross-fade, no second copy keeping an old look)
                 (this.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
             }
+            // 3.10: ◀ / ▶ the previous / next column, the name: all the stages
+            vb.ittcBoardColPrev.setOnClickListener { scrollTo(index - 1) }
+            vb.ittcBoardColNext.setOnClickListener { scrollTo(index + 1) }
+            vb.ittcBoardColPick.setOnClickListener { showJumpSheet(index) }
+            IttcUi.ripple(vb.ittcBoardColPrev)
+            IttcUi.ripple(vb.ittcBoardColNext)
+            IttcUi.ripple(vb.ittcBoardColPick)
         }
 
         /** Every card shown here at rest (the dragged lead's faded while a drag runs) */
@@ -444,8 +480,9 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             stageId?.let { scrollStates[it] = vb.ittcBoardColList.layoutManager?.onSaveInstanceState() }
         }
 
-        fun bind(col: Column, full: Boolean) {
+        fun bind(col: Column, position: Int, full: Boolean) {
             val p = host.palette()
+            index = position
             // (the screen turned: the width for the new one)
             val width = columnWidth()
             vb.root.layoutParams?.let { lp ->
@@ -460,6 +497,13 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
                 bg.setColor(if (p.dark) p.surface else p.surfaceAlt)
                 vb.ittcBoardColAccent.setBackgroundColor(sFg)
                 vb.ittcBoardColName.setTextColor(p.text)
+                vb.ittcBoardColPos.setTextColor(p.muted)
+                vb.ittcBoardColPrev.setColorFilter(p.text2)
+                vb.ittcBoardColNext.setColorFilter(p.text2)
+                // (round touch areas: round ripples)
+                vb.ittcBoardColPrev.background = IttcTheme.rounded(context, Color.TRANSPARENT, 999f)
+                vb.ittcBoardColNext.background = IttcTheme.rounded(context, Color.TRANSPARENT, 999f)
+                vb.ittcBoardColPick.background = IttcTheme.rounded(context, Color.TRANSPARENT, 12f)
                 countBg.setColor(sBg)
                 vb.ittcBoardColCount.setTextColor(sFg)
                 vb.ittcBoardColDue.setTextColor(p.muted)
@@ -473,9 +517,16 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             }
             vb.ittcBoardColName.text = col.name
             vb.ittcBoardColCount.text = col.leads.size.toString()
+            vb.ittcBoardColPos.text = context.getString(R.string.ittc_cp_col_pos, position + 1, columns.size)
             vb.root.contentDescription = null
-            vb.ittcBoardColName.contentDescription = context.getString(R.string.ittc_bd_column_desc, col.name, col.leads.size)
-            vb.ittcBoardColCount.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            vb.ittcBoardColPick.contentDescription = context.getString(R.string.ittc_cp_col_desc, col.name, col.leads.size, position + 1, columns.size)
+            // (no column before the first / after the last: the arrow faded and still)
+            val hasPrev = position > 0
+            val hasNext = position < columns.lastIndex
+            vb.ittcBoardColPrev.isEnabled = hasPrev
+            vb.ittcBoardColPrev.alpha = if (hasPrev) 1f else 0.3f
+            vb.ittcBoardColNext.isEnabled = hasNext
+            vb.ittcBoardColNext.alpha = if (hasNext) 1f else 0.3f
             // "5 to call today · 2 done" over a bar: done of (done + to call)
             vb.ittcBoardColDue.text = when {
                 col.due == 0 && col.done == 0 -> context.getString(R.string.ittc_bd_none_due)
@@ -558,6 +609,11 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             val inset = dp(4f)
             vb.ittcBoardCardCall.background = InsetDrawable(callBg, inset)
             vb.ittcBoardCardWhatsapp.background = InsetDrawable(waBg, inset)
+            // (inset backgrounds replace the views' padding: the icons keep their size)
+            dp(13f).let { pad ->
+                vb.ittcBoardCardCall.setPadding(pad, pad, pad, pad)
+                vb.ittcBoardCardWhatsapp.setPadding(pad, pad, pad, pad)
+            }
             vb.ittcBoardCard.clipToOutline = true
             vb.ittcBoardCard.isClickable = true
             vb.ittcBoardCard.isLongClickable = true
@@ -721,6 +777,9 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         dragSource = v
         v.alpha = DRAGGED_ALPHA
         target = null
+        // (the strip: every stage, the ones this lead cannot go to faded; from the start)
+        styleChips()
+        b.ittcLeadsBoardChipsScroll.scrollTo(0, 0)
         showDragUi(true)
     }
 
@@ -728,11 +787,12 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         val p = host.palette()
         if (on) {
             b.ittcLeadsUndo.visibility = View.GONE
+            b.ittcLeadsBoardDragTop.background = IttcTheme.rounded(context, p.bg, 16f, p.outline)
             b.ittcLeadsBoardHint.background = IttcTheme.rounded(context, p.primary, 12f)
             b.ittcLeadsBoardHint.setTextColor(p.onPrimary)
             styleCancel(false)
         }
-        b.ittcLeadsBoardHint.visibility = if (on) View.VISIBLE else View.GONE
+        b.ittcLeadsBoardDragTop.visibility = if (on) View.VISIBLE else View.GONE
         b.ittcLeadsBoardCancel.visibility = if (on) View.VISIBLE else View.GONE
     }
 
@@ -766,7 +826,7 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         }
     }
 
-    /** The stage (column / chip) under ([x], [y]) in the board root; [CANCEL]; null: nothing */
+    /** The stage (column / strip chip) under ([x], [y]) in the board root; [CANCEL]; null: nothing */
     private fun targetAt(x: Float, y: Float): String? {
         val xi = x.toInt()
         val yi = y.toInt()
@@ -805,34 +865,68 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         }
         styleCancel(id == CANCEL)
         styleChips()
+        // (a column under the finger: its chip in the drop strip scrolled into sight)
+        if (id != null && id != CANCEL && !fingerInStrip) revealChip(id)
+    }
+
+    /** The drop strip's chip for stage [id] scrolled fully into sight (when it is not) */
+    private fun revealChip(id: String) {
+        val scroll = b.ittcLeadsBoardChipsScroll
+        val chip = chipViews.firstOrNull { it.tag == id } ?: return
+        if (scroll.width == 0 || chip.width == 0) return
+        val room = dp(16f)
+        val x = scroll.scrollX
+        when {
+            chip.left - room < x -> scroll.smoothScrollTo((chip.left - room).coerceAtLeast(0), 0)
+            chip.right + room > x + scroll.width -> scroll.smoothScrollTo(chip.right + room - scroll.width, 0)
+        }
     }
 
     private val autoScroll = object : Runnable {
         override fun run() {
-            if (dragging == null || scrollDir == 0) return
+            if (dragging == null || (scrollDir == 0 && stripDir == 0)) return
             val list = b.ittcLeadsBoardList
-            if (list.canScrollHorizontally(scrollDir)) {
+            if (scrollDir != 0 && list.canScrollHorizontally(scrollDir)) {
                 list.scrollBy(scrollDir * dp(10f), 0)
+                setTarget(valid(targetAt(lastX, lastY)))
+            }
+            val strip = b.ittcLeadsBoardChipsScroll
+            if (stripDir != 0 && strip.canScrollHorizontally(stripDir)) {
+                strip.scrollBy(stripDir * dp(6f), 0)
                 setTarget(valid(targetAt(lastX, lastY)))
             }
             list.postOnAnimation(this)
         }
     }
 
+    /** Near the board's left / right edge: the board scrolls; near the stage strip's ends: the strip does */
     private fun updateAutoScroll(x: Float, y: Float) {
+        val xi = x.toInt()
+        val yi = y.toInt()
+        val strip = rectOf(b.ittcLeadsBoardChipsScroll)
+        val inStrip = strip != null && strip.contains(xi, yi)
+        fingerInStrip = inStrip
         val frame = rectOf(b.ittcLeadsBoardFrame)
         val edge = dp(48f)
         val dir = when {
-            frame == null || !frame.contains(x.toInt(), y.toInt()) -> 0
+            inStrip || frame == null || !frame.contains(xi, yi) -> 0
             x < frame.left + edge -> -1
             x > frame.right - edge -> 1
             else -> 0
         }
-        if (dir == scrollDir) return
+        val stripEdge = dp(40f)
+        val sDir = when {
+            !inStrip || strip == null -> 0
+            x < strip.left + stripEdge -> -1
+            x > strip.right - stripEdge -> 1
+            else -> 0
+        }
+        if (dir == scrollDir && sDir == stripDir) return
         scrollDir = dir
+        stripDir = sDir
         val list = b.ittcLeadsBoardList
         list.removeCallbacks(autoScroll)
-        if (dir != 0) list.postOnAnimation(autoScroll)
+        if (dir != 0 || sDir != 0) list.postOnAnimation(autoScroll)
     }
 
     private fun onDrag(e: DragEvent): Boolean {
@@ -842,8 +936,9 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
             DragEvent.ACTION_DRAG_LOCATION -> {
                 lastX = e.x
                 lastY = e.y
-                setTarget(valid(targetAt(e.x, e.y)))
+                // (first: whether the finger is over the stage strip, so the strip isn't scrolled under it)
                 updateAutoScroll(e.x, e.y)
+                setTarget(valid(targetAt(e.x, e.y)))
             }
             DragEvent.ACTION_DRAG_EXITED -> {
                 setTarget(null)
@@ -866,6 +961,8 @@ internal class IttcLeadsBoard(private val context: Context, private val b: IttcF
         if (dragging == null) return
         dragging = null
         scrollDir = 0
+        stripDir = 0
+        fingerInStrip = false
         b.ittcLeadsBoardList.removeCallbacks(autoScroll)
         dragSource?.alpha = 1f
         dragSource = null

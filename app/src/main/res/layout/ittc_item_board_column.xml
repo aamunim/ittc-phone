@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 🎓 ITTC 3.9: one column of the Leads board — a stage: its colour on top, the name and the count,
-     "N to call today" with a small bar, then its lead cards. Its width is set in code. -->
+<!-- 🎓 ITTC 3.9: one column of the Leads board — a stage: its colour on top, the name and the count
+     (3.10: between ◀ / ▶, with its place "2/7 ▾"), "N to call today" with a small bar, then its lead
+     cards. Its width is set in code. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/ittc_board_col"
     android:layout_width="300dp"
@@ -12,40 +13,80 @@
         android:layout_width="match_parent"
         android:layout_height="4dp" />
 
+    <!-- 3.10: [◀] [name · count · 2/7 ▾] [▶] — the arrows step to the previous / next column, the
+         name opens the list of stages to jump to one -->
     <LinearLayout
         android:id="@+id/ittc_board_col_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="14dp"
-        android:paddingTop="12dp"
-        android:paddingEnd="14dp">
+        android:paddingStart="4dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="4dp">
 
-        <TextView
-            android:id="@+id/ittc_board_col_name"
+        <ImageView
+            android:id="@+id/ittc_board_col_prev"
+            android:layout_width="@dimen/ittc_touch"
+            android:layout_height="@dimen/ittc_touch"
+            android:contentDescription="@string/ittc_cp_col_prev"
+            android:padding="10dp"
+            android:src="@drawable/ic_chevron_left_vector" />
+
+        <LinearLayout
+            android:id="@+id/ittc_board_col_pick"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="@dimen/ittc_touch"
             android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/ittc_board_col_count"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/ittc_space_s"
             android:gravity="center"
-            android:maxLines="1"
-            android:minWidth="28dp"
-            android:paddingStart="@dimen/ittc_space_s"
-            android:paddingTop="2dp"
-            android:paddingEnd="@dimen/ittc_space_s"
-            android:paddingBottom="2dp"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp">
+
+            <TextView
+                android:id="@+id/ittc_board_col_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:importantForAccessibility="no"
+                android:maxLines="1"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/ittc_board_col_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:gravity="center"
+                android:importantForAccessibility="no"
+                android:maxLines="1"
+                android:minWidth="28dp"
+                android:paddingStart="@dimen/ittc_space_s"
+                android:paddingTop="2dp"
+                android:paddingEnd="@dimen/ittc_space_s"
+                android:paddingBottom="2dp"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/ittc_board_col_pos"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:importantForAccessibility="no"
+                android:maxLines="1"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/ittc_board_col_next"
+            android:layout_width="@dimen/ittc_touch"
+            android:layout_height="@dimen/ittc_touch"
+            android:contentDescription="@string/ittc_cp_col_next"
+            android:padding="10dp"
+            android:src="@drawable/ic_chevron_right_vector" />
     </LinearLayout>
 
     <!-- "5 to call today · 2 done" over a thin bar (done / due) -->

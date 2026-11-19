@@ -1,13 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 🎓 ITTC 3.8: the Leads tab's folding Today card, WhatsApp on each lead, the lead's actions sheet,
+<!-- 🎓 ITTC 3.8: the Leads tab's stage choice, WhatsApp on each lead, the lead's actions sheet,
      the lead page's compact top bar -->
 <resources>
-    <!-- Today card: folded to one line -->
-    <string name="ittc_l3_today_line" translatable="false">%1$s: %2$d calls · %3$d connected · %4$s</string>
-    <string name="ittc_l3_today_line_target" translatable="false">%1$s: %2$d / %3$d calls · %4$d connected · %5$s</string>
-    <string name="ittc_l3_today_hide" translatable="false">Hide today\'s numbers</string>
-    <string name="ittc_l3_today_show" translatable="false">Show today\'s numbers</string>
-
     <!-- the stage chips: "All stages" (its count is added) -->
     <string name="ittc_l3_stage_all" translatable="false">All stages</string>
 
