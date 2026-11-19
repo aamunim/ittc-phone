@@ -91,6 +91,53 @@ internal object IttcApi {
                 .post(args.toString().toRequestBody(JSON)).build()
         }
 
+    /**
+     * 3.11.1: a server function whose answer may be big (my_phone_data, the "who is a lead" list):
+     * streamed straight into [into] (no String, no copy in memory); the number of bytes written.
+     * An error answer (small) is read as text for its message, as [rpc]'s.
+     */
+    fun rpcToFile(context: Context, name: String, args: JSONObject, into: java.io.File): Long {
+        val build: (String) -> Request = { access ->
+            Request.Builder().url("$base/rest/v1/rpc/$name")
+                .header("apikey", key)
+                .header("Authorization", "Bearer $access")
+                .post(args.toString().toRequestBody(JSON)).build()
+        }
+        val access = IttcAuth.accessToken(context) ?: throw ApiError(401, "Not signed in")
+        return try {
+            download(build(access), into)
+        } catch (e: ApiError) {
+            if (e.status != 401) throw e
+            val again = IttcAuth.accessToken(context, forceRefresh = true) ?: throw e
+            download(build(again), into)
+        }
+    }
+
+    private fun download(request: Request, into: java.io.File): Long {
+        val r: Response = try {
+            http.newCall(request).execute()
+        } catch (e: IOException) {
+            throw ApiError(0, "No internet")
+        }
+        r.use {
+            if (!it.isSuccessful) {
+                val text = try {
+                    it.body?.string().orEmpty().take(4_000)
+                } catch (e: IOException) {
+                    throw ApiError(0, "No internet")
+                }
+                throw ApiError(it.code, message(text) ?: "Server error ${it.code}", errorCode(text))
+            }
+            val body = it.body ?: throw ApiError(0, "No internet")
+            return try {
+                body.byteStream().use { input -> java.io.FileOutputStream(into).use { out -> input.copyTo(out, 16 * 1024) } }
+            } catch (e: IOException) {
+                into.delete()
+                throw ApiError(0, "No internet")
+            }
+        }
+    }
+
     /** A server function with a given token (signing out: the kept session is already gone) */
     fun rpcWith(access: String, name: String, args: JSONObject = JSONObject()): String =
         send(

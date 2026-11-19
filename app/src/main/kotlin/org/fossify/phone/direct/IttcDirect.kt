@@ -11,12 +11,22 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.CallLog
 import android.telephony.SubscriptionManager
+import android.util.JsonReader
+import android.util.JsonToken
+import android.util.JsonWriter
 import org.fossify.phone.BuildConfig
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcToday
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -42,6 +52,8 @@ object IttcDirect {
     private const val DIR = "direct_directory.json"
     private const val OUTBOX = "direct_outbox.json"
     private const val JOB_ID = 73021
+    /** (the "who is a lead" list keeps this much of each last note: a hint on the call screen) */
+    private const val NOTE_KEPT = 300
 
     private val io = Executors.newSingleThreadExecutor()
     private val sender = Executors.newSingleThreadExecutor()
@@ -63,7 +75,7 @@ object IttcDirect {
     fun setPreferDirect(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("prefer_direct", on).apply()
         modeAt = 0
-        lastLeadsText = null
+        leadsDirty = true
         syncTrackerFlag(context)
         changed(context)
     }
@@ -186,6 +198,7 @@ object IttcDirect {
         ownCache = null
         metaCache = null
         dirCache = null
+        leadsDirty = true
         IttcAuth.save(app, t)
         val ok = checkSession(app, fresh = true)
         if (!ok) {
@@ -237,7 +250,7 @@ object IttcDirect {
         ownCache = null
         metaCache = null
         dirCache = null
-        lastLeadsText = null
+        leadsDirty = true
         IttcBridge.clearCaches()
         IttcLeadApi.forget()
         IttcAdmitApi.forget()
@@ -330,13 +343,24 @@ object IttcDirect {
     @Volatile private var metaCache: IttcBridge.PhoneMeta? = null
     @Volatile private var dirCache: Map<String, IttcBridge.Lead>? = null
 
+    /**
+     * 3.11.1: the kept lists are read once at a time (a super admin's lists are big: several screens
+     * asking at the same moment no longer each read their own copy), streamed from the file
+     */
+    private val cacheLock = Any()
+
     fun leads(context: Context): List<IttcBridge.PhoneLead> {
         leadsCache?.let { return it }
-        val arr = readArray(file(context, LEADS))
-        val out = ArrayList<IttcBridge.PhoneLead>(arr.length())
-        for (i in 0 until arr.length()) arr.optJSONObject(i)?.let { o -> phoneLead(o)?.let(out::add) }
-        leadsCache = out
-        return out
+        synchronized(cacheLock) {
+            leadsCache?.let { return it }
+            val out = try {
+                readLeadsFile(file(context, LEADS))
+            } catch (_: Throwable) {
+                ArrayList()
+            }
+            leadsCache = out
+            return out
+        }
     }
 
     fun meta(context: Context): IttcBridge.PhoneMeta? {
@@ -368,68 +392,36 @@ object IttcDirect {
 
     private fun ownLeads(context: Context): Map<String, IttcBridge.Lead> {
         ownCache?.let { return it }
-        val map = HashMap<String, IttcBridge.Lead>()
-        leads(context).forEach { l ->
-            val lead = IttcBridge.Lead(l.leadId, l.name, l.rating, l.stage, l.course, l.lastNote)
-            // (3.11: the list holds others' leads too, my own first — a number on both is my lead's)
-            listOf(l.phone, l.altPhone, l.whatsapp).forEach { n ->
-                normalizeBd(n)?.let { val h = sha256(it); if (!map.containsKey(h)) map[h] = lead }
+        val list = leads(context)
+        synchronized(cacheLock) {
+            ownCache?.let { return it }
+            val map = HashMap<String, IttcBridge.Lead>(list.size * 2)
+            list.forEach { l ->
+                val lead = IttcBridge.Lead(l.leadId, l.name, l.rating, l.stage, l.course, l.lastNote)
+                // (3.11: the list holds others' leads too, my own first — a number on both is my lead's)
+                listOf(l.phone, l.altPhone, l.whatsapp).forEach { n ->
+                    normalizeBd(n)?.let { val h = sha256(it); if (!map.containsKey(h)) map[h] = lead }
+                }
             }
+            // (the list changed meanwhile: this map is for the old one — used, not kept)
+            if (leadsCache === list) ownCache = map
+            return map
         }
-        ownCache = map
-        return map
     }
 
     private fun directory(context: Context): Map<String, IttcBridge.Lead> {
         dirCache?.let { return it }
-        val f = file(context, DIR)
-        val map = HashMap<String, IttcBridge.Lead>()
-        try {
-            if (f.exists()) {
-                val arr = JSONArray(f.readText())
-                for (i in 0 until arr.length()) {
-                    val o = arr.optJSONObject(i) ?: continue
-                    val hash = o.optString("hash").takeIf { it.isNotEmpty() } ?: continue
-                    map[hash] = IttcBridge.Lead(
-                        leadId = o.optString("lead_id"),
-                        name = o.optString("name"),
-                        rating = o.str("rating"),
-                        stage = o.str("stage"),
-                        course = o.str("course"),
-                        lastNote = o.str("last_note"),
-                    )
-                }
+        synchronized(cacheLock) {
+            dirCache?.let { return it }
+            val f = file(context, DIR)
+            val map = try {
+                if (f.exists()) readDirectoryFile(f) else HashMap()
+            } catch (_: Throwable) {
+                HashMap()
             }
-        } catch (_: Throwable) {
+            dirCache = map
+            return map
         }
-        dirCache = map
-        return map
-    }
-
-    private fun JSONObject.str(k: String): String? = if (isNull(k)) null else optString(k).takeIf { it.isNotBlank() && it != "null" }
-
-    private fun phoneLead(o: JSONObject): IttcBridge.PhoneLead? {
-        val id = o.str("lead_id") ?: return null
-        return IttcBridge.PhoneLead(
-            leadId = id,
-            name = o.str("name") ?: "",
-            phone = o.str("phone"),
-            altPhone = o.str("alt_phone"),
-            whatsapp = o.str("whatsapp_number"),
-            stage = o.str("stage"),
-            course = o.str("course"),
-            batch = o.str("batch"),
-            rating = o.str("rating"),
-            nextCall = IttcBridge.parseTimeOf(o.str("next_call")),
-            lastContacted = IttcBridge.parseTimeOf(o.str("last_contacted")),
-            attempts = o.optInt("call_attempts"),
-            lastNote = o.str("last_note"),
-            stageId = o.str("stage_id"),
-            courseId = o.str("course_id"),
-            assignedTo = o.str("assigned_to"),
-            // (3.11: only a lead I may see but not change says so)
-            canEdit = o.optBoolean("can_edit", true),
-        )
     }
 
     private val refreshLock = Any()
@@ -490,43 +482,63 @@ object IttcDirect {
         if (!isSignedIn(app)) return
         if (!force && now - p.getLong("last_refresh", 0) < 20_000) return
         val gen = generation
+        // (3.11.1: the answers go straight to files and are read from them as a stream — a super
+        // admin's lists are megabytes: never a String of them, a JSON tree and copies at once)
+        val dataPart = file(app, "$LEADS.part")
+        val dirPart = file(app, "$DIR.part")
         try {
             if (now - p.getLong("last_check", 0) > 5 * 60_000 && !checkSession(app)) {
                 if (isSignedIn(app)) p.edit().putString("refresh_error", "Could not check your sign-in").apply()
                 return
             }
-            val text = fetchPhoneData(app).trim()
+            val bytes = fetchPhoneData(app, dataPart)
+            IttcCrash.mark("phone data", "${bytes / 1024} KB")
             // (no answer: the account is not active any more — the session check says so next)
-            if (text == "null" || text.isEmpty()) {
+            val data = if (bytes <= 0L) null else readPhoneData(dataPart)
+            dataPart.delete()
+            if (data == null) {
                 p.edit().putLong("last_check", 0).putString("refresh_error", "Your account is not active").apply()
                 return
             }
-            val data = JSONObject(text)
-            val leads = data.optJSONArray("leads") ?: JSONArray()
-            data.remove("leads")
             val dir = if (directory || now - p.getLong("last_directory", 0) > 15 * 60_000 || !file(app, DIR).exists()) {
-                fetchDirectory(app)
+                val dirBytes = fetchDirectory(app, dirPart)
+                IttcCrash.mark("lead directory", "${dirBytes / 1024} KB")
+                readDirectoryFile(dirPart)
             } else {
                 null
             }
             // (signed out / someone else signed in meanwhile: this list is not theirs)
             if (gen != generation || !isSignedIn(app)) return
-            val leadsText = leads.toString()
-            val changedLeads = leadsText != lastLeadsText
-            lastLeadsText = leadsText
+            val fresh = data.first
+            IttcCrash.mark("leads", fresh.size.toString())
+            val changedLeads = leadsDirty || fresh != leads(app)
+            leadsDirty = false
             // (the same list again: nothing rewritten or read again)
             if (changedLeads) {
-                writeAtomic(file(app, LEADS), leadsText)
-                leadsCache = null
-                ownCache = null
+                writeLeadsFile(file(app, LEADS), fresh)
+                synchronized(cacheLock) {
+                    leadsCache = fresh
+                    ownCache = null
+                }
             }
-            writeAtomic(file(app, META), data.toString())
-            data.optJSONObject("settings")?.let { p.edit().putString("settings", it.toString()).apply() }
-            metaCache = null
+            val meta = data.second
+            val metaText = meta.toString()
+            writeAtomic(file(app, META), metaText)
+            meta.optJSONObject("settings")?.let { p.edit().putString("settings", it.toString()).apply() }
+            metaCache = try {
+                IttcBridge.parseMeta(metaText)
+            } catch (_: Throwable) {
+                null
+            }
             if (dir != null) {
-                writeAtomic(file(app, DIR), dir.toString())
+                // (the file as it came: read again only if the app starts again)
+                val f = file(app, DIR)
+                if (!dirPart.renameTo(f)) {
+                    f.delete()
+                    if (!dirPart.renameTo(f)) dirPart.copyTo(f, overwrite = true)
+                }
                 p.edit().putLong("last_directory", now).apply()
-                dirCache = null
+                synchronized(cacheLock) { dirCache = dir }
             }
             lastDone = System.currentTimeMillis()
             p.edit().putLong("last_refresh", now).remove("refresh_error").apply()
@@ -543,7 +555,11 @@ object IttcDirect {
                 IttcReminders.schedule(app, leads(app), ownersKnown = true)
             }
         } catch (e: Throwable) {
+            if (e is OutOfMemoryError) IttcCrash.record(app, e, "Updating the lists")
             p.edit().putString("refresh_error", e.message ?: "Could not update").apply()
+        } finally {
+            dataPart.delete()
+            dirPart.delete()
         }
         changed(app)
     }
@@ -554,19 +570,19 @@ object IttcDirect {
     /**
      * 3.11: every lead I may see in the Tracker ("All list"; the server's row security decides —
      * the Leads tab picks My / All from it). An older database (no p_all: 404) gets the call
-     * without it, as before (my own leads; a super admin's everyone's).
+     * without it, as before (my own leads; a super admin's everyone's). Into [into]; its size.
      */
-    private fun fetchPhoneData(app: Context): String {
+    private fun fetchPhoneData(app: Context, into: File): Long {
         if (System.currentTimeMillis() >= noAllListUntil) {
             try {
-                return IttcApi.rpc(app, "my_phone_data", JSONObject().put("p_all", true)).also { setAllList(app, true) }
+                return IttcApi.rpcToFile(app, "my_phone_data", JSONObject().put("p_all", true), into).also { setAllList(app, true) }
             } catch (e: IttcApi.ApiError) {
                 // (only "no such function" — PostgREST's PGRST202 — means an older database)
                 if (e.status != 404 || e.code != "PGRST202") throw e
                 noAllListUntil = System.currentTimeMillis() + 30 * 60_000L
             }
         }
-        return IttcApi.rpc(app, "my_phone_data").also { setAllList(app, false) }
+        return IttcApi.rpcToFile(app, "my_phone_data", JSONObject(), into).also { setAllList(app, false) }
     }
 
     private fun setAllList(app: Context, on: Boolean) {
@@ -577,16 +593,262 @@ object IttcDirect {
     /** 3.11: the kept list is the All list (every lead I may see); false: an older database — my own only */
     fun allList(context: Context): Boolean = prefs(context).getBoolean("all_list", false)
 
-    /** Only leads (alumni / bank numbers cannot take a result); an older database: the whole list */
-    private fun fetchDirectory(app: Context): JSONArray =
+    /** Only leads (alumni / bank numbers cannot take a result); an older database: the whole list. Into [into]. */
+    private fun fetchDirectory(app: Context, into: File): Long =
         try {
-            JSONArray(IttcApi.rpc(app, "phone_lead_directory"))
+            IttcApi.rpcToFile(app, "phone_lead_directory", JSONObject(), into)
         } catch (e: IttcApi.ApiError) {
             if (e.status != 404) throw e
-            JSONArray(IttcApi.rpc(app, "my_lead_directory"))
+            IttcApi.rpcToFile(app, "my_lead_directory", JSONObject(), into)
         }
 
-    @Volatile private var lastLeadsText: String? = null
+    // ================================================================== 3.11.1: the lists as streams
+    private fun reader(f: File): JsonReader =
+        JsonReader(InputStreamReader(BufferedInputStream(FileInputStream(f), 32 * 1024), Charsets.UTF_8)).apply { setLenient(true) }
+
+    /** A value as the old optString did ("null", blank → null; a number / true as text); an object / array: skipped */
+    private fun JsonReader.str(): String? = when (peek()) {
+        JsonToken.NULL -> {
+            nextNull()
+            null
+        }
+        JsonToken.STRING, JsonToken.NUMBER -> nextString().takeIf { it.isNotBlank() && it != "null" }
+        JsonToken.BOOLEAN -> nextBoolean().toString()
+        else -> {
+            skipValue()
+            null
+        }
+    }
+
+    /** One copy of each repeated text (stage, course, rating… the same few names on thousands of rows) */
+    private class Dedupe {
+        private val seen = HashMap<String, String>()
+        operator fun invoke(s: String?): String? = if (s == null) null else if (s.length > 64) s else seen.getOrPut(s) { s }
+    }
+
+    /** my_phone_data's answer: (the leads, the rest: stages, people, me, settings…); null: no answer ("null") */
+    private fun readPhoneData(f: File): Pair<ArrayList<IttcBridge.PhoneLead>, JSONObject>? {
+        return reader(f).use { r ->
+            if (r.peek() != JsonToken.BEGIN_OBJECT) return@use null
+            var leads: ArrayList<IttcBridge.PhoneLead>? = null
+            val rest = JSONObject()
+            r.beginObject()
+            while (r.hasNext()) {
+                val k = r.nextName()
+                when {
+                    k != "leads" -> rest.put(k, readAny(r))
+                    r.peek() == JsonToken.BEGIN_ARRAY -> leads = readLeads(r)
+                    else -> r.skipValue()
+                }
+            }
+            r.endObject()
+            (leads ?: ArrayList()) to rest
+        }
+    }
+
+    private fun readLeadsFile(f: File): ArrayList<IttcBridge.PhoneLead> {
+        if (!f.exists()) return ArrayList()
+        return reader(f).use { r -> if (r.peek() == JsonToken.BEGIN_ARRAY) readLeads(r) else ArrayList() }
+    }
+
+    private fun readLeads(r: JsonReader): ArrayList<IttcBridge.PhoneLead> {
+        val out = ArrayList<IttcBridge.PhoneLead>()
+        val d = Dedupe()
+        r.beginArray()
+        while (r.hasNext()) {
+            if (r.peek() != JsonToken.BEGIN_OBJECT) {
+                r.skipValue()
+                continue
+            }
+            readLead(r, d)?.let(out::add)
+        }
+        r.endArray()
+        return out
+    }
+
+    private fun readLead(r: JsonReader, d: Dedupe): IttcBridge.PhoneLead? {
+        var id: String? = null
+        var name: String? = null
+        var phone: String? = null
+        var alt: String? = null
+        var wa: String? = null
+        var stage: String? = null
+        var course: String? = null
+        var batch: String? = null
+        var rating: String? = null
+        var next: String? = null
+        var last: String? = null
+        var attempts = 0
+        var note: String? = null
+        var stageId: String? = null
+        var courseId: String? = null
+        var assigned: String? = null
+        var canEdit = true
+        r.beginObject()
+        while (r.hasNext()) {
+            when (r.nextName()) {
+                "lead_id" -> id = r.str()
+                "name" -> name = r.str()
+                "phone" -> phone = r.str()
+                "alt_phone" -> alt = r.str()
+                "whatsapp_number" -> wa = r.str()
+                "stage" -> stage = d(r.str())
+                "course" -> course = d(r.str())
+                "batch" -> batch = d(r.str())
+                "rating" -> rating = d(r.str())
+                "next_call" -> next = r.str()
+                "last_contacted" -> last = r.str()
+                "call_attempts" -> attempts = r.str()?.let { it.toIntOrNull() ?: it.toDoubleOrNull()?.toInt() } ?: 0
+                "last_note" -> note = r.str()
+                "stage_id" -> stageId = d(r.str())
+                "course_id" -> courseId = d(r.str())
+                "assigned_to" -> assigned = d(r.str())
+                // (3.11: only a lead I may see but not change says so)
+                "can_edit" -> canEdit = r.str()?.let { !it.equals("false", true) } ?: true
+                else -> r.skipValue()
+            }
+        }
+        r.endObject()
+        return IttcBridge.PhoneLead(
+            leadId = id ?: return null,
+            name = name ?: "",
+            phone = phone,
+            altPhone = alt,
+            whatsapp = wa,
+            stage = stage,
+            course = course,
+            batch = batch,
+            rating = rating,
+            nextCall = IttcBridge.parseTimeOf(next),
+            lastContacted = IttcBridge.parseTimeOf(last),
+            attempts = attempts,
+            lastNote = note,
+            stageId = stageId,
+            courseId = courseId,
+            assignedTo = assigned,
+            canEdit = canEdit,
+        )
+    }
+
+    /** The kept leads list (the fields read back by [readLead]) */
+    private fun writeLeadsFile(f: File, leads: List<IttcBridge.PhoneLead>) {
+        val tmp = File(f.parentFile, f.name + ".tmp")
+        // (one formatter for the whole list)
+        val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        JsonWriter(OutputStreamWriter(BufferedOutputStream(FileOutputStream(tmp), 32 * 1024), Charsets.UTF_8)).use { w ->
+            fun field(k: String, v: String?) {
+                w.name(k)
+                if (v == null) w.nullValue() else w.value(v)
+            }
+            w.beginArray()
+            leads.forEach { l ->
+                w.beginObject()
+                field("lead_id", l.leadId)
+                field("name", l.name)
+                field("phone", l.phone)
+                field("alt_phone", l.altPhone)
+                field("whatsapp_number", l.whatsapp)
+                field("stage", l.stage)
+                field("course", l.course)
+                field("batch", l.batch)
+                field("rating", l.rating)
+                field("next_call", l.nextCall?.let { fmt.format(Date(it)) })
+                field("last_contacted", l.lastContacted?.let { fmt.format(Date(it)) })
+                w.name("call_attempts").value(l.attempts.toLong())
+                field("last_note", l.lastNote)
+                field("stage_id", l.stageId)
+                field("course_id", l.courseId)
+                field("assigned_to", l.assignedTo)
+                w.name("can_edit").value(l.canEdit)
+                w.endObject()
+            }
+            w.endArray()
+        }
+        if (!tmp.renameTo(f)) {
+            f.delete()
+            if (!tmp.renameTo(f)) {
+                tmp.copyTo(f, overwrite = true)
+                tmp.delete()
+            }
+        }
+    }
+
+    /** The "who is a lead" list: number hash → lead (a long last note is kept short: it is only a hint here) */
+    private fun readDirectoryFile(f: File): HashMap<String, IttcBridge.Lead> {
+        val map = HashMap<String, IttcBridge.Lead>()
+        reader(f).use { r ->
+            // (not a list: an error, never "nobody is a lead")
+            if (r.peek() != JsonToken.BEGIN_ARRAY) throw IllegalStateException("Could not read the lead list")
+            val d = Dedupe()
+            r.beginArray()
+            while (r.hasNext()) {
+                if (r.peek() != JsonToken.BEGIN_OBJECT) {
+                    r.skipValue()
+                    continue
+                }
+                var hash: String? = null
+                var id: String? = null
+                var name: String? = null
+                var rating: String? = null
+                var stage: String? = null
+                var course: String? = null
+                var note: String? = null
+                r.beginObject()
+                while (r.hasNext()) {
+                    when (r.nextName()) {
+                        "hash" -> hash = r.str()
+                        "lead_id" -> id = r.str()
+                        "name" -> name = r.str()
+                        "rating" -> rating = d(r.str())
+                        "stage" -> stage = d(r.str())
+                        "course" -> course = d(r.str())
+                        "last_note" -> note = r.str()?.let { if (it.length > NOTE_KEPT) it.take(NOTE_KEPT) + "…" else it }
+                        else -> r.skipValue()
+                    }
+                }
+                r.endObject()
+                if (hash == null) continue
+                map[hash] = IttcBridge.Lead(
+                    leadId = id.orEmpty(),
+                    name = name.orEmpty(),
+                    rating = rating,
+                    stage = stage,
+                    course = course,
+                    lastNote = note,
+                )
+            }
+            r.endArray()
+        }
+        return map
+    }
+
+    /** A value of any kind as org.json has it (for the small rest of my_phone_data's answer) */
+    private fun readAny(r: JsonReader): Any = when (r.peek()) {
+        JsonToken.BEGIN_OBJECT -> {
+            val o = JSONObject()
+            r.beginObject()
+            while (r.hasNext()) o.put(r.nextName(), readAny(r))
+            r.endObject()
+            o
+        }
+        JsonToken.BEGIN_ARRAY -> {
+            val a = JSONArray()
+            r.beginArray()
+            while (r.hasNext()) a.put(readAny(r))
+            r.endArray()
+            a
+        }
+        JsonToken.NULL -> {
+            r.nextNull()
+            JSONObject.NULL
+        }
+        JsonToken.BOOLEAN -> r.nextBoolean()
+        JsonToken.NUMBER -> r.nextString().let { n -> n.toLongOrNull() ?: n.toDoubleOrNull() ?: n }
+        else -> r.nextString()
+    }
+
+    /** a list read, not the same as the one kept: written and told again (start, mode switch, sign-in) */
+    @Volatile private var leadsDirty = true
     @Volatile private var lastScheduled = 0L
 
     private var pendingRefresh: Runnable? = null

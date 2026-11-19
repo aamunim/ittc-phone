@@ -148,9 +148,27 @@ class RecentsFragment(
         }
     }
 
+    // 🎓 ITTC 3.11.1: one read of the call log at a time (each reads every contact, the full one the
+    // whole log: a resume, a call ending and the timer used to start several at once, each with
+    // its own copies); asked again while one runs → once more right after it
+    private var ittcQuickAt = 0L
+    private var ittcQuickAgain = false
+    private var ittcInvalidateAgain = false
+    private var ittcFullAt = 0L
+    private var ittcFullAgain = false
+
     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
         // 🎓 ITTC: the call history page deleted / blocked calls: read the log again in full
-        if (IttcCallHistory.takeDirty() || invalidate) {
+        val readAgainInFull = IttcCallHistory.takeDirty() || invalidate
+        val now = System.currentTimeMillis()
+        if (ittcQuickAt != 0L && now - ittcQuickAt < 30_000) {
+            ittcQuickAgain = true
+            ittcInvalidateAgain = ittcInvalidateAgain || readAgainInFull
+            return
+        }
+        ittcQuickAt = now
+        if (readAgainInFull || ittcInvalidateAgain) {
+            ittcInvalidateAgain = false
             allRecentCalls = emptyList()
         }
 
@@ -170,9 +188,34 @@ class RecentsFragment(
             }
         }
 
+        val started = now
         refreshCallLog(loadAll = false) {
-            binding.recentsList.runAfterAnimations {
-                refreshCallLog(loadAll = true)
+            post {
+                if (ittcQuickAt == started) ittcQuickAt = 0L
+                ittcRefreshFull()
+                if (ittcQuickAgain && ittcQuickAt == 0L) {
+                    ittcQuickAgain = false
+                    refreshItems()
+                }
+            }
+        }
+    }
+
+    /** The whole log after the first rows (one at a time; asked meanwhile: once more after it) */
+    private fun ittcRefreshFull() {
+        val now = System.currentTimeMillis()
+        if (ittcFullAt != 0L && now - ittcFullAt < 60_000) {
+            ittcFullAgain = true
+            return
+        }
+        ittcFullAt = now
+        ittcFullAgain = false
+        binding.recentsList.runAfterAnimations {
+            refreshCallLog(loadAll = true) {
+                post {
+                    if (ittcFullAt == now) ittcFullAt = 0L
+                    if (ittcFullAgain && ittcFullAt == 0L) ittcRefreshFull()
+                }
             }
         }
     }

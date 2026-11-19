@@ -93,7 +93,7 @@
     <string name="ittc_c_fee_offer_line" translatable="false">🏷 We offered %1$s</string>
     <string name="ittc_c_fee_asked_line" translatable="false">🙋 Lead asked %1$s</string>
     <string name="ittc_c_fee_last_request" translatable="false">Discount %1$s: %2$s</string>
-    <string name="ittc_c_fee_start" translatable="false">＋ Start fee talk</string>
+    <string name="ittc_c_fee_start" translatable="false">＋ Talk about fee</string>
     <string name="ittc_c_fee_another" translatable="false">＋ Another course</string>
     <string name="ittc_c_fee_ask_discount" translatable="false">％ Ask discount</string>
     <string name="ittc_c_fee_what_said" translatable="false">💬 What was said</string>

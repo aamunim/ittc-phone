@@ -64,7 +64,8 @@ object IttcLeadSheet {
 
     /**
      * The sheet for [l]. [direct]: signed in to ITTC here (the lead page's actions are offered);
-     * [canHandOver]: a super admin (hand over is offered). 3.9 (the Leads board, direct mode):
+     * [canHandOver]: kept for the callers — hand over is now offered to everyone signed in (direct),
+     * for every lead (the server allows anyone to hand over any lead they can see). 3.9 (the Leads board, direct mode):
      * [moveTo] the stages it can go to — a "Move to…" row of chips that calls [onMove] (also the
      * way to move a lead without dragging, e.g. with TalkBack).
      */
@@ -180,7 +181,7 @@ object IttcLeadSheet {
                 IttcCUi.section(c, c.getString(R.string.ittc_l3_lead_actions)),
                 IttcCUi.topMargin(c, 4).apply { bottomMargin = IttcCUi.dp(c, 4) },
             )
-            IttcLeadActivity.pageActions(canHandOver).forEach { (key, label) ->
+            IttcLeadActivity.pageActions(canHandOver = direct || canHandOver).forEach { (key, label) ->
                 body.addView(row(c, p, Action(iconFor(key), c.getString(label), p.surfaceAlt, p.text2) {
                     IttcLeadActivity.open(c, l.leadId, action = key)
                 }, sheet))

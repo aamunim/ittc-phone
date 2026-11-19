@@ -270,6 +270,15 @@ object IttcBridge {
         return k?.lead
     }
 
+    /** (3.11.1: never grows without end — the stale ones go, then all if it is still too big) */
+    private const val KNOWN_MAX = 10_000
+
+    private fun trimKnown(now: Long) {
+        if (known.size < KNOWN_MAX) return
+        known.entries.removeIf { now - it.value.at >= RECENTS_TTL_MS }
+        if (known.size >= KNOWN_MAX) known.clear()
+    }
+
     private fun askRecents(app: Context, onNew: () -> Unit) {
         val batch = asking.toList().take(300)
         if (batch.isEmpty()) return
@@ -295,6 +304,7 @@ object IttcBridge {
                 // (no Tracker / an older one: the rows just stay plain)
             }
             val now = System.currentTimeMillis()
+            trimKnown(now)
             batch.forEach { known[it] = Known(found[it], now) }
             main.post { onNew() }
         }
@@ -307,6 +317,7 @@ object IttcBridge {
     fun leadsFor(context: Context, numbers: Collection<String>): Map<String, Lead> {
         val app = context.applicationContext
         val now = System.currentTimeMillis()
+        trimKnown(now)
         val byClean = numbers.mapNotNull { n -> clean(n)?.let { it to n } }
         val missing = byClean.map { it.first }.distinct()
             .filter { known[it]?.let { k -> now - k.at >= RECENTS_TTL_MS } ?: true }

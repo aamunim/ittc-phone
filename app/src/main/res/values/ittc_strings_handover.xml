@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 👥 ITTC: hand over — everyone (direct mode) can give any lead they can see to anyone -->
+<resources>
+    <string name="ittc_ho_give" translatable="false">Give</string>
+    <string name="ittc_ho_button" translatable="false">👥 Hand over</string>
+    <string name="ittc_ho_chosen" translatable="false">👥 Hand over to %s · change</string>
+    <string name="ittc_ho_will" translatable="false">Will hand over to %s when you save or close</string>
+    <string name="ittc_ho_done" translatable="false">👥 Handed over to %s</string>
+    <string name="ittc_ho_failed" translatable="false">Could not hand over. Try again from the lead page.</string>
+    <string name="ittc_ho_cancelled" translatable="false">Hand over cancelled</string>
+</resources>
