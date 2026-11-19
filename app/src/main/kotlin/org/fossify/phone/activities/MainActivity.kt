@@ -207,6 +207,14 @@ class MainActivity : SimpleActivity() {
             System.exit(0)
             return
         }
+        // 🎓 ITTC 3.12: the mode changed while away (the tile, the office hours): the tabs for it now
+        if (ittcTabsStale || ittcWantedTabs() != tabKinds) {
+            try {
+                ittcRebuildTabs()
+            } catch (e: Throwable) {
+                org.fossify.phone.helpers.IttcCrash.record(this, e, "Main screen: mode tabs")
+            }
+        }
 
         updateMenuColors()
         ittcPanel.applyColors()
@@ -665,6 +673,9 @@ class MainActivity : SimpleActivity() {
 
     private fun setupTabs() {
         binding.viewPager.adapter = null
+        // (🎓 3.12: made again for a mode change — the old listener must not see the tabs go and
+        // the first new one picked by itself: that would count Call History's missed calls as seen)
+        binding.mainTabsHolder.clearOnTabSelectedListeners()
         binding.mainTabsHolder.removeAllTabs()
         tabKindsCache = ittcWantedTabs()
         // 🎓 ITTC 3.8: Call History, Leads (always; 🎓 3.12: not in Personal mode), Contacts, Favorites
@@ -1079,7 +1090,10 @@ class MainActivity : SimpleActivity() {
         try {
             showIttcMode()
             showIttcTopBar(ittcSignedInTop, ittcUnread)
-            if (ittcWantedTabs() != tabKinds) ittcRebuildTabs()
+            // (the tabs only while on screen: in the background — the office hours' alarm — on the return)
+            if (ittcWantedTabs() != tabKinds) {
+                if (ittcResumed) ittcRebuildTabs() else ittcTabsStale = true
+            }
             getRecentsFragment()?.ittcModeChanged()
             getContactsFragment()?.ittcModeChanged()
             IttcTabBadges.leadsChanged()
@@ -1093,7 +1107,10 @@ class MainActivity : SimpleActivity() {
      * 🎓 ITTC 3.12: the tabs made again for the mode (from the same ordered list, ittcVisibleTabs):
      * the pages too when they exist, on the same kind of tab — Call History when it was Leads.
      */
+    private var ittcTabsStale = false
+
     private fun ittcRebuildTabs() {
+        ittcTabsStale = false
         val keep = currentKind()
         val hadPages = binding.viewPager.adapter != null
         if (binding.mainMenu.isSearchOpen) binding.mainMenu.closeSearch()

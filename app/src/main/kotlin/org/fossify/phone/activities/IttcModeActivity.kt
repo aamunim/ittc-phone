@@ -129,7 +129,7 @@ class IttcModeActivity : SimpleActivity() {
         card(holder).apply {
             switchRow(this, R.string.ittc_mode_auto, getString(R.string.ittc_mode_auto_sub), IttcMode.autoSwitch(this@IttcModeActivity)) { on ->
                 IttcMode.setAutoSwitch(this@IttcModeActivity, on)
-                IttcModeAuto.settingsChanged(this@IttcModeActivity)
+                IttcModeAuto.settingsChanged(this@IttcModeActivity, autoTurnedOn = on)
             }
 
             // the days: the week from Saturday (as the office's), short names in the phone's language

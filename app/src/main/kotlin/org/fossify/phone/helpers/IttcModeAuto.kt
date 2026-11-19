@@ -56,6 +56,8 @@ object IttcModeAuto {
     private const val NOTICE_BEFORE_MS = 10 * 60_000L
     private const val HELD_MAX = 20
     private const val HELD_SHOWN = 5
+    private const val HELD_STALE_MS = 24 * 3600_000L
+    private const val CALL_RETRY_MS = 60_000L
 
     private val io = Executors.newSingleThreadExecutor()
 
@@ -87,7 +89,8 @@ object IttcModeAuto {
                 if (last != null && last.at > applied) {
                     // (the first time ever: only noted — the mode chosen by hand stays)
                     if (applied == 0L) prefs(app).edit().putLong(KEY_APPLIED, last.at).apply()
-                    else apply(app, last)
+                    // (put off for a call: its own alarm in a minute does it, and sets the next one)
+                    else if (!apply(app, last)) return
                 }
             }
             reschedule(app)
@@ -95,18 +98,26 @@ object IttcModeAuto {
         }
     }
 
-    /** The mode settings changed on the settings screen: the hours' mode now (with the setting on) and new alarms */
-    fun settingsChanged(context: Context) {
+    /**
+     * The mode settings changed on the settings screen: new alarms. [autoTurnedOn]: "Switch by office
+     * hours" was just turned on — the hours' mode now; any other change keeps a switch made by hand
+     * (until the next start / end).
+     */
+    fun settingsChanged(context: Context, autoTurnedOn: Boolean = false) {
         val app = context.applicationContext
         io.execute {
             try {
                 if (IttcDirect.isSignedIn(app) && IttcMode.autoSwitch(app)) {
                     val h = IttcMode.hours(app)
-                    if (!h.empty) {
+                    if (autoTurnedOn && !h.empty) {
                         val personal = !IttcMode.inHours(h, System.currentTimeMillis())
                         if (!personal || IttcMode.canBePersonal(app)) IttcMode.setPersonal(app, personal, "auto")
                     }
-                    IttcMode.lastBoundary(h)?.let { prefs(app).edit().putLong(KEY_APPLIED, it.at).apply() }
+                    // (a start / end before now, with the new hours, is not done later by a check)
+                    IttcMode.lastBoundary(h)?.let { last ->
+                        val p = prefs(app)
+                        if (last.at > p.getLong(KEY_APPLIED, 0L)) p.edit().putLong(KEY_APPLIED, last.at).apply()
+                    }
                 }
                 IttcMode.enforce(app)
                 reschedule(app)
@@ -115,21 +126,36 @@ object IttcModeAuto {
         }
     }
 
-    /** A start / end of the office hours: the mode it wants (unless "Stay in ITTC" was chosen for it) */
-    private fun apply(app: Context, b: IttcMode.Boundary) {
+    /**
+     * A start / end of the office hours: the mode it wants (unless "Stay in ITTC" was chosen for it).
+     * false: put off — a call is on (never a switch in the middle of one): tried again in a minute.
+     */
+    private fun apply(app: Context, b: IttcMode.Boundary): Boolean {
         val p = prefs(app)
         // (each start / end once: an alarm that came twice changes nothing the second time)
-        if (b.at <= p.getLong(KEY_APPLIED, 0L)) return
+        if (b.at <= p.getLong(KEY_APPLIED, 0L)) return true
+        val inCall = try {
+            CallManager.getPrimaryCall() != null
+        } catch (_: Throwable) {
+            false
+        }
+        if (inCall) {
+            app.getSystemService(AlarmManager::class.java)?.let { am ->
+                setAlarm(am, System.currentTimeMillis() + CALL_RETRY_MS, pending(app, ACTION_SWITCH, RC_SWITCH, b))
+            }
+            return false
+        }
         p.edit().putLong(KEY_APPLIED, b.at).apply()
         if (p.getLong(KEY_SKIP, 0L) == b.at) {
             p.edit().remove(KEY_SKIP).apply()
-            return
+            return true
         }
         if (b.personal) {
             if (IttcMode.autoSwitch(app) && IttcMode.canBePersonal(app)) IttcMode.setPersonal(app, true, "auto")
         } else if (IttcMode.autoSwitch(app) || IttcMode.hoursLocked(app)) {
             IttcMode.setPersonal(app, false, "auto")
         }
+        return true
     }
 
     // ============================================================================= alarms
@@ -207,7 +233,8 @@ object IttcModeAuto {
         when (intent.action) {
             ACTION_SWITCH -> {
                 cancelNotice(app)
-                if (wanted(app) && at > 0) apply(app, IttcMode.Boundary(at, personal))
+                // (put off for a call: the alarm in a minute is set, nothing else now)
+                if (wanted(app) && at > 0 && !apply(app, IttcMode.Boundary(at, personal))) return
                 // (an alarm a moment early: the next one after this start / end, not this one again)
                 reschedule(app, maxOf(System.currentTimeMillis(), at))
             }
@@ -281,6 +308,8 @@ object IttcModeAuto {
             val o = JSONObject()
             listOf("lead_id", "name", "number", "line").forEach { k -> i.getStringExtra(k)?.let { o.put(k, it) } }
             if (!o.has("number")) return
+            // (when it rang: its due time — one more than a day old is not shown on the way back)
+            o.put("held_at", System.currentTimeMillis())
             // (the same lead once: its newest)
             val kept = JSONArray()
             for (n in 0 until arr.length()) {
@@ -325,10 +354,12 @@ object IttcModeAuto {
             val inbox = p.getInt(KEY_HELD_INBOX, 0)
             p.edit().remove(KEY_HELD).remove(KEY_HELD_INBOX).apply()
             // (the reminders that rang in Personal mode, the newest few)
-            for (n in maxOf(0, held.length() - HELD_SHOWN) until held.length()) {
-                val o = held.optJSONObject(n) ?: continue
+            val now = System.currentTimeMillis()
+            val fresh = (0 until held.length()).mapNotNull { held.optJSONObject(it) }
+                .filter { now - it.optLong("held_at", now) <= HELD_STALE_MS }
+            fresh.takeLast(HELD_SHOWN).forEach { o ->
                 val i = Intent()
-                o.keys().forEach { k -> i.putExtra(k, o.optString(k)) }
+                listOf("lead_id", "name", "number", "line").forEach { k -> if (o.has(k)) i.putExtra(k, o.optString(k)) }
                 IttcReminders.show(app, i)
             }
             // (the alarms again, from the list already kept)

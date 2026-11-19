@@ -635,15 +635,17 @@ class CallActivity : SimpleActivity() {
             ittcLeadShown = false
             ittcNoteNumber = null
             val shown = callContact
-            // 🎓 ITTC 3.12: a personal call (Personal mode, or the personal SIM): no lead card — at
-            // most a small "ITTC lead" chip, as the admin (or the person) chose; in doubt, nothing
+            // 🎓 ITTC 3.12: a personal call (Personal mode, or the personal SIM; decided once per
+            // call): no lead card — with "hint" a small "ITTC lead" chip only; in doubt, nothing
             val personal = try {
-                IttcMode.personalFor(this@CallActivity, CallManager.getPrimaryCall()?.details?.accountHandle)
+                val details = CallManager.getPrimaryCall()?.details
+                IttcMode.decideCall(this@CallActivity, details?.handle?.schemeSpecificPart ?: number, details?.accountHandle)
             } catch (_: Throwable) {
                 true
             }
+            // (the chip only for "hint": "log" saves the call quietly, with nothing on screen)
             val hintOnly = personal && try {
-                IttcMode.leadCallInPersonal(this@CallActivity) != IttcMode.LEAD_NOTHING
+                IttcMode.leadCallInPersonal(this@CallActivity) == IttcMode.LEAD_HINT
             } catch (_: Throwable) {
                 false
             }

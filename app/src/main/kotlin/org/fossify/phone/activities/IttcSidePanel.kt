@@ -126,6 +126,11 @@ class IttcSidePanel(
         b.ittcPanelModePersonal.setOnClickListener { setMode(true) }
 
         b.ittcPanelTextSeek.max = (AppTextScale.MAX - AppTextScale.MIN) / AppTextScale.STEP
+        // (claim the drag at once: otherwise the drawer takes a drag towards "smaller" and closes)
+        b.ittcPanelTextSeek.setOnTouchListener { v, e ->
+            if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN) v.parent?.requestDisallowInterceptTouchEvent(true)
+            false
+        }
         b.ittcPanelTextSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             private var tracking = false
 

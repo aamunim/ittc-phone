@@ -1,9 +1,11 @@
 package org.fossify.phone.helpers
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.telecom.PhoneAccountHandle
+import android.telecom.TelecomManager
 import android.widget.Toast
 import org.fossify.phone.R
 import org.json.JSONArray
@@ -151,12 +153,58 @@ object IttcMode {
         return try {
             val simId = officeSimId(ctx)
             if (!officeSimOn(ctx) || simId == null || accountId.isNullOrEmpty()) return mode
+            // (the office SIM gone — removed, swapped, an eSIM made again — or one SIM left: the mode)
+            val ids = callAccountIds(ctx) ?: return mode
+            if (ids.size < 2 || simId !in ids) return mode
             if (accountId == simId) return false
             canBePersonal(ctx)
         } catch (_: Throwable) {
             mode
         }
     }
+
+    /** The phone's calling accounts (SIMs) now; null: could not be read */
+    @SuppressLint("MissingPermission")
+    private fun callAccountIds(ctx: Context): Set<String>? =
+        try {
+            ctx.getSystemService(TelecomManager::class.java)?.callCapablePhoneAccounts?.map { it.id }?.toSet()
+        } catch (_: Throwable) {
+            null
+        }
+
+    // (each call decided once, when it starts: a switch of the mode or the SIMs during a call
+    // changes nothing for it — key: the number's last 10 digits)
+    private val callDecisions = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private fun callKey(number: String?): String? = number?.filter { it.isDigit() }?.takeLast(10)?.takeIf { it.length >= 6 }
+
+    /**
+     * A call started (CallService) or its screen showed it: personal or not, decided once and kept
+     * for the call's end. Not kept while its SIM is unknown with "Office SIM is ITTC" on (an outgoing
+     * call before its SIM is chosen): decided again later.
+     */
+    fun decideCall(ctx: Context, number: String?, handle: PhoneAccountHandle?): Boolean {
+        val key = callKey(number)
+        key?.let { callDecisions[it] }?.let { return it }
+        val personal = try {
+            personalFor(ctx, handle)
+        } catch (_: Throwable) {
+            personalNow()
+        }
+        if (key != null && (handle != null || !officeSimOn(ctx))) {
+            if (callDecisions.size > 50) callDecisions.clear()
+            callDecisions.putIfAbsent(key, personal)
+        }
+        return callDecisions[key ?: ""] ?: personal
+    }
+
+    /** The call ended: what was decided for it (and forgotten), else decided now */
+    fun takeCallDecision(ctx: Context, number: String?, handle: PhoneAccountHandle?): Boolean =
+        callKey(number)?.let { callDecisions.remove(it) } ?: try {
+            personalFor(ctx, handle)
+        } catch (_: Throwable) {
+            personalNow()
+        }
 
     /** What a lead's call does in Personal mode: [LEAD_NOTHING], [LEAD_HINT] or [LEAD_LOG] */
     fun leadCallInPersonal(ctx: Context): String {
@@ -355,6 +403,8 @@ object IttcMode {
             val keep = JSONObject()
             listOf("personal_mode_allowed", "lock_office_hours", "office_hours", "lead_call_in_personal", "let_user_change_lead_call")
                 .forEach { k -> if (settings.has(k) && !settings.isNull(k)) keep.put(k, settings.get(k)) }
+            // (an older server / Tracker: no mode keys at all — what was kept stays)
+            if (keep.length() == 0) return
             val text = keep.toString()
             val p = prefs(ctx)
             if (p.getString(KEY_ADMIN, null) == text) return

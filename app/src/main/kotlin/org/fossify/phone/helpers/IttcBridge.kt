@@ -808,7 +808,8 @@ object IttcBridge {
         // never an after-call screen; nothing sent — but a lead's call when the admin (or the person)
         // chose "log": saved to the lead quietly. In doubt: as the mode is.
         val personal = try {
-            IttcMode.personalFor(app, details.accountHandle)
+            // (as decided when the call started; a switch meanwhile changes nothing for it)
+            IttcMode.takeCallDecision(app, details.handle?.schemeSpecificPart, details.accountHandle)
         } catch (_: Throwable) {
             IttcMode.personalNow()
         }
@@ -852,8 +853,9 @@ object IttcBridge {
                     putString("number", number)
                     if (reason != null) putString("end_reason", reason)
                     // (the after-call screen has "Add a note": the Tracker sends no notification too.
-                    // Only if it really opened by now; else the Tracker's notification is the way in)
-                    if (show && shownFor == number) putString("shows_note", "1")
+                    // Only if it really opened by now; else the Tracker's notification is the way in.
+                    // 🎓 3.12: a lead's call in Personal mode saved quietly: no notification either)
+                    if ((show && shownFor == number) || logQuietly) putString("shows_note", "1")
                 }
                 withTracker(app) { it.call("call_ended", id, extras) }
             } catch (_: Throwable) {
