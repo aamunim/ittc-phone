@@ -36,9 +36,9 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
   that needs a note or a date asks for it.
 - 💬 **Which WhatsApp** (3.15.0) — every WhatsApp button (Leads tab, the lead's sheet and page,
   message templates, admission papers, the number / contact page) asks which WhatsApp to use when
-  the phone has more than one: WhatsApp, WhatsApp Business, a clone, or a dual copy in another
-  profile (Samsung Dual Messenger, MIUI Dual apps, a work profile — it opens on its home screen with
-  the number, and the message, copied to paste). One WhatsApp opens at once, as before.
+  the phone has more than one: WhatsApp, WhatsApp Business, a clone / other WhatsApp app that opens
+  WhatsApp links, or a copy in another profile (dual apps, a work profile — it opens on its home
+  screen, then the number, and the message, are copied to paste). One WhatsApp opens at once, as before.
 - 📋 **নম্বর কপি** (3.15.0) — copy a number from the lead's sheet and page, the number / contact
   page (each number and the top bar), Call History, Contacts / Favorites (long press → menu) and the
   WhatsApp choice.
@@ -74,8 +74,8 @@ contract is in [docs/ITTC.md](docs/ITTC.md).
   name, version, package visibility of the Tracker.
 - `helpers/IttcWhatsApp.kt`, `helpers/IttcCopy.kt`, `res/values/ittc_strings_wa.xml` (new, 3.15.0):
   the WhatsApp choice and "copy the number"; used by the ITTC screens, `adapters/RecentCallsAdapter.kt`
-  and `adapters/ContactsAdapter.kt` / `res/menu/cab_contacts.xml`; `AndroidManifest.xml` lists the
-  WhatsApp apps and links in `<queries>`.
+  and `adapters/ContactsAdapter.kt` / `res/menu/cab_contacts.xml`; `AndroidManifest.xml` lists WhatsApp,
+  WhatsApp Business and the apps that open `whatsapp://` links in `<queries>`.
 - `.github/workflows/build.yml`: builds the signed APK; Fossify's own workflows removed.
 
 ## Build

@@ -1018,10 +1018,10 @@ class IttcLeadActivity : SimpleActivity() {
 
     /**
      * WhatsApp with the lead's number (and [text] typed in). 3.15: through [IttcWhatsApp] — a choice when
-     * there are more WhatsApps; [onOpened] runs once one has opened (after the choice).
+     * there are more WhatsApps; [onResult] hears once what came of it (after the choice).
      */
-    private fun openWhatsApp(text: String?, onOpened: (() -> Unit)? = null) {
-        IttcWhatsApp.open(this, whatsAppNumber(), text) { opened -> if (opened) onOpened?.invoke() }
+    private fun openWhatsApp(text: String?, onResult: ((IttcWhatsApp.Outcome) -> Unit)? = null) {
+        IttcWhatsApp.open(this, whatsAppNumber(), text, onResult = onResult)
     }
 
     /** 📋 3.15: copy one of the lead's numbers (a choice when it has two or more) */
@@ -1184,10 +1184,14 @@ class IttcLeadActivity : SimpleActivity() {
             .setNegativeButton(R.string.cancel, null)
             .apply {
                 setupDialogStuff(ScrollView(this@IttcLeadActivity).apply { addView(holder) }, this, titleText = t.name) { dialog ->
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    val sendButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    // (WhatsApp may ask which one first: one send at a time until it is answered)
+                    var sending = false
+                    sendButton.setOnClickListener {
+                        if (sending) return@setOnClickListener
                         val text = input.text?.toString()?.trim().orEmpty()
                         if (text.isEmpty()) return@setOnClickListener
-                        // (WhatsApp may ask which one first: logged once it has opened)
+                        // (logged once it has opened)
                         val sent = {
                             dialog.dismiss()
                             queue(
@@ -1205,7 +1209,13 @@ class IttcLeadActivity : SimpleActivity() {
                         if (channel == "sms") {
                             if (sendSms(text)) sent()
                         } else {
-                            openWhatsApp(text) { sent() }
+                            sending = true
+                            sendButton.isEnabled = false
+                            openWhatsApp(text) { outcome ->
+                                sending = false
+                                sendButton.isEnabled = true
+                                if (outcome == IttcWhatsApp.Outcome.OPENED) sent()
+                            }
                         }
                     }
                 }

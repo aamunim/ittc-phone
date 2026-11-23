@@ -6,10 +6,14 @@
     <string name="ittc_wa_tag_whatsapp" translatable="false">WhatsApp</string>
     <string name="ittc_wa_tag_business" translatable="false">Business</string>
     <string name="ittc_wa_tag_clone" translatable="false">Clone</string>
+    <!-- a copy in another user profile: a dual / clone profile, a work profile, or another one -->
     <string name="ittc_wa_tag_dual" translatable="false">%s (Dual)</string>
-    <!-- a dual copy (another profile) opens on its home screen: the number / message are in the clipboard -->
+    <string name="ittc_wa_tag_work" translatable="false">%s (Work)</string>
+    <string name="ittc_wa_tag_other" translatable="false">%s (Other profile)</string>
+    <!-- a copy in another profile opens on its home screen; then the number / message are in the clipboard -->
     <string name="ittc_wa_dual_number_copied" translatable="false">নম্বর কপি হয়েছে — WhatsApp-এ পেস্ট করে চ্যাট খুলুন</string>
-    <string name="ittc_wa_dual_message_copied" translatable="false">নম্বর ও মেসেজ কপি হয়েছে — WhatsApp চ্যাটে পেস্ট করুন</string>
+    <string name="ittc_wa_other_failed" translatable="false">দ্বিতীয় WhatsApp খোলা যায়নি</string>
+    <string name="ittc_wa_dual_message_copied" translatable="false">নম্বর ও মেসেজ কপি হয়েছে — WhatsApp চ্যাটে পেস্ট করে পাঠান</string>
 
     <!-- copy a number (lead sheet, lead page, number / contact page, contacts, favorites, the chooser) -->
     <string name="ittc_copy_number" translatable="false">নম্বর কপি</string>

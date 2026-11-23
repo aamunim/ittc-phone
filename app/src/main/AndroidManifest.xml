@@ -44,32 +44,14 @@
         <package android:name="org.fossify.contacts.debug" />
         <package android:name="org.fossify.contacts" />
 
-        <!-- 🎓 ITTC 3.15: which WhatsApp (Android 11+ package visibility) — the apps for whatsapp://
-             and wa.me links, browsers (left out of the choice), and WhatsApp / Business / clones by name -->
+        <!-- 🎓 ITTC 3.15: which WhatsApp (Android 11+ package visibility) — the apps that open
+             whatsapp:// links (WhatsApp, Business, clones / other WhatsApp apps), and the two by name -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="whatsapp" />
         </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <category android:name="android.intent.category.BROWSABLE" />
-            <data
-                android:host="wa.me"
-                android:scheme="https" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <category android:name="android.intent.category.BROWSABLE" />
-            <data android:scheme="https" />
-        </intent>
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
-        <package android:name="com.gbwhatsapp" />
-        <package android:name="com.yowhatsapp" />
-        <package android:name="com.fmwhatsapp" />
-        <package android:name="com.whatsapp.clone" />
-        <package android:name="com.obwhatsapp" />
-        <package android:name="com.whatsapp.plus" />
 
         <!-- Required for loading contact accounts -->
         <intent>

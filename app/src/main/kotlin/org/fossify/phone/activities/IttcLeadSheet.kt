@@ -36,10 +36,12 @@ object IttcLeadSheet {
 
     /**
      * A chat with [number] in WhatsApp (BD numbers made +880…); a toast when WhatsApp is not here.
-     * 3.15: through [IttcWhatsApp] — a choice when there are more WhatsApps (Business, a clone, a dual copy).
-     * true: one opened, or the choice is up
+     * 3.15: through [IttcWhatsApp] — a choice when there are more WhatsApps (Business, a clone, a copy
+     * in another profile). (The callers never used the old true / false.)
      */
-    fun openWhatsApp(activity: Activity, number: String?): Boolean = IttcWhatsApp.open(activity, number)
+    fun openWhatsApp(activity: Activity, number: String?) {
+        IttcWhatsApp.open(activity, number)
+    }
 
     private class Action(val icon: Int, val label: String, val bg: Int, val fg: Int, val run: () -> Unit)
 

@@ -1,15 +1,18 @@
 package org.fossify.phone.helpers
 
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Process
+import android.os.SystemClock
 import android.os.UserHandle
 import android.text.TextUtils
 import android.view.Gravity
@@ -17,7 +20,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import org.fossify.commons.extensions.toast
+import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
 import org.fossify.phone.activities.IttcCUi
 import org.fossify.phone.activities.IttcLeadSheet
@@ -25,8 +32,8 @@ import org.fossify.phone.direct.IttcLeadApi
 
 /**
  * 🎓 ITTC 3.15: every "WhatsApp" in the app comes here — the user picks which WhatsApp: WhatsApp,
- * WhatsApp Business, a clone (GB / YO / FM…, or any other app that takes `whatsapp://`), or a dual
- * copy in another user profile (Samsung Dual Messenger, MIUI Dual apps, a work profile).
+ * WhatsApp Business, a clone / other WhatsApp app that opens WhatsApp links (`whatsapp://`), or a copy
+ * in another user profile (a dual / clone profile, a work profile).
  *
  * - none: the "no WhatsApp" toast (or the caller's own message);
  * - one: it opens at once (as before);
@@ -34,26 +41,26 @@ import org.fossify.phone.direct.IttcLeadApi
  *   per app (its icon, its name and a tag), and "📋 নম্বর কপি".
  *
  * The chat opens with `https://wa.me/<number>?text=…` (else `whatsapp://send?phone=…&text=…`), with
- * the chosen package set; the number is made international with [IttcLeadApi.waNumber]. A dual copy
- * can't take a link into its profile: it opens on its own home screen (LauncherApps) after the number
- * (and the message) is copied, with a toast to paste it.
+ * the chosen package set; the number is made international with [IttcLeadApi.waNumber]. A copy in
+ * another profile can't take a link into its profile: it opens on its own home screen (LauncherApps),
+ * then the number (and the message) are put in the clipboard, with a toast to paste it.
+ *
+ * The list is kept for [TTL] ms (dropped when an app is installed / removed) and built off the main
+ * thread when it is not kept.
  */
 object IttcWhatsApp {
-    /** WhatsApp, Business, then the clones / mods people use (also kept when they only take wa.me) */
-    private val KNOWN = listOf(
-        "com.whatsapp",
-        "com.whatsapp.w4b",
-        "com.gbwhatsapp",
-        "com.yowhatsapp",
-        "com.fmwhatsapp",
-        "com.whatsapp.clone",
-        "com.obwhatsapp",
-        "com.whatsapp.plus",
-    )
+    /** What came of it: opened; failed (none here / it would not open — the toast said so); cancelled (nothing to say) */
+    enum class Outcome { OPENED, FAILED, CANCELLED }
+
     private const val OFFICIAL = "com.whatsapp"
     private const val BUSINESS = "com.whatsapp.w4b"
 
-    /** One WhatsApp to open: in this profile ([user] null) or a dual copy in another ([component] its launcher activity) */
+    /** WhatsApp, then Business (by name, also when they don't answer the whatsapp:// question) */
+    private val KNOWN = listOf(OFFICIAL, BUSINESS)
+
+    private const val TTL = 30_000L
+
+    /** One WhatsApp to open: in this profile ([user] null) or a copy in another ([component] its launcher activity) */
     class Choice(
         val pkg: String,
         val label: CharSequence,
@@ -66,130 +73,170 @@ object IttcWhatsApp {
         val official get() = pkg == OFFICIAL || pkg == BUSINESS
     }
 
+    private class Kept(val at: Long, val list: List<Choice>)
+
+    @Volatile
+    private var kept: Kept? = null
+
+    @Volatile
+    private var watching = false
+
+    /** A choice is being worked out (the list being read, or the sheet up): a second tap waits */
+    private var busy = false
+
     /**
      * WhatsApp with [number] (and [text] typed in, when given). [noApp]: the toast when there is no
-     * WhatsApp (null: none — the caller says it itself). [onResult] runs once: true when a WhatsApp
-     * opened, false when none could or the chooser was closed without a choice.
-     * Returns false when nothing could happen at all (no number / no WhatsApp / it failed to open);
-     * true when a WhatsApp opened or the chooser is up.
+     * WhatsApp or it would not open (null: none — the caller says it itself). [onResult] runs once,
+     * on the main thread.
      */
     fun open(
         activity: Activity,
         number: String?,
         text: String? = null,
         noApp: Int? = R.string.ittc_l3_no_whatsapp,
-        onResult: ((Boolean) -> Unit)? = null,
-    ): Boolean {
-        if (number.isNullOrBlank()) {
-            activity.toast(R.string.ittc_lp_no_number)
-            onResult?.invoke(false)
-            return false
-        }
-        val message = text?.takeIf { it.isNotEmpty() }
-        val choices = try {
-            choices(activity)
-        } catch (_: Throwable) {
-            emptyList()
-        }
-        when (choices.size) {
-            0 -> {
-                // (nothing found — e.g. the list could not be read: the old way, by the known packages)
-                val opened = launchBlind(activity, number, message)
-                if (!opened) noApp?.let { activity.toast(it) }
-                onResult?.invoke(opened)
-                return opened
-            }
-
-            1 -> {
-                val opened = launch(activity, choices[0], number, message)
-                if (!opened) noApp?.let { activity.toast(it) }
-                onResult?.invoke(opened)
-                return opened
-            }
-        }
-        if (activity.isFinishing || activity.isDestroyed) {
-            onResult?.invoke(false)
-            return false
-        }
-        showChooser(activity, number, message, choices, noApp, onResult)
-        return true
+        onResult: ((Outcome) -> Unit)? = null,
+    ) {
+        choose(
+            activity, number, noApp,
+            onChosen = { choice ->
+                val outcome = launch(activity, choice, number.orEmpty(), text, noApp)
+                onResult?.invoke(outcome)
+            },
+            onNone = { outcome -> onResult?.invoke(outcome) },
+        )
     }
 
-    // ------------------------------------------------------------------ the links
+    /**
+     * Which WhatsApp, without opening it (the papers sheet makes its link after the choice).
+     * Exactly one of [onChosen] / [onNone] runs, once, on the main thread: [onNone] with FAILED
+     * (no number / no WhatsApp: [noApp] toasted) or CANCELLED (the sheet closed, "copy" used,
+     * the screen gone, or a choice already in progress).
+     */
+    fun choose(
+        activity: Activity,
+        number: String?,
+        noApp: Int? = R.string.ittc_l3_no_whatsapp,
+        onChosen: (Choice) -> Unit,
+        onNone: (Outcome) -> Unit,
+    ) {
+        if (number.isNullOrBlank()) {
+            activity.toast(R.string.ittc_lp_no_number)
+            onNone(Outcome.FAILED)
+            return
+        }
+        if (busy) {
+            onNone(Outcome.CANCELLED)
+            return
+        }
+        val fresh = kept?.takeIf { SystemClock.elapsedRealtime() - it.at < TTL }?.list
+        if (fresh != null) {
+            decide(activity, number, fresh, noApp, onChosen, onNone)
+            return
+        }
+        // (not kept: read off the main thread — a few ms; a second tap meanwhile waits)
+        busy = true
+        val app = activity.applicationContext
+        ensureBackgroundThread {
+            val list = try {
+                choices(app)
+            } catch (_: Throwable) {
+                emptyList()
+            }
+            activity.runOnUiThread {
+                busy = false
+                if (activity.isFinishing || activity.isDestroyed) {
+                    onNone(Outcome.CANCELLED)
+                } else {
+                    decide(activity, number, list, noApp, onChosen, onNone)
+                }
+            }
+        }
+    }
+
+    private fun decide(
+        activity: Activity,
+        number: String,
+        list: List<Choice>,
+        noApp: Int?,
+        onChosen: (Choice) -> Unit,
+        onNone: (Outcome) -> Unit,
+    ) {
+        when (list.size) {
+            0 -> {
+                noApp?.let { activity.toast(it) }
+                onNone(Outcome.FAILED)
+            }
+
+            1 -> onChosen(list[0])
+            else -> showChooser(activity, number, list, onChosen, onNone)
+        }
+    }
+
+    // ------------------------------------------------------------------ opening
     private fun waMe(digits: String, text: String?): Uri =
         Uri.parse("https://wa.me/$digits" + (text?.let { "?text=" + Uri.encode(it) } ?: ""))
 
     private fun scheme(digits: String, text: String?): Uri =
         Uri.parse("whatsapp://send?phone=$digits" + (text?.let { "&text=" + Uri.encode(it) } ?: ""))
 
-    /** Opens [c]; false when it could not */
-    private fun launch(activity: Activity, c: Choice, number: String, text: String?): Boolean {
+    /**
+     * Opens [c] with [number] (and [text]). FAILED: [noApp] toasted (a copy in another profile: its own
+     * toast, the clipboard left alone).
+     */
+    fun launch(activity: Activity, c: Choice, number: String, text: String?, noApp: Int? = R.string.ittc_l3_no_whatsapp): Outcome {
         val digits = IttcLeadApi.waNumber(number)
+        val message = text?.takeIf { it.isNotEmpty() }
         val user = c.user
         val component = c.component
-        if (user != null && component != null) return launchOtherProfile(activity, component, user, digits, text)
-        for (uri in listOf(waMe(digits, text), scheme(digits, text))) {
+        if (user != null && component != null) return launchOtherProfile(activity, component, user, digits, message)
+        for (uri in listOf(waMe(digits, message), scheme(digits, message))) {
             try {
                 activity.startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(c.pkg))
-                return true
+                return Outcome.OPENED
             } catch (_: Throwable) {
             }
         }
-        return false
-    }
-
-    /** No list (it could not be read): WhatsApp, then Business by wa.me, then any app for whatsapp:// (as before 3.15) */
-    private fun launchBlind(activity: Activity, number: String, text: String?): Boolean {
-        val digits = IttcLeadApi.waNumber(number)
-        for (pkg in listOf(OFFICIAL, BUSINESS)) {
-            try {
-                activity.startActivity(Intent(Intent.ACTION_VIEW, waMe(digits, text)).setPackage(pkg))
-                return true
-            } catch (_: Throwable) {
-            }
-        }
-        return try {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, scheme(digits, text)))
-            true
-        } catch (_: Throwable) {
-            false
-        }
+        // (it would not open — e.g. removed since the list was read)
+        kept = null
+        noApp?.let { activity.toast(it) }
+        return Outcome.FAILED
     }
 
     /**
-     * A dual copy: no link reaches another profile, so the number (and the message) go to the
-     * clipboard and that WhatsApp opens on its home screen.
+     * A copy in another profile: no link reaches it, so that WhatsApp opens on its home screen; once it
+     * has, the number (and the message) go to the clipboard, with a toast to paste it (and send).
      */
-    private fun launchOtherProfile(activity: Activity, component: ComponentName, user: UserHandle, digits: String, text: String?): Boolean {
-        val la = launcherApps(activity) ?: return false
-        val clip = if (text == null) "+$digits" else "+$digits\n\n$text"
-        val copied = IttcCopy.put(activity, clip)
-        return try {
+    private fun launchOtherProfile(activity: Activity, component: ComponentName, user: UserHandle, digits: String, text: String?): Outcome {
+        val started = try {
+            val la = launcherApps(activity) ?: throw IllegalStateException("no LauncherApps")
             la.startMainActivity(component, user, null, null)
-            if (copied) {
-                activity.toast(if (text == null) R.string.ittc_wa_dual_number_copied else R.string.ittc_wa_dual_message_copied)
-            }
             true
         } catch (_: Throwable) {
             false
         }
+        if (!started) {
+            kept = null
+            activity.toast(R.string.ittc_wa_other_failed)
+            return Outcome.FAILED
+        }
+        val clip = if (text == null) "+$digits" else "+$digits\n\n$text"
+        if (IttcCopy.put(activity, clip)) {
+            activity.toast(if (text == null) R.string.ittc_wa_dual_number_copied else R.string.ittc_wa_dual_message_copied)
+        }
+        return Outcome.OPENED
     }
 
     // ------------------------------------------------------------------ which WhatsApps are here
-    /** Every WhatsApp: this profile's (known ones first), then the dual copies in other profiles */
+    /** Every WhatsApp: this profile's (WhatsApp, Business, then other apps for whatsapp://), then other profiles' (off the main thread) */
     fun choices(context: Context): List<Choice> {
+        watchPackages(context)
         val pm = context.packageManager
         val own = context.packageName
-        val probe = "8801700000000"
-        val schemeApps = handlers(pm, Intent(Intent.ACTION_VIEW, scheme(probe, null)))
-        val waMeApps = handlers(pm, Intent(Intent.ACTION_VIEW, waMe(probe, null)).addCategory(Intent.CATEGORY_BROWSABLE))
-        val browsers = handlers(pm, Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com/")).addCategory(Intent.CATEGORY_BROWSABLE))
+        val schemeApps = handlers(pm, Intent(Intent.ACTION_VIEW, scheme("8801700000000", null)))
 
-        // known ones (installed and on, even when they take neither link the usual way), then any other
-        // app for whatsapp:// that is not a browser
         val pkgs = LinkedHashSet<String>()
-        KNOWN.forEach { if (it in schemeApps || it in waMeApps || isEnabled(pm, it)) pkgs += it }
-        schemeApps.forEach { if (it !in browsers && it != own) pkgs += it }
+        KNOWN.forEach { if (it in schemeApps || isEnabled(pm, it)) pkgs += it }
+        schemeApps.forEach { if (it != own) pkgs += it }
 
         val out = ArrayList<Choice>()
         pkgs.forEach { pkg ->
@@ -201,10 +248,40 @@ object IttcWhatsApp {
             }
         }
         out += otherProfiles(context, (KNOWN + pkgs).distinct())
+        kept = Kept(SystemClock.elapsedRealtime(), out)
         return out
     }
 
-    /** The packages with an activity for [intent] (browsers included: every match, not only the default) */
+    /** An app installed / removed / changed: the kept list is read again next time */
+    private fun watchPackages(context: Context) {
+        if (watching) return
+        synchronized(this) {
+            if (watching) return
+            try {
+                val filter = IntentFilter().apply {
+                    addAction(Intent.ACTION_PACKAGE_ADDED)
+                    addAction(Intent.ACTION_PACKAGE_REMOVED)
+                    addAction(Intent.ACTION_PACKAGE_CHANGED)
+                    addDataScheme("package")
+                }
+                val receiver = object : BroadcastReceiver() {
+                    override fun onReceive(c: Context?, intent: Intent?) {
+                        kept = null
+                    }
+                }
+                val app = context.applicationContext
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    app.registerReceiver(receiver, filter)
+                }
+                watching = true
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    /** The packages with an activity for [intent] (every match, not only the default) */
     private fun handlers(pm: PackageManager, intent: Intent): Set<String> = try {
         val list = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
@@ -237,7 +314,7 @@ object IttcWhatsApp {
         null
     }
 
-    /** WhatsApps installed in the other profiles (dual apps, a work profile): "WhatsApp (Dual)", "Business (Dual)" */
+    /** WhatsApps installed in the other profiles: "WhatsApp (Dual)", "Business (Work)", "Clone (Other profile)" */
     private fun otherProfiles(context: Context, pkgs: List<String>): List<Choice> {
         val la = launcherApps(context) ?: return emptyList()
         val me = Process.myUserHandle()
@@ -248,6 +325,7 @@ object IttcWhatsApp {
         }
         val out = ArrayList<Choice>()
         profiles.forEach { user ->
+            val kind = profileKind(la, user)
             pkgs.forEach { pkg ->
                 try {
                     val act = la.getActivityList(pkg, user).firstOrNull() ?: return@forEach
@@ -255,7 +333,7 @@ object IttcWhatsApp {
                         pkg = pkg,
                         label = act.label ?: pkg,
                         icon = safeIcon { act.getBadgedIcon(0) },
-                        tag = context.getString(R.string.ittc_wa_tag_dual, tagOf(context, pkg)),
+                        tag = context.getString(kind, tagOf(context, pkg)),
                         user = user,
                         component = act.componentName,
                     )
@@ -264,6 +342,26 @@ object IttcWhatsApp {
             }
         }
         return out
+    }
+
+    /**
+     * Dual, Work or "Other profile" (the tag's string): Android 15+ says the profile's type
+     * (LauncherApps.getLauncherUserInfo); else the dual-app profiles' known ids (Samsung Dual
+     * Messenger 95–99, MIUI / Android clone 999); anything else is "Other profile".
+     */
+    private fun profileKind(la: LauncherApps, user: UserHandle): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            try {
+                when (la.getLauncherUserInfo(user)?.userType) {
+                    "android.os.usertype.profile.MANAGED" -> return R.string.ittc_wa_tag_work
+                    "android.os.usertype.profile.CLONE" -> return R.string.ittc_wa_tag_dual
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        // (a UserHandle's hash code is its user id)
+        val id = user.hashCode()
+        return if (id in 95..99 || id == 999) R.string.ittc_wa_tag_dual else R.string.ittc_wa_tag_other
     }
 
     private fun safeIcon(get: () -> Drawable?): Drawable? = try {
@@ -276,44 +374,80 @@ object IttcWhatsApp {
     private fun showChooser(
         activity: Activity,
         number: String,
-        text: String?,
         choices: List<Choice>,
-        noApp: Int?,
-        onResult: ((Boolean) -> Unit)?,
+        onChosen: (Choice) -> Unit,
+        onNone: (Outcome) -> Unit,
     ) {
         val p = IttcTheme.of(activity)
         val sheet = IttcCUi.sheet(activity)
         val body = sheet.body
         val c = activity
-        // (onResult once: a choice, the copy row, or closed without one)
+        busy = true
+        // (one answer only: a choice, the copy row, closed, or the screen gone)
         var answered = false
-        fun answer(opened: Boolean) {
+        var watcher: LifecycleEventObserver? = null
+        fun finish() {
+            busy = false
+            watcher?.let { w -> (activity as? LifecycleOwner)?.lifecycle?.removeObserver(w) }
+            watcher = null
+        }
+        fun cancel() {
             if (answered) return
             answered = true
-            onResult?.invoke(opened)
+            finish()
+            onNone(Outcome.CANCELLED)
         }
-        sheet.dialog.setOnDismissListener { answer(false) }
+        sheet.dialog.setOnDismissListener { cancel() }
+
+        // (the screen closes with the sheet up: the sheet goes with it, the caller hears "cancelled")
+        (activity as? LifecycleOwner)?.lifecycle?.let { lifecycle ->
+            val w = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_DESTROY) {
+                    cancel()
+                    dismiss(sheet)
+                }
+            }
+            watcher = w
+            lifecycle.addObserver(w)
+        }
 
         body.addView(IttcCUi.text(c, c.getString(R.string.ittc_wa_choose), 18f, p.text, bold = true))
         body.addView(IttcCUi.text(c, number, 13f, p.muted).apply { textDirection = View.TEXT_DIRECTION_LTR }, IttcCUi.topMargin(c, 2))
         body.addView(View(c), LinearLayout.LayoutParams(1, IttcCUi.dp(c, 8)))
 
         choices.forEach { choice ->
-            body.addView(row(c, p, choice.icon, null, choice.label.toString(), choice.tag, choice.official) {
+            // (a kept icon is shared between sheets: each sheet draws its own copy)
+            val icon = choice.icon?.let { it.constantState?.newDrawable()?.mutate() ?: it }
+            body.addView(row(c, p, icon, null, choice.label.toString(), choice.tag, choice.official) {
+                if (answered) return@row
                 answered = true
+                finish()
                 dismiss(sheet)
-                val opened = launch(activity, choice, number, text)
-                if (!opened) noApp?.let { activity.toast(it) }
-                onResult?.invoke(opened)
+                onChosen(choice)
             })
         }
 
         body.addView(IttcCUi.divider(c))
         body.addView(row(c, p, null, R.drawable.ic_copy_vector, c.getString(R.string.ittc_copy_number_row), null, false) {
+            if (answered) return@row
+            answered = true
+            finish()
             dismiss(sheet)
             IttcCopy.number(activity, number)
+            onNone(Outcome.CANCELLED)
         })
-        IttcCUi.showSafely(activity, sheet.dialog)
+
+        val shown = !activity.isFinishing && !activity.isDestroyed && try {
+            sheet.dialog.show()
+            true
+        } catch (_: Throwable) {
+            false
+        }
+        if (!shown && !answered) {
+            answered = true
+            finish()
+            onNone(Outcome.FAILED)
+        }
     }
 
     private fun dismiss(sheet: IttcCUi.Sheet) {
@@ -332,7 +466,7 @@ object IttcWhatsApp {
         label: String,
         tag: String?,
         greenTag: Boolean,
-        run: () -> Unit,
+        onClick: () -> Unit,
     ): View {
         val line = IttcCUi.row(c).apply {
             minimumHeight = IttcCUi.dp(c, 52)
@@ -341,7 +475,7 @@ object IttcWhatsApp {
             isClickable = true
             isFocusable = true
             contentDescription = if (tag == null) label else "$label, $tag"
-            setOnClickListener { run() }
+            setOnClickListener { onClick() }
         }
         val size = IttcCUi.dp(c, 36)
         line.addView(
