@@ -12,8 +12,8 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
 import org.fossify.phone.direct.IttcAdmitApi
 import org.fossify.phone.direct.IttcDirect
-import org.fossify.phone.direct.IttcLeadApi
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcWhatsApp
 
 /**
  * 📄 3.5: a lead's admission papers — which are in (original / photocopy / not needed) and which
@@ -232,12 +232,9 @@ object IttcPapersSheet {
         body.addView(error)
         val buttons = IttcDUi.row(activity)
         var busy = false
-        fun send(via: String) {
-            if (busy) return
-            if (picked.isEmpty()) return IttcDUi.showError(error, activity.getString(R.string.ittc_d_err_choose_paper))
-            val number = if (via == "whatsapp") d.whatsapp ?: d.phone else d.phone ?: d.whatsapp
-            if (number.isNullOrBlank()) return IttcDUi.showError(error, activity.getString(R.string.ittc_d_err_no_number))
-            IttcDUi.showError(error, null)
+
+        /** Makes the link, then sends it: by [choice] (WhatsApp, already chosen) or by SMS ([choice] null) */
+        fun makeAndSend(via: String, number: String, choice: IttcWhatsApp.Choice?) {
             busy = true
             buttons.alpha = 0.5f
             val app = activity.applicationContext
@@ -256,16 +253,17 @@ object IttcPapersSheet {
                     r.onSuccess { (id, url) ->
                         changed()
                         val text = message(url)
-                        val opened = try {
-                            val intent = if (via == "whatsapp") {
-                                Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/${IttcLeadApi.waNumber(number)}?text=" + Uri.encode(text)))
-                            } else {
-                                Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(number))).putExtra("sms_body", text)
+                        val opened = if (choice != null) {
+                            // (no toast: the sheet says it in its error line; a copy in another profile: the
+                            // message is in the clipboard, with a toast to paste and send it)
+                            IttcWhatsApp.launch(activity, choice, number, text, noApp = null) == IttcWhatsApp.Outcome.OPENED
+                        } else {
+                            try {
+                                activity.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(number))).putExtra("sms_body", text))
+                                true
+                            } catch (_: Throwable) {
+                                false
                             }
-                            activity.startActivity(intent)
-                            true
-                        } catch (_: Throwable) {
-                            false
                         }
                         if (opened) {
                             dialog.dismiss()
@@ -282,6 +280,31 @@ object IttcPapersSheet {
                     }
                 }
             }
+        }
+
+        fun send(via: String) {
+            if (busy) return
+            if (picked.isEmpty()) return IttcDUi.showError(error, activity.getString(R.string.ittc_d_err_choose_paper))
+            val number = if (via == "whatsapp") d.whatsapp ?: d.phone else d.phone ?: d.whatsapp
+            if (number.isNullOrBlank()) return IttcDUi.showError(error, activity.getString(R.string.ittc_d_err_no_number))
+            IttcDUi.showError(error, null)
+            if (via != "whatsapp") return makeAndSend(via, number, null)
+            // 3.15: which WhatsApp FIRST — no link is made (or closed) when the choice is cancelled / "copy";
+            // none here: the error line, no link
+            busy = true
+            IttcWhatsApp.choose(
+                activity, number, noApp = null,
+                onChosen = { choice ->
+                    busy = false
+                    if (IttcDUi.alive(activity)) makeAndSend(via, number, choice)
+                },
+                onNone = { outcome ->
+                    busy = false
+                    if (outcome == IttcWhatsApp.Outcome.FAILED && IttcDUi.alive(activity)) {
+                        IttcDUi.showError(error, activity.getString(R.string.ittc_d_no_app))
+                    }
+                },
+            )
         }
         buttons.addView(
             IttcDUi.button(activity, activity.getString(R.string.ittc_d_send_whatsapp), IttcDUi.Btn.CALL) { send("whatsapp") },

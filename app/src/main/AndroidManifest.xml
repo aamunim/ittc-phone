@@ -44,6 +44,15 @@
         <package android:name="org.fossify.contacts.debug" />
         <package android:name="org.fossify.contacts" />
 
+        <!-- 🎓 ITTC 3.15: which WhatsApp (Android 11+ package visibility) — the apps that open
+             whatsapp:// links (WhatsApp, Business, clones / other WhatsApp apps), and the two by name -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+
         <!-- Required for loading contact accounts -->
         <intent>
             <action android:name="android.accounts.AccountAuthenticator" />

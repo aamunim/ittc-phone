@@ -36,6 +36,12 @@
         android:icon="@drawable/ic_minus_circle_vector"
         android:title="@string/block_contact"
         app:showAsAction="ifRoom" />
+    <!-- 🎓 ITTC 3.15: copy the contact's number (as Call History's) -->
+    <item
+        android:id="@+id/cab_copy_number"
+        android:showAsAction="never"
+        android:title="@string/copy_number_to_clipboard"
+        app:showAsAction="never" />
     <item
         android:id="@+id/cab_create_shortcut"
         android:showAsAction="never"

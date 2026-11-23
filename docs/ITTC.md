@@ -23,6 +23,8 @@ means adding its SHA-256 on both sides.
 
 Each app lists the other in `<queries>` (this one: `com.abamunim.ittcphone` and `org.fossify.phone`; ITTC Phone:
 `com.abamunim.leads`).
+ITTC Phone 3.15+ also lists WhatsApp (`com.whatsapp`), WhatsApp Business (`com.whatsapp.w4b`) and
+the apps that open `whatsapp://` links (clones / other WhatsApp apps), for its "which WhatsApp" choice.
 
 ## 1. Is this number a lead? (ITTC Phone → this app)
 

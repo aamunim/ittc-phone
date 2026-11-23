@@ -34,6 +34,14 @@ see [LICENSE](LICENSE). All credit for the phone app itself goes to the Fossify 
   Team Leads / Callers (all of them, or one person).
 - 🧭 **Stage after a call** (Tracker 2.10.6+) — change the pipeline stage with the result; a stage
   that needs a note or a date asks for it.
+- 💬 **Which WhatsApp** (3.15.0) — every WhatsApp button (Leads tab, the lead's sheet and page,
+  message templates, admission papers, the number / contact page) asks which WhatsApp to use when
+  the phone has more than one: WhatsApp, WhatsApp Business, a clone / other WhatsApp app that opens
+  WhatsApp links, or a copy in another profile (dual apps, a work profile — it opens on its home
+  screen, then the number, and the message, are copied to paste). One WhatsApp opens at once, as before.
+- 📋 **নম্বর কপি** (3.15.0) — copy a number from the lead's sheet and page, the number / contact
+  page (each number and the top bar), Call History, Contacts / Favorites (long press → menu) and the
+  WhatsApp choice.
 - 🎨 **ITTC look** (1.5.0) — the ITTC logo as the app icon (with a small green phone badge; a
   monochrome one for themed icons), ITTC blue as the default colour, the icon on the Android 12+
   opening screen, and ITTC Phone's own About screen (version, new version, the Tracker, privacy,
@@ -64,6 +72,10 @@ contract is in [docs/ITTC.md](docs/ITTC.md).
   quick Recents and caller names.
 - `AndroidManifest.xml`, `gradle.properties`, `app/build.gradle.kts`, `res/values/ittc_strings.xml`:
   name, version, package visibility of the Tracker.
+- `helpers/IttcWhatsApp.kt`, `helpers/IttcCopy.kt`, `res/values/ittc_strings_wa.xml` (new, 3.15.0):
+  the WhatsApp choice and "copy the number"; used by the ITTC screens, `adapters/RecentCallsAdapter.kt`
+  and `adapters/ContactsAdapter.kt` / `res/menu/cab_contacts.xml`; `AndroidManifest.xml` lists WhatsApp,
+  WhatsApp Business and the apps that open `whatsapp://` links in `<queries>`.
 - `.github/workflows/build.yml`: builds the signed APK; Fossify's own workflows removed.
 
 ## Build

@@ -52,10 +52,12 @@ import org.fossify.phone.direct.IttcLeadApi
 import org.fossify.phone.direct.IttcNotify
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcCopy
 import org.fossify.phone.helpers.IttcCrash
 import org.fossify.phone.helpers.IttcHandover
 import org.fossify.phone.helpers.IttcStageMove
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcWhatsApp
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -129,6 +131,11 @@ class IttcLeadActivity : SimpleActivity() {
             ittcLeadSms.setOnClickListener { openSms() }
             ittcLeadNote.setOnClickListener { addNote() }
             ittcLeadInfo.setOnClickListener { callLead() }
+            // 📋 3.15: a long press on the number line copies the number (a choice when there are more)
+            ittcLeadInfo.setOnLongClickListener {
+                copyNumber()
+                true
+            }
             ittcLeadStar.setOnClickListener { if (signedIn) changeRating() }
             ittcLeadMore.setOnClickListener { showMore() }
             // (scrolled past the hero's Call: the name, 📞 and WhatsApp in the top bar — the same actions)
@@ -672,6 +679,11 @@ class IttcLeadActivity : SimpleActivity() {
                 minHeight = dp(48)
                 setBackgroundResource(ripple())
                 setOnClickListener { call(number) }
+                // 📋 3.15: a long press copies this number
+                setOnLongClickListener {
+                    IttcCopy.number(this@IttcLeadActivity, number)
+                    true
+                }
             })
         }
     }
@@ -756,6 +768,8 @@ class IttcLeadActivity : SimpleActivity() {
             items += getString(R.string.ittc_b_add_note) to { runAction(ACTION_ADD_NOTE) }
         }
         chipItems().forEach { (label, action) -> items += getString(label) to action }
+        // 📋 3.15: copy the number (a choice of the lead's numbers when it has two or more)
+        lead?.let { numbers(it) }?.takeIf { it.isNotEmpty() }?.let { items += getString(R.string.ittc_copy_number) to { copyNumber() } }
         if (!signedIn) items += getString(R.string.ittc_b_web) to { openWeb() }
         pickList(getString(R.string.ittc_b_more), items.map { it.first }) { items[it].second() }
     }
@@ -1002,19 +1016,24 @@ class IttcLeadActivity : SimpleActivity() {
 
     private fun smsNumber(): String? = lead?.let { it.s("phone") ?: it.s("alt_phone") ?: it.s("whatsapp_number") }
 
-    /** true: WhatsApp opened */
-    private fun openWhatsApp(text: String?): Boolean {
-        val n = whatsAppNumber() ?: run {
-            toast(R.string.ittc_lp_no_number)
-            return false
-        }
-        val url = "https://wa.me/${IttcLeadApi.waNumber(n)}" + (text?.let { "?text=" + Uri.encode(it) } ?: "")
-        return try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            true
-        } catch (_: Throwable) {
-            toast(R.string.ittc_lp_no_app)
-            false
+    /**
+     * WhatsApp with the lead's number (and [text] typed in). 3.15: through [IttcWhatsApp] — a choice when
+     * there are more WhatsApps; [onResult] hears once what came of it (after the choice).
+     */
+    private fun openWhatsApp(text: String?, onResult: ((IttcWhatsApp.Outcome) -> Unit)? = null) {
+        IttcWhatsApp.open(this, whatsAppNumber(), text, onResult = onResult)
+    }
+
+    /** 📋 3.15: copy one of the lead's numbers (a choice when it has two or more) */
+    private fun copyNumber() {
+        val l = lead ?: return
+        val list = numbers(l)
+        when {
+            list.isEmpty() -> toast(R.string.ittc_lp_no_number)
+            list.size == 1 -> IttcCopy.number(this, list[0].first)
+            else -> pickList(getString(R.string.ittc_copy_number), list.map { (n, label) -> if (label.isEmpty()) n else "$n  ·  $label" }) {
+                IttcCopy.number(this, list[it].first)
+            }
         }
     }
 
@@ -1165,11 +1184,15 @@ class IttcLeadActivity : SimpleActivity() {
             .setNegativeButton(R.string.cancel, null)
             .apply {
                 setupDialogStuff(ScrollView(this@IttcLeadActivity).apply { addView(holder) }, this, titleText = t.name) { dialog ->
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    val sendButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    // (WhatsApp may ask which one first: one send at a time until it is answered)
+                    var sending = false
+                    sendButton.setOnClickListener {
+                        if (sending) return@setOnClickListener
                         val text = input.text?.toString()?.trim().orEmpty()
                         if (text.isEmpty()) return@setOnClickListener
-                        val opened = if (channel == "sms") sendSms(text) else openWhatsApp(text)
-                        if (opened) {
+                        // (logged once it has opened)
+                        val sent = {
                             dialog.dismiss()
                             queue(
                                 JSONObject().put("kind", "template").put("template_id", t.id).put("channel", channel)
@@ -1181,6 +1204,17 @@ class IttcLeadActivity : SimpleActivity() {
                                     JSONObject().put("at", isoOf(System.currentTimeMillis())).put("outcome", "message")
                                         .put("notes", "Template: ${t.name}" + if (text != filled) " (edited)" else "").put("by", myName),
                                 )
+                            }
+                        }
+                        if (channel == "sms") {
+                            if (sendSms(text)) sent()
+                        } else {
+                            sending = true
+                            sendButton.isEnabled = false
+                            openWhatsApp(text) { outcome ->
+                                sending = false
+                                sendButton.isEnabled = true
+                                if (outcome == IttcWhatsApp.Outcome.OPENED) sent()
                             }
                         }
                     }
