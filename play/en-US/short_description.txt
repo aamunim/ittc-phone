@@ -1,1 +1,1 @@
-Phone app for ITTC admissions: see who calls, save the result after each call
+ITTC admission phone: see the lead on every call, save the result in one tap
