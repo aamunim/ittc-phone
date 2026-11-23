@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 🎓 ITTC 3.15: which WhatsApp (WhatsApp / Business / a clone / a dual copy), and "copy the number" -->
+<resources>
+    <!-- the WhatsApp chooser -->
+    <string name="ittc_wa_choose" translatable="false">কোন WhatsApp দিয়ে খুলবেন?</string>
+    <string name="ittc_wa_tag_whatsapp" translatable="false">WhatsApp</string>
+    <string name="ittc_wa_tag_business" translatable="false">Business</string>
+    <string name="ittc_wa_tag_clone" translatable="false">Clone</string>
+    <string name="ittc_wa_tag_dual" translatable="false">%s (Dual)</string>
+    <!-- a dual copy (another profile) opens on its home screen: the number / message are in the clipboard -->
+    <string name="ittc_wa_dual_number_copied" translatable="false">নম্বর কপি হয়েছে — WhatsApp-এ পেস্ট করে চ্যাট খুলুন</string>
+    <string name="ittc_wa_dual_message_copied" translatable="false">নম্বর ও মেসেজ কপি হয়েছে — WhatsApp চ্যাটে পেস্ট করুন</string>
+
+    <!-- copy a number (lead sheet, lead page, number / contact page, contacts, favorites, the chooser) -->
+    <string name="ittc_copy_number" translatable="false">নম্বর কপি</string>
+    <string name="ittc_copy_number_row" translatable="false">📋 নম্বর কপি</string>
+    <string name="ittc_copy_number_of" translatable="false">নম্বর কপি · %s</string>
+    <string name="ittc_copy_number_done" translatable="false">নম্বর কপি হয়েছে</string>
+</resources>

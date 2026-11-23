@@ -15,6 +15,7 @@ import android.text.TextUtils
 import android.text.format.DateFormat
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MenuItem
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -62,8 +63,10 @@ import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
 import org.fossify.phone.helpers.IttcContactsCache
+import org.fossify.phone.helpers.IttcCopy
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcUi
+import org.fossify.phone.helpers.IttcWhatsApp
 import org.fossify.phone.helpers.RecentsHelper
 import org.joda.time.DateTime
 import java.text.SimpleDateFormat
@@ -130,6 +133,24 @@ class IttcNumberActivity : SimpleActivity() {
             ittcNumberContact.setOnClickListener { contactTile() }
             ittcNumberBlock.setOnClickListener { pickNumber(R.string.ittc_hist_block) { tryBlocking(it) } }
             ittcNumberDelete.setOnClickListener { askConfirmDelete() }
+
+            // 📋 3.15: "নম্বর কপি" in the top bar, and a long press on the name / number header
+            ittcNumberToolbar.menu.add(0, MENU_COPY_NUMBER, 0, R.string.ittc_copy_number).apply {
+                setIcon(R.drawable.ic_copy_vector)
+                setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            }
+            ittcNumberToolbar.setOnMenuItemClickListener { item ->
+                if (item.itemId == MENU_COPY_NUMBER) {
+                    copyNumber()
+                    true
+                } else {
+                    false
+                }
+            }
+            ittcNumberHeader.setOnLongClickListener {
+                copyNumber()
+                true
+            }
         }
 
         updateTextColors(binding.ittcNumberScrollview)
@@ -412,9 +433,12 @@ class IttcNumberActivity : SimpleActivity() {
                     label = label,
                     a11y = getString(R.string.ittc_cd_call_number, listOf(shown, label).filter { it.isNotEmpty() }.joinToString(", ")),
                     copy = n.value,
+                    copyIsNumber = true,
                     actions = listOf(
                         InfoAction(R.drawable.ic_sms_vector, p.primary, getString(R.string.ittc_cd_sms_number, shown)) { launchSendSMSIntent(n.value) },
                         InfoAction(R.drawable.ittc_ic_whatsapp, WHATSAPP_GREEN, getString(R.string.ittc_cd_whatsapp_number, shown)) { openWhatsApp(n.value) },
+                        // 📋 3.15: copy this number
+                        InfoAction(R.drawable.ic_copy_vector, p.muted, getString(R.string.ittc_copy_number_of, shown)) { IttcCopy.number(this, n.value) },
                     ),
                 ) { startCallWithConfirmationCheck(n.value, displayName()) }
             }
@@ -491,6 +515,7 @@ class IttcNumberActivity : SimpleActivity() {
         label: String?,
         a11y: String?,
         copy: String?,
+        copyIsNumber: Boolean = false,
         actions: List<InfoAction> = emptyList(),
         multiLine: Boolean = false,
         onClick: (() -> Unit)?,
@@ -549,7 +574,8 @@ class IttcNumberActivity : SimpleActivity() {
         }
         if (copy != null) {
             row.setOnLongClickListener {
-                copyToClipboard(copy)
+                // (a number: "নম্বর কপি হয়েছে", as everywhere; the rest as before)
+                if (copyIsNumber) IttcCopy.number(this, copy) else copyToClipboard(copy)
                 true
             }
         }
@@ -1000,19 +1026,17 @@ class IttcNumberActivity : SimpleActivity() {
         return parts.joinToString(" · ")
     }
 
-    /** wa.me wants the number with its country code: a Bangladeshi "01…" is "8801…" */
+    /**
+     * WhatsApp with [target] (wa.me wants the country code: a Bangladeshi "01…" is "8801…").
+     * 3.15: through [IttcWhatsApp] — a choice when there are more WhatsApps (Business, a clone, a dual copy).
+     */
     private fun openWhatsApp(target: String = number) {
-        val key = IttcCallHistory.key(target)
-        val waNumber = when {
-            key.length == 11 && key.startsWith("01") -> "88$key"
-            key.startsWith("00") -> key.substring(2)
-            else -> key
-        }
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$waNumber")))
-        } catch (_: Throwable) {
-            toast(R.string.ittc_hist_no_app)
-        }
+        IttcWhatsApp.open(this, target)
+    }
+
+    /** 📋 3.15: copy a number as it is saved (a choice when the contact has two or more) */
+    private fun copyNumber() {
+        pickNumber(R.string.ittc_copy_number) { IttcCopy.number(this, it) }
     }
 
     // (as the Recents list's "Block number")
@@ -1065,6 +1089,7 @@ class IttcNumberActivity : SimpleActivity() {
         const val EXTRA_RAW_ID = "ittc_contact_raw_id"
         const val EXTRA_NUMBERS = "ittc_numbers"
         private const val WHATSAPP_GREEN = 0xFF25D366.toInt()
+        private const val MENU_COPY_NUMBER = 0x1735
         private const val PAGE = 40
         private const val SHOW_MORE_TAG = "ittc_show_more"
 

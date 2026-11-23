@@ -12,10 +12,12 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import org.fossify.commons.extensions.toast
 import org.fossify.phone.R
-import org.fossify.phone.direct.IttcLeadApi
+import org.fossify.phone.direct.IttcDirect
 import org.fossify.phone.extensions.startCallIntent
 import org.fossify.phone.helpers.IttcBridge
+import org.fossify.phone.helpers.IttcCopy
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcWhatsApp
 
 /**
  * 🎓 ITTC 3.8: a lead's actions in one bottom sheet (a long press on a lead in the Leads tab):
@@ -24,9 +26,6 @@ import org.fossify.phone.helpers.IttcTheme
  * up) and "open the lead". Also WhatsApp for a number, shared by the Leads tab's rows.
  */
 object IttcLeadSheet {
-    /** WhatsApp, then WhatsApp Business */
-    private val WA_PACKAGES = listOf("com.whatsapp", "com.whatsapp.w4b")
-
     /** WhatsApp's light / dark greens: (circle, icon) */
     fun whatsAppColors(p: IttcTheme.Palette): Pair<Int, Int> =
         if (p.dark) 0xFF123A2A.toInt() to 0xFF4ADE80.toInt() else 0xFFE5F7EC.toInt() to 0xFF128C4B.toInt()
@@ -35,30 +34,12 @@ object IttcLeadSheet {
     fun whatsAppNumber(l: IttcBridge.PhoneLead): String? =
         (l.whatsapp ?: l.phone ?: l.altPhone)?.takeIf { it.isNotBlank() }
 
-    /** A chat with [number] in WhatsApp (BD numbers made +880…); a toast when WhatsApp is not here */
-    fun openWhatsApp(activity: Activity, number: String?): Boolean {
-        if (number.isNullOrBlank()) {
-            activity.toast(R.string.ittc_lp_no_number)
-            return false
-        }
-        val digits = IttcLeadApi.waNumber(number)
-        val link = Uri.parse("https://wa.me/$digits")
-        for (pkg in WA_PACKAGES) {
-            try {
-                activity.startActivity(Intent(Intent.ACTION_VIEW, link).setPackage(pkg))
-                return true
-            } catch (_: Throwable) {
-            }
-        }
-        // (a WhatsApp that does not take wa.me links: its own scheme)
-        try {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("whatsapp://send?phone=$digits")))
-            return true
-        } catch (_: Throwable) {
-        }
-        activity.toast(R.string.ittc_l3_no_whatsapp)
-        return false
-    }
+    /**
+     * A chat with [number] in WhatsApp (BD numbers made +880…); a toast when WhatsApp is not here.
+     * 3.15: through [IttcWhatsApp] — a choice when there are more WhatsApps (Business, a clone, a dual copy).
+     * true: one opened, or the choice is up
+     */
+    fun openWhatsApp(activity: Activity, number: String?): Boolean = IttcWhatsApp.open(activity, number)
 
     private class Action(val icon: Int, val label: String, val bg: Int, val fg: Int, val run: () -> Unit)
 
@@ -130,6 +111,14 @@ object IttcLeadSheet {
                 } catch (_: Throwable) {
                     c.toast(R.string.ittc_lp_no_app)
                 }
+            }
+        }
+        // 📋 3.15: copy a number — each of the lead's numbers once, as saved
+        val seen = HashSet<String>()
+        listOfNotNull(l.phone, l.altPhone, l.whatsapp).map { it.trim() }.filter { it.isNotEmpty() }.forEach { n ->
+            if (!seen.add(IttcDirect.normalizeBd(n) ?: n.filter(Char::isDigit))) return@forEach
+            quick += Action(R.drawable.ic_copy_vector, c.getString(R.string.ittc_copy_number_of, n), p.surfaceAlt, p.text2) {
+                IttcCopy.number(c, n)
             }
         }
         if (quick.isNotEmpty()) {

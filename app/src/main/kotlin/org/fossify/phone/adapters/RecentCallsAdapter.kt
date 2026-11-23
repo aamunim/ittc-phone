@@ -33,7 +33,6 @@ import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.adjustForContrast
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
-import org.fossify.commons.extensions.copyToClipboard
 import org.fossify.commons.extensions.formatDateOrTime
 import org.fossify.commons.extensions.formatPhoneNumber
 import org.fossify.commons.extensions.formatSecondsToShortTimeString
@@ -61,6 +60,7 @@ import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.databinding.ItemRecentCallBinding
 import org.fossify.phone.helpers.IttcBridge
 import org.fossify.phone.helpers.IttcCallHistory
+import org.fossify.phone.helpers.IttcCopy
 import org.fossify.phone.helpers.IttcTheme
 import org.fossify.phone.helpers.IttcUi
 import org.fossify.phone.databinding.ItemRecentsDateBinding
@@ -375,7 +375,8 @@ class RecentCallsAdapter(
 
     private fun copyNumber() {
         val recentCall = getSelectedItems().firstOrNull() ?: return
-        activity.copyToClipboard(recentCall.phoneNumber)
+        // 🎓 ITTC 3.15: "নম্বর কপি হয়েছে" as everywhere (no toast of ours on Android 13+: the system shows one)
+        IttcCopy.number(activity, recentCall.phoneNumber)
         finishActMode()
     }
 

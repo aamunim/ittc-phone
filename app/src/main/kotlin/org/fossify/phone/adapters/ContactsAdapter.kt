@@ -37,6 +37,7 @@ import org.fossify.phone.extensions.callContactWithSim
 import org.fossify.phone.extensions.config
 import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.IttcContactRows
+import org.fossify.phone.helpers.IttcCopy
 import org.fossify.phone.interfaces.RefreshItemsListener
 import java.util.Collections
 
@@ -100,6 +101,8 @@ class ContactsAdapter(
             findItem(R.id.cab_create_shortcut).title = activity.addLockedLabelIfNeeded(R.string.create_shortcut)
             findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && isOreoPlus()
             findItem(R.id.cab_view_details).isVisible = isOneItemSelected
+            // 🎓 ITTC 3.15: copy the number (one contact with a number)
+            findItem(R.id.cab_copy_number).isVisible = isOneItemSelected && selectedNumber.isNotEmpty()
             findItem(R.id.cab_block_unblock_contact).isVisible = isOneItemSelected && isNougatPlus()
             getCabBlockContactTitle { title ->
                 findItem(R.id.cab_block_unblock_contact).title = title
@@ -120,6 +123,7 @@ class ContactsAdapter(
             R.id.cab_delete -> askConfirmDelete()
             R.id.cab_send_sms -> sendSMS()
             R.id.cab_view_details -> viewContactDetails()
+            R.id.cab_copy_number -> copyNumber()
             R.id.cab_create_shortcut -> tryCreateShortcut()
             R.id.cab_select_all -> selectAll()
         }
@@ -272,6 +276,14 @@ class ContactsAdapter(
 
         val recipient = TextUtils.join(";", numbers)
         activity.launchSendSMSIntent(recipient)
+    }
+
+    /** 🎓 ITTC 3.15: the contact's number (its default one, else the first) as saved: "নম্বর কপি হয়েছে" */
+    private fun copyNumber() {
+        val contact = getSelectedItems().firstOrNull() ?: return
+        val numbers = contact.phoneNumbers
+        val n = (numbers.firstOrNull { it.isPrimary } ?: numbers.firstOrNull())?.value ?: return
+        if (IttcCopy.number(activity, n)) finishActMode()
     }
 
     private fun viewContactDetails() {

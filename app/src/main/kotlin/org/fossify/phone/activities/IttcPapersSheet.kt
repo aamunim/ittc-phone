@@ -12,8 +12,8 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.phone.R
 import org.fossify.phone.direct.IttcAdmitApi
 import org.fossify.phone.direct.IttcDirect
-import org.fossify.phone.direct.IttcLeadApi
 import org.fossify.phone.helpers.IttcTheme
+import org.fossify.phone.helpers.IttcWhatsApp
 
 /**
  * 📄 3.5: a lead's admission papers — which are in (original / photocopy / not needed) and which
@@ -256,28 +256,33 @@ object IttcPapersSheet {
                     r.onSuccess { (id, url) ->
                         changed()
                         val text = message(url)
-                        val opened = try {
-                            val intent = if (via == "whatsapp") {
-                                Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/${IttcLeadApi.waNumber(number)}?text=" + Uri.encode(text)))
+                        fun done(opened: Boolean) {
+                            if (opened) {
+                                dialog.dismiss()
                             } else {
-                                Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(number))).putExtra("sms_body", text)
-                            }
-                            activity.startActivity(intent)
-                            true
-                        } catch (_: Throwable) {
-                            false
-                        }
-                        if (opened) {
-                            dialog.dismiss()
-                        } else {
-                            // not sent: the new link is closed again (nobody has it)
-                            IttcDUi.showError(error, activity.getString(R.string.ittc_d_no_app))
-                            ensureBackgroundThread {
-                                try {
-                                    if (id.isNotEmpty()) IttcAdmitApi.closeRequest(app, id)
-                                } catch (_: Throwable) {
+                                // not sent: the new link is closed again (nobody has it)
+                                if (IttcDUi.alive(activity)) IttcDUi.showError(error, activity.getString(R.string.ittc_d_no_app))
+                                ensureBackgroundThread {
+                                    try {
+                                        if (id.isNotEmpty()) IttcAdmitApi.closeRequest(app, id)
+                                    } catch (_: Throwable) {
+                                    }
                                 }
                             }
+                        }
+                        if (via == "whatsapp") {
+                            // 3.15: which WhatsApp (a choice when there are more); the message goes along.
+                            // (no toast: the sheet says it in its error line)
+                            IttcWhatsApp.open(activity, number, text, noApp = null) { done(it) }
+                        } else {
+                            done(
+                                try {
+                                    activity.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(number))).putExtra("sms_body", text))
+                                    true
+                                } catch (_: Throwable) {
+                                    false
+                                },
+                            )
                         }
                     }
                 }
